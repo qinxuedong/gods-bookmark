@@ -1,0 +1,156 @@
+/**
+ * User Manager - 用户管理系统
+ * 支持多用户、管理员分配账号、数据隔离
+ */
+class UserManager {
+    constructor() {
+        this.currentUser = null;
+        this.API_BASE = '';
+    }
+
+    async login(username, password) {
+        try {
+            const response = await fetch(`${this.API_BASE}/api/users/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                this.currentUser = data.user;
+                return { success: true, user: data.user };
+            } else {
+                return { success: false, error: data.error };
+            }
+        } catch (error) {
+            console.error('[UserManager] Login error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async logout() {
+        try {
+            await fetch(`${this.API_BASE}/api/users/logout`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+            this.currentUser = null;
+            return { success: true };
+        } catch (error) {
+            console.error('[UserManager] Logout error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async checkAuth() {
+        try {
+            const response = await fetch(`${this.API_BASE}/api/users/check-auth`, {
+                credentials: 'include'
+            });
+            const data = await response.json();
+            if (data.isLoggedIn) {
+                this.currentUser = data.user;
+            }
+            return data;
+        } catch (error) {
+            console.error('[UserManager] Check auth error:', error);
+            return { isLoggedIn: false };
+        }
+    }
+
+    async createUser(username, password, role = 'user') {
+        try {
+            const response = await fetch(`${this.API_BASE}/api/users`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ username, password, role })
+            });
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('[UserManager] Create user error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async listUsers() {
+        try {
+            const response = await fetch(`${this.API_BASE}/api/users`, {
+                credentials: 'include'
+            });
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('[UserManager] List users error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async deleteUser(userId) {
+        try {
+            const response = await fetch(`${this.API_BASE}/api/users/${userId}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('[UserManager] Delete user error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    async updateUser(userId, updates) {
+        try {
+            const response = await fetch(`${this.API_BASE}/api/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(updates)
+            });
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('[UserManager] Update user error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 修改当前或指定用户密码（普通用户只能修改自己的密码）
+    async changePassword(userId, oldPassword, newPassword) {
+        try {
+            if (!newPassword) {
+                return { success: false, error: '新密码不能为空' };
+            }
+
+            const response = await fetch(`${this.API_BASE}/api/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                // 服务器只需要 password 字段；oldPassword 仅用于前端校验
+                body: JSON.stringify({ password: newPassword })
+            });
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('[UserManager] Change password error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    getCurrentUser() {
+        return this.currentUser;
+    }
+
+    isAdmin() {
+        return this.currentUser && this.currentUser.role === 'admin';
+    }
+}
+
+const userManager = new UserManager();
+window.userManager = userManager;

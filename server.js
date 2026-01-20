@@ -1,0 +1,1734 @@
+const express = require('express');
+const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
+const path = require('path');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const bcrypt = require('bcrypt');
+const cron = require('node-cron');
+const archiver = require('archiver');
+const db = require('./database');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+// 增加 JSON 请求体大小限制（处理大量书签数据）
+app.use(bodyParser.json({ limit: '50mb' })); // 默认 100kb，增加到 50mb
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+app.use(cookieParser());
+
+// Simple Auth Middleware (保持向后兼容)
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "secret-admin-token-123"; // In prod, use environment variable and real JWT
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin"; // Simple password - CHANGE IN PRODUCTION!
+
+// 多用户认证中间件
+async function requireAuth(req, res, next) {
+    const userId = req.cookies['user_id'];
+    const token = req.cookies['auth_token'];
+    
+    console.log('[REQUIRE AUTH] Checking authentication for:', req.path);
+    console.log('[REQUIRE AUTH] All cookies:', JSON.stringify(req.cookies));
+    console.log('[REQUIRE AUTH] Cookies received:', {
+        user_id: userId || 'none',
+        auth_token: token || 'none'
+    });
+    
+    if (userId && token) {
+        // 多用户模式：验证用户ID和token（token格式：user_${userId}）
+        try {
+            const expectedToken = `user_${userId}`;
+            console.log('[REQUIRE AUTH] Expected token:', expectedToken);
+            console.log('[REQUIRE AUTH] Received token:', token);
+            console.log('[REQUIRE AUTH] Token match:', token === expectedToken);
+            
+            if (token.startsWith('user_') && token === expectedToken) {
+                const user = await db.get("SELECT id, username, role FROM users WHERE id = ?", [userId]);
+                if (user) {
+                    console.log('[REQUIRE AUTH] User authenticated:', user.username);
+                    req.userId = user.id;
+                    req.user = user;
+                    return next();
+                } else {
+                    console.log('[REQUIRE AUTH] User not found in database for ID:', userId);
+                }
+            } else {
+                console.log('[REQUIRE AUTH] Token format mismatch');
+            }
+        } catch (err) {
+            // 如果users表不存在，继续检查旧的token
+            console.error('[REQUIRE AUTH] Error checking user:', err);
+        }
+    }
+    
+    // 向后兼容：旧的admin token验证
+    if (token === ADMIN_TOKEN) {
+        console.log('[REQUIRE AUTH] Using legacy admin token');
+        // 尝试找到默认admin用户
+        try {
+            let adminUser = await db.get("SELECT id, username, role FROM users WHERE username = 'admin'");
+            if (!adminUser) {
+                // 如果没有admin用户，使用默认的userId 0（向后兼容）
+                req.userId = 0;
+                req.user = { id: 0, username: 'admin', role: 'admin' };
+            } else {
+                req.userId = adminUser.id;
+                req.user = adminUser;
+            }
+            console.log('[REQUIRE AUTH] Legacy admin authenticated');
+            return next();
+        } catch (err) {
+            // 如果数据库还没有users表，使用旧的认证方式
+            if (err.message && err.message.includes('no such table')) {
+                req.userId = 0;
+                req.user = { id: 0, username: 'admin', role: 'admin' };
+                console.log('[REQUIRE AUTH] Legacy admin authenticated (no users table)');
+                return next();
+            }
+            console.error('[REQUIRE AUTH] Error finding admin user:', err);
+        }
+    }
+    
+    console.log('[REQUIRE AUTH] Authentication failed - returning 401');
+    res.status(401).json({ error: 'Unauthorized' });
+}
+
+// 管理员权限检查
+function requireAdmin(req, res, next) {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+}
+
+// --- API Routes --- (必须在静态文件服务之前定义)
+
+// 1. Auth
+app.post('/api/login', (req, res) => {
+    const { password } = req.body;
+    
+    console.log('[LOGIN] ========== Login attempt received ==========');
+    console.log('[LOGIN] Request body:', JSON.stringify(req.body));
+    console.log('[LOGIN] Expected password:', ADMIN_PASSWORD);
+    console.log('[LOGIN] Received password:', password ? '***' : 'empty');
+    console.log('[LOGIN] Password type:', typeof password);
+    console.log('[LOGIN] Password match:', password === ADMIN_PASSWORD);
+    
+    // 输入验证
+    if (!password || typeof password !== 'string') {
+        console.log('[LOGIN] Invalid input - missing or wrong type');
+        return res.status(400).json({ error: 'Invalid input' });
+    }
+    
+    // 防止暴力破解：简单的速率限制（生产环境应使用 express-rate-limit）
+    if (password === ADMIN_PASSWORD) {
+        console.log('[LOGIN] Password correct, setting cookie');
+        // 在生产环境（HTTPS）中，应添加 secure: true
+        const isProduction = process.env.NODE_ENV === 'production';
+        const cookieOptions = { 
+            httpOnly: true, 
+            maxAge: 86400000, // 1 day
+            secure: isProduction, // 仅在 HTTPS 环境下传输
+            sameSite: isProduction ? 'strict' : 'lax' // 开发环境使用 'lax'，生产环境使用 'strict'
+        };
+        console.log('[LOGIN] Cookie options:', JSON.stringify(cookieOptions));
+        res.cookie('auth_token', ADMIN_TOKEN, cookieOptions);
+        console.log('[LOGIN] Cookie set, sending success response');
+        res.json({ success: true });
+    } else {
+        console.log('[LOGIN] Password incorrect');
+        console.log('[LOGIN] Expected:', ADMIN_PASSWORD);
+        console.log('[LOGIN] Received:', password);
+        res.status(401).json({ error: 'Invalid password' });
+    }
+    console.log('[LOGIN] ========== Login attempt completed ==========');
+});
+
+app.post('/api/logout', (req, res) => {
+    res.clearCookie('auth_token');
+    res.json({ success: true });
+});
+
+app.get('/api/check-auth', async (req, res) => {
+    const userId = req.cookies['user_id'];
+    const token = req.cookies['auth_token'];
+    let isLoggedIn = false;
+    let user = null;
+    
+    if (userId && token) {
+        try {
+            const userRow = await db.get("SELECT id, username, role FROM users WHERE id = ?", [userId]);
+            if (userRow) {
+                isLoggedIn = true;
+                user = userRow;
+            }
+        } catch (err) {
+            // 如果数据库还没有users表，检查旧的token
+            isLoggedIn = token === ADMIN_TOKEN;
+            if (isLoggedIn) {
+                user = { id: 0, username: 'admin', role: 'admin' };
+            }
+        }
+    } else {
+        // 向后兼容：检查旧的admin token
+        isLoggedIn = token === ADMIN_TOKEN;
+        if (isLoggedIn) {
+            user = { id: 0, username: 'admin', role: 'admin' };
+        }
+    }
+    
+    console.log('[AUTH CHECK] User:', user ? user.username : 'none', 'Logged in:', isLoggedIn);
+    res.json({ isLoggedIn, user });
+});
+
+// ===== 多用户管理API =====
+
+// 用户登录
+app.post('/api/users/login', async (req, res) => {
+    try {
+        console.log('[USER LOGIN] ========== Login attempt received ==========');
+        const { username, password } = req.body;
+        console.log('[USER LOGIN] Username:', username);
+        console.log('[USER LOGIN] Password provided:', password ? 'yes' : 'no');
+        
+        if (!username || !password) {
+            console.log('[USER LOGIN] Missing username or password');
+            return res.status(400).json({ error: 'Username and password required' });
+        }
+        
+        const user = await db.get("SELECT id, username, password_hash, role FROM users WHERE username = ?", [username]);
+        
+        if (!user) {
+            console.log('[USER LOGIN] User not found:', username);
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        console.log('[USER LOGIN] User found, checking password...');
+        const isValid = await bcrypt.compare(password, user.password_hash);
+        
+        if (!isValid) {
+            console.log('[USER LOGIN] Invalid password for user:', username);
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        console.log('[USER LOGIN] Password valid, setting cookies...');
+        // 设置cookie
+        const isProduction = process.env.NODE_ENV === 'production';
+        const cookieOptions = {
+            httpOnly: true,
+            maxAge: 86400000 * 7, // 7 days
+            secure: isProduction,
+            sameSite: 'lax', // 开发环境使用lax，生产环境也使用lax以确保兼容性
+            path: '/' // 明确设置路径，确保Cookie在所有路径下都可用
+        };
+        
+        const userIdStr = user.id.toString();
+        const authTokenValue = `user_${user.id}`;
+        
+        // 设置cookie
+        res.cookie('user_id', userIdStr, cookieOptions);
+        res.cookie('auth_token', authTokenValue, cookieOptions);
+        
+        console.log('[USER LOGIN] Cookie options:', JSON.stringify(cookieOptions));
+        console.log('[USER LOGIN] Setting cookies:');
+        console.log('[USER LOGIN]   - user_id:', userIdStr);
+        console.log('[USER LOGIN]   - auth_token:', authTokenValue);
+        
+        // 验证Cookie是否已设置（通过检查响应头）
+        const setCookieHeaders = res.getHeader('Set-Cookie');
+        if (setCookieHeaders) {
+            console.log('[USER LOGIN] Set-Cookie headers:', Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]);
+        }
+        
+        console.log('[USER LOGIN] Login successful for user:', username, 'ID:', user.id);
+        console.log('[USER LOGIN] ========== Login attempt completed ==========');
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                username: user.username,
+                role: user.role
+            }
+        });
+    } catch (err) {
+        console.error('[USER LOGIN] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 用户登出
+app.post('/api/users/logout', (req, res) => {
+    res.clearCookie('user_id');
+    res.clearCookie('auth_token');
+    res.json({ success: true });
+});
+
+// 检查用户认证状态
+app.get('/api/users/check-auth', async (req, res) => {
+    const userId = req.cookies['user_id'];
+    const token = req.cookies['auth_token'];
+    
+    console.log('[USER CHECK-AUTH] All cookies:', JSON.stringify(req.cookies));
+    console.log('[USER CHECK-AUTH] user_id:', userId || 'none');
+    console.log('[USER CHECK-AUTH] auth_token:', token || 'none');
+    
+    let isLoggedIn = false;
+    let user = null;
+    
+    if (userId && token) {
+        try {
+            // 验证token格式
+            const expectedToken = `user_${userId}`;
+            if (token === expectedToken) {
+                const userRow = await db.get("SELECT id, username, role FROM users WHERE id = ?", [userId]);
+                if (userRow) {
+                    isLoggedIn = true;
+                    user = userRow;
+                    console.log('[USER CHECK-AUTH] User authenticated:', user.username);
+                }
+            } else {
+                console.log('[USER CHECK-AUTH] Token mismatch. Expected:', expectedToken, 'Got:', token);
+            }
+        } catch (err) {
+            // 数据库可能还没有users表
+            console.error('[USER CHECK-AUTH] Error:', err);
+        }
+    } else {
+        console.log('[USER CHECK-AUTH] Missing userId or token');
+    }
+    
+    res.json({ isLoggedIn, user });
+});
+
+// 获取用户列表（仅管理员）
+app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const users = await db.all("SELECT id, username, role, created_at FROM users ORDER BY created_at DESC");
+        res.json({ success: true, users });
+    } catch (err) {
+        console.error('[GET USERS] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 创建用户（仅管理员）
+app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const { username, password, role = 'user' } = req.body;
+        
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password required' });
+        }
+        
+        // 检查用户名是否已存在
+        const existingUser = await db.get("SELECT id FROM users WHERE username = ?", [username]);
+        if (existingUser) {
+            return res.status(400).json({ error: 'Username already exists' });
+        }
+        
+        // 加密密码
+        const passwordHash = await bcrypt.hash(password, 10);
+        
+        // 创建用户
+        const result = await db.run(
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            [username, passwordHash, role]
+        );
+        
+        res.json({
+            success: true,
+            user: {
+                id: result.lastID,
+                username,
+                role
+            }
+        });
+    } catch (err) {
+        console.error('[CREATE USER] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 更新用户（管理员可以更新任何用户，普通用户只能更新自己的密码）
+app.put('/api/users/:id', requireAuth, async (req, res) => {
+    try {
+        const targetUserId = parseInt(req.params.id);
+        const currentUserId = req.userId || 0;
+        const isAdmin = req.user && req.user.role === 'admin';
+        const { username, password, role } = req.body;
+        
+        // 权限检查：普通用户只能修改自己的密码，管理员可以修改任何用户
+        if (!isAdmin && targetUserId !== currentUserId) {
+            return res.status(403).json({ error: 'Forbidden: You can only update your own password' });
+        }
+        
+        // 普通用户只能修改密码，不能修改用户名和角色
+        if (!isAdmin) {
+            if (username || role) {
+                return res.status(403).json({ error: 'Forbidden: You can only update your password' });
+            }
+            if (!password) {
+                return res.status(400).json({ error: 'Password is required' });
+            }
+        }
+        
+        let updateFields = [];
+        let params = [];
+        
+        if (username && isAdmin) {
+            // 检查用户名是否已被其他用户使用
+            const existingUser = await db.get("SELECT id FROM users WHERE username = ? AND id != ?", [username, targetUserId]);
+            if (existingUser) {
+                return res.status(400).json({ error: 'Username already exists' });
+            }
+            updateFields.push("username = ?");
+            params.push(username);
+        }
+        
+        if (password) {
+            const passwordHash = await bcrypt.hash(password, 10);
+            updateFields.push("password_hash = ?");
+            params.push(passwordHash);
+        }
+        
+        if (role && isAdmin) {
+            updateFields.push("role = ?");
+            params.push(role);
+        }
+        
+        if (updateFields.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+        
+        updateFields.push("updated_at = CURRENT_TIMESTAMP");
+        params.push(targetUserId);
+        
+        await db.run(
+            `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`,
+            params
+        );
+        
+        console.log('[UPDATE USER] User updated:', targetUserId, 'by:', currentUserId, 'isAdmin:', isAdmin);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[UPDATE USER] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 删除用户（仅管理员）
+app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const userId = req.params.id;
+        
+        // 不能删除自己
+        if (parseInt(userId) === req.user.id) {
+            return res.status(400).json({ error: 'Cannot delete yourself' });
+        }
+        
+        await db.run("DELETE FROM users WHERE id = ?", [userId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[DELETE USER] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2. Bookmarks (支持多用户数据隔离)
+app.get('/api/bookmarks', requireAuth, async (req, res) => {
+    try {
+        const userId = req.userId || 0;
+        
+        // 优先从user_data表获取
+        try {
+            const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'bookmarks'", [userId]);
+            if (userRow) {
+                return res.json(JSON.parse(userRow.value));
+            }
+        } catch (err) {
+            // user_data表可能不存在，继续使用旧方式
+        }
+        
+        // 向后兼容：从app_data表获取（仅当userId为0时，即旧的管理员账号）
+        // 新用户不应该看到旧数据
+        if (userId === 0) {
+            const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+            res.json(JSON.parse(row ? row.value : '[]'));
+        } else {
+            // 新用户返回空数组
+            res.json([]);
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/bookmarks', requireAuth, async (req, res) => {
+    try {
+        const userId = req.userId || 0;
+        
+        // 输入验证
+        if (!Array.isArray(req.body)) {
+            return res.status(400).json({ error: 'Invalid bookmarks format' });
+        }
+        
+        // 保存到user_data表（多用户模式）
+        try {
+            await db.run(
+                "INSERT OR REPLACE INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                [userId, 'bookmarks', JSON.stringify(req.body)]
+            );
+            return res.json({ success: true });
+        } catch (err) {
+            // 如果user_data表不存在，使用旧方式
+            if (err.message.includes('no such table')) {
+                await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", ['bookmarks', JSON.stringify(req.body)]);
+                return res.json({ success: true });
+            }
+            throw err;
+        }
+        
+        await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", ['bookmarks', JSON.stringify(req.body)]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Save bookmarks error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 5. Click Statistics API (支持多用户数据隔离)
+app.post('/api/bookmark/click', requireAuth, async (req, res) => {
+    try {
+        const userId = req.userId || 0;
+        const { url, name, icon } = req.body;
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+
+        // 从user_data表获取当前用户的统计数据
+        let stats = {};
+        try {
+            const userStatsRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'click_stats'", [userId]);
+            if (userStatsRow && userStatsRow.value) {
+                stats = JSON.parse(userStatsRow.value);
+            }
+        } catch (err) {
+            // user_data表可能不存在，使用旧方式（向后兼容）
+            if (userId === 0) {
+                const statsRow = await db.get("SELECT value FROM app_data WHERE key = 'click_stats'");
+                if (statsRow && statsRow.value) {
+                    stats = JSON.parse(statsRow.value);
+                }
+            }
+        }
+
+        // 更新点击次数（使用 URL 作为唯一标识）
+        if (!stats[url]) {
+            stats[url] = {
+                url,
+                name: name || '未知网站',
+                icon: icon || '🔗',
+                logo: null, // 存储favicon URL
+                count: 0
+            };
+        }
+        stats[url].count = (stats[url].count || 0) + 1;
+        // 更新名称和图标（可能已更改）
+        if (name) stats[url].name = name;
+        if (icon) stats[url].icon = icon;
+        
+        // 如果没有logo，尝试生成favicon URL
+        if (!stats[url].logo) {
+            try {
+                const urlObj = new URL(url);
+                const domain = urlObj.hostname;
+                
+                // 跳过本地URL（localhost、127.0.0.1、本地IP等）
+                if (domain !== 'localhost' && 
+                    domain !== '127.0.0.1' && 
+                    !domain.startsWith('192.168.') && 
+                    !domain.startsWith('10.') && 
+                    !domain.startsWith('172.') &&
+                    domain !== '0.0.0.0') {
+                    stats[url].logo = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+                }
+            } catch (e) {
+                // URL无效，忽略
+            }
+        }
+
+        // 保存到user_data表（多用户模式）
+        try {
+            await db.run(
+                "INSERT OR REPLACE INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                [userId, 'click_stats', JSON.stringify(stats)]
+            );
+        } catch (err) {
+            // 如果user_data表不存在，使用旧方式（向后兼容）
+            if (err.message.includes('no such table') && userId === 0) {
+                await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+                    ['click_stats', JSON.stringify(stats)]);
+            } else {
+                throw err;
+            }
+        }
+        
+        res.json({ success: true, count: stats[url].count });
+    } catch (err) {
+        console.error('Save click stats error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 6. 书签同步API（用于浏览器扩展）
+app.post('/api/bookmark/sync', async (req, res) => {
+    try {
+        const { category, bookmark, action } = req.body;
+        
+        if (!bookmark || !bookmark.url) {
+            return res.status(400).json({ error: 'Invalid bookmark data' });
+        }
+        
+        // 获取当前书签数据
+        const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+        let bookmarks = row ? JSON.parse(row.value) : [];
+        
+        if (!Array.isArray(bookmarks)) {
+            bookmarks = [];
+        }
+        
+        const categoryName = category || '书签栏';
+        
+        if (action === 'created' || action === 'updated' || action === 'moved') {
+            // 如果是移动操作，先从旧分类中删除
+            if (action === 'moved') {
+                let moved = false;
+                for (let i = 0; i <bookmarks.length; i++) {
+                    const cat = bookmarks[i];
+                    const itemIndex = cat.items.findIndex(item => item.url === bookmark.url);
+                    if (itemIndex >= 0) {
+                        cat.items.splice(itemIndex, 1);
+                        moved = true;
+                        console.log('[书签同步] 从分类移除书签:', cat.category, bookmark.name);
+                        break;
+                    }
+                }
+            }
+            
+            // 查找或创建分类
+            let categoryIndex = bookmarks.findIndex(cat => cat.category === categoryName);
+            
+            if (categoryIndex === -1) {
+                // 创建新分类
+                bookmarks.push({
+                    category: categoryName,
+                    items: []
+                });
+                categoryIndex = bookmarks.length - 1;
+            }
+            
+            // 检查书签是否已存在（基于URL）
+            const categoryItems = bookmarks[categoryIndex].items;
+            const existingIndex = categoryItems.findIndex(item => item.url === bookmark.url);
+            
+            if (existingIndex >= 0) {
+                // 更新现有书签
+                categoryItems[existingIndex] = {
+                    ...categoryItems[existingIndex],
+                    ...bookmark
+                };
+                console.log('[书签同步] 更新书签:', bookmark.name, '在分类:', categoryName);
+            } else {
+                // 添加新书签
+                categoryItems.push(bookmark);
+                console.log('[书签同步] 添加书签:', bookmark.name, '到分类:', categoryName);
+            }
+            
+            // 保存书签
+            await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+                ['bookmarks', JSON.stringify(bookmarks)]);
+            
+            res.json({ 
+                success: true, 
+                message: action === 'created' ? '书签已添加' : (action === 'moved' ? '书签已移动' : '书签已更新'),
+                category: categoryName
+            });
+            
+        } else if (action === 'removed') {
+            // 删除书签（基于URL匹配）
+            let removed = false;
+            
+            for (let i = 0; i < bookmarks.length; i++) {
+                const category = bookmarks[i];
+                const itemIndex = category.items.findIndex(item => item.url === bookmark.url);
+                
+                if (itemIndex >= 0) {
+                    category.items.splice(itemIndex, 1);
+                    removed = true;
+                    console.log('[书签同步] 删除书签:', bookmark.url, '从分类:', category.category);
+                    
+                    // 如果分类为空，可选择删除分类（这里保留空分类）
+                    break;
+                }
+            }
+            
+            if (removed) {
+                await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+                    ['bookmarks', JSON.stringify(bookmarks)]);
+                res.json({ success: true, message: '书签已删除' });
+            } else {
+                res.json({ success: false, message: '未找到要删除的书签' });
+            }
+        } else {
+            res.status(400).json({ error: 'Invalid action' });
+        }
+        
+    } catch (err) {
+        console.error('书签同步错误:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 7. 批量同步所有书签API（用于初始同步）
+app.post('/api/bookmark/sync-all', async (req, res) => {
+    try {
+        const { bookmarks: bookmarksByCategory } = req.body;
+        
+        if (!bookmarksByCategory || typeof bookmarksByCategory !== 'object') {
+            return res.status(400).json({ error: 'Invalid bookmarks data format' });
+        }
+        
+        // 获取当前书签数据
+        const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+        let existingBookmarks = row ? JSON.parse(row.value) : [];
+        
+        if (!Array.isArray(existingBookmarks)) {
+            existingBookmarks = [];
+        }
+        
+        // 统计信息
+        let totalAdded = 0;
+        let totalUpdated = 0;
+        let categoriesCreated = 0;
+        
+        // 处理每个分类
+        for (const [categoryName, bookmarkList] of Object.entries(bookmarksByCategory)) {
+            if (!Array.isArray(bookmarkList) || bookmarkList.length === 0) {
+                continue;
+            }
+            
+            // 查找或创建分类
+            let categoryIndex = existingBookmarks.findIndex(cat => cat.category === categoryName);
+            
+            if (categoryIndex === -1) {
+                // 创建新分类
+                existingBookmarks.push({
+                    category: categoryName,
+                    items: []
+                });
+                categoryIndex = existingBookmarks.length - 1;
+                categoriesCreated++;
+            }
+            
+            const categoryItems = existingBookmarks[categoryIndex].items;
+            const existingUrls = new Set(categoryItems.map(item => item.url));
+            
+            // 添加或更新书签
+            for (const bookmark of bookmarkList) {
+                if (!bookmark || !bookmark.url) {
+                    continue;
+                }
+                
+                const existingIndex = categoryItems.findIndex(item => item.url === bookmark.url);
+                
+                if (existingIndex >= 0) {
+                    // 更新现有书签
+                    categoryItems[existingIndex] = {
+                        ...categoryItems[existingIndex],
+                        ...bookmark
+                    };
+                    totalUpdated++;
+                } else {
+                    // 添加新书签
+                    categoryItems.push(bookmark);
+                    totalAdded++;
+                }
+            }
+        }
+        
+        // 保存书签
+        await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+            ['bookmarks', JSON.stringify(existingBookmarks)]);
+        
+        const totalCategories = Object.keys(bookmarksByCategory).length;
+        const totalBookmarks = Object.values(bookmarksByCategory).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+        
+        console.log(`[书签同步-批量] 同步完成: ${totalCategories} 个分类, ${totalBookmarks} 个书签 (新增: ${totalAdded}, 更新: ${totalUpdated}, 新分类: ${categoriesCreated})`);
+        
+        res.json({ 
+            success: true,
+            message: '批量同步完成',
+            stats: {
+                categories: totalCategories,
+                categoriesCreated: categoriesCreated,
+                totalBookmarks: totalBookmarks,
+                added: totalAdded,
+                updated: totalUpdated
+            }
+        });
+        
+    } catch (err) {
+        console.error('批量书签同步错误:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/bookmark/top', requireAuth, async (req, res) => {
+    try {
+        const userId = req.userId || 0;
+        const limit = parseInt(req.query.limit) || 10;
+        
+        // 从user_data表获取当前用户的统计数据
+        let stats = {};
+        try {
+            const userStatsRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'click_stats'", [userId]);
+            if (userStatsRow && userStatsRow.value) {
+                stats = JSON.parse(userStatsRow.value);
+            }
+        } catch (err) {
+            // user_data表可能不存在，使用旧方式（向后兼容）
+            if (userId === 0) {
+                const statsRow = await db.get("SELECT value FROM app_data WHERE key = 'click_stats'");
+                if (statsRow && statsRow.value) {
+                    stats = JSON.parse(statsRow.value);
+                }
+            }
+        }
+
+        // 转换为数组并排序
+        const topBookmarks = Object.values(stats)
+            .sort((a, b) => (b.count || 0) - (a.count || 0))
+            .slice(0, limit);
+
+        res.json({ topBookmarks });
+    } catch (err) {
+        console.error('Get top bookmarks error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 清除所有用户的Top10数据（仅管理员）
+app.delete('/api/bookmark/top/all', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        // 删除所有用户的click_stats数据
+        await db.run("DELETE FROM user_data WHERE key = 'click_stats'");
+        
+        // 同时清除旧数据（app_data表中的click_stats，向后兼容）
+        await db.run("DELETE FROM app_data WHERE key = 'click_stats'");
+        
+        console.log('[CLEAR TOP10] All users top10 data cleared');
+        res.json({ success: true, message: 'All top10 data cleared successfully' });
+    } catch (err) {
+        console.error('[CLEAR TOP10] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 高德天气API代理（通过后端代理请求，避免CORS问题）
+app.get('/api/weather/amap', async (req, res) => {
+    try {
+        const city = req.query.city || '北京';
+        const amapApiKey = '65df55e5a69d2018e556998aee7246c9';
+        
+        // 城市名到高德城市编码（adcode）映射表
+        const cityAdcodeMap = {
+            '北京': '110000',
+            '上海': '310000',
+            '广州': '440100',
+            '深圳': '440300',
+            '杭州': '330100',
+            '南京': '320100',
+            '成都': '510100',
+            '武汉': '420100',
+            '西安': '610100',
+            '重庆': '500000',
+            '天津': '120000',
+            '苏州': '320500',
+            '郑州': '410100',
+            '长沙': '430100',
+            '青岛': '370200',
+            '大连': '210200',
+            '宁波': '330200',
+            '厦门': '350200',
+            '合肥': '340100',
+            '福州': '350100',
+            '石家庄': '130100',
+            '哈尔滨': '230100',
+            '长春': '220100',
+            '沈阳': '210100',
+            '济南': '370100',
+            '太原': '140100',
+            '南昌': '360100',
+            '南宁': '450100',
+            '海口': '460100',
+            '昆明': '530100',
+            '贵阳': '520100',
+            '兰州': '620100',
+            '银川': '640100',
+            '西宁': '630100',
+            '乌鲁木齐': '650100',
+            '拉萨': '540100'
+        };
+        
+        const adcode = cityAdcodeMap[city] || cityAdcodeMap['北京']; // 默认使用北京
+        
+        // 高德天气API URL
+        const amapWeatherUrl = `https://restapi.amap.com/v3/weather/weatherInfo?key=${amapApiKey}&city=${adcode}&extensions=base&output=JSON`;
+        
+        try {
+            const amapResponse = await new Promise((resolve, reject) => {
+                const options = {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'application/json'
+                    },
+                    timeout: 10000
+                };
+                
+                const request = https.get(amapWeatherUrl, options, (response) => {
+                    let data = '';
+                    response.on('data', (chunk) => { data += chunk; });
+                    response.on('end', () => {
+                        try {
+                            if (response.statusCode === 200) {
+                                resolve(JSON.parse(data));
+                            } else {
+                                reject(new Error(`HTTP ${response.statusCode}`));
+                            }
+                        } catch (e) {
+                            reject(e);
+                        }
+                    });
+                });
+                
+                request.on('error', reject);
+                request.setTimeout(10000, () => {
+                    request.destroy();
+                    reject(new Error('Request timeout'));
+                });
+            });
+            
+            // 解析高德天气API返回的数据
+            // 高德API返回格式：{ status: '1', count: '1', info: 'OK', infocode: '10000', lives: [{...}] }
+            if (amapResponse && amapResponse.status === '1' && amapResponse.lives && amapResponse.lives.length > 0) {
+                const weatherData = amapResponse.lives[0];
+                const temp = weatherData.temperature; // 温度，单位：摄氏度
+                const description = weatherData.weather; // 天气现象
+                const weatherCode = weatherData.weathercode; // 天气现象编码
+                const icon = getWeatherIconFromCode(weatherCode);
+                
+                if (temp !== undefined && temp !== null) {
+                    return res.json({
+                        success: true,
+                        temp: parseInt(temp),
+                        description: description || '晴',
+                        icon: icon
+                    });
+                }
+            } else {
+                console.log('高德天气API返回错误:', amapResponse.info || amapResponse.message);
+            }
+        } catch (amapError) {
+            console.log('高德天气API失败:', amapError.message);
+        }
+        
+        // 使用wttr.in API（更可靠，修复SSL问题）
+        const wttrUrl = `https://wttr.in/${encodeURIComponent(city)}?format=j1`;
+        
+        try {
+            const wttrResponse = await new Promise((resolve, reject) => {
+                const options = {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'application/json'
+                    },
+                    // 修复SSL问题：允许不安全的SSL连接（仅用于wttr.in）
+                    rejectUnauthorized: false,
+                    timeout: 10000
+                };
+                
+                const request = https.get(wttrUrl, options, (response) => {
+                    let data = '';
+                    response.on('data', (chunk) => { data += chunk; });
+                    response.on('end', () => {
+                        try {
+                            if (response.statusCode === 200) {
+                                resolve(JSON.parse(data));
+                            } else {
+                                reject(new Error(`HTTP ${response.statusCode}`));
+                            }
+                        } catch (e) {
+                            reject(e);
+                        }
+                    });
+                });
+                
+                request.on('error', reject);
+                request.setTimeout(10000, () => {
+                    request.destroy();
+                    reject(new Error('Request timeout'));
+                });
+            });
+            
+            if (wttrResponse && wttrResponse.current_condition && wttrResponse.current_condition[0]) {
+                const current = wttrResponse.current_condition[0];
+                const temp = current.temp_C;
+                const description = current.lang_zh && current.lang_zh[0] ?
+                    current.lang_zh[0].value : current.weatherDesc[0].value;
+                const icon = getWeatherIconFromCode(current.weatherCode);
+                
+                return res.json({
+                    success: true,
+                    temp: temp,
+                    description: description,
+                    icon: icon
+                });
+            }
+        } catch (wttrError) {
+            console.log('wttr.in API失败:', wttrError.message);
+        }
+        
+        // 如果都失败了，返回错误
+        res.json({ success: false, error: '无法获取天气数据' });
+    } catch (error) {
+        console.error('天气API错误:', error.message);
+        res.json({ success: false, error: error.message });
+    }
+});
+
+// 辅助函数：根据天气代码返回图标（支持高德天气和通用天气代码）
+function getWeatherIconFromCode(code) {
+    if (!code) return '☀️';
+    const codeStr = String(code).trim();
+    const codeNum = parseInt(code);
+    
+    // 高德天气代码映射（根据高德天气API文档）
+    // 高德天气代码通常是字符串形式，如 "01", "02" 等
+    if (codeStr === '01' || codeStr === '00' || codeNum === 113 || codeNum === 100 || codeNum === 0 || codeNum === 1) return '☀️'; // 晴
+    if (codeStr === '02' || codeNum === 116 || codeNum === 101 || codeNum === 102 || codeNum === 2) return '⛅'; // 多云
+    if (codeStr === '03' || codeNum === 119 || codeNum === 103 || codeNum === 3 || codeNum === 4) return '☁️'; // 阴
+    if (codeStr === '04' || codeStr === '05' || codeStr === '06' || codeStr === '07' || codeStr === '08' || 
+        codeStr === '09' || codeStr === '10' || codeStr === '11' || codeStr === '12' ||
+        (codeNum >= 5 && codeNum <= 12) || (codeNum >= 176 && codeNum <= 263) || (codeNum >= 300 && codeNum <= 399)) return '🌧️'; // 雨
+    if (codeStr === '13' || codeStr === '14' || codeStr === '15' || codeStr === '16' || codeStr === '17' || codeStr === '18' ||
+        (codeNum >= 13 && codeNum <= 18) || (codeNum >= 323 && codeNum <= 395 && codeNum % 2 === 0) || (codeNum >= 400 && codeNum <= 499)) return '❄️'; // 雪
+    if (codeStr === '19' || codeStr === '20' || codeStr === '21' || codeStr === '22' || codeStr === '23' ||
+        (codeNum >= 19 && codeNum <= 23) || (codeNum >= 26 && codeNum <= 30) || codeNum >= 500) return '🌫️'; // 雾/霾
+    if (codeStr === '24' || codeStr === '25' || codeNum === 395 || codeNum === 200) return '⛈️'; // 雷暴
+    if (codeStr === '26' || codeStr === '27' || codeStr === '28' || codeStr === '29' || codeStr === '30' || 
+        codeStr === '31' || codeStr === '32' || codeStr === '33' || codeStr === '34' || codeStr === '35' ||
+        codeStr === '36' || codeStr === '37' || codeStr === '38') return '🌧️'; // 其他雨天
+    
+    // 通用天气代码映射（兼容其他API）
+    if (codeNum === 122) return '☁️'; // 阴
+    if (codeNum >= 266 && codeNum <= 299) return '🌧️'; // 雨
+    if (codeNum >= 302 && codeNum <= 301) return '🌧️'; // 雨
+    
+    return '☀️'; // 默认返回晴天图标
+}
+
+// 3. Dashboard Config (支持多用户数据隔离)
+app.get('/api/config', requireAuth, async (req, res) => {
+    try {
+        const userId = req.userId || 0;
+        
+        // 优先从user_data表获取
+        try {
+            const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'dashboard_config'", [userId]);
+            if (userRow) {
+                return res.json(JSON.parse(userRow.value));
+            }
+        } catch (err) {
+            // user_data表可能不存在，继续使用旧方式
+        }
+        
+        // 向后兼容：从app_data表获取（仅当userId为0时，即旧的管理员账号）
+        // 新用户不应该看到旧数据
+        if (userId === 0) {
+            const row = await db.get("SELECT value FROM app_data WHERE key = 'dashboard_config'");
+            const config = row ? JSON.parse(row.value) : {};
+            // 确保有默认主题
+            if (!config.theme) {
+                config.theme = 'dark';
+            }
+            res.json(config);
+        } else {
+            // 新用户返回默认配置（包含暗色主题）
+            res.json({ theme: 'dark' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/config', requireAuth, async (req, res) => {
+    try {
+        const userId = req.userId || 0;
+        
+        // 保存到user_data表（多用户模式）
+        try {
+            await db.run(
+                "INSERT OR REPLACE INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                [userId, 'dashboard_config', JSON.stringify(req.body)]
+            );
+            return res.json({ success: true });
+        } catch (err) {
+            // 如果user_data表不存在，使用旧方式
+            if (err.message.includes('no such table')) {
+                await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", ['dashboard_config', JSON.stringify(req.body)]);
+                return res.json({ success: true });
+            }
+            throw err;
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 6. Todos API (支持多用户数据隔离)
+app.get('/api/todos', requireAuth, async (req, res) => {
+    try {
+        const userId = req.userId || 0;
+        console.log('[TODOS] Get request received for user:', userId);
+        
+        // 优先从user_data表获取
+        try {
+            const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'todos'", [userId]);
+            if (userRow) {
+                const todos = JSON.parse(userRow.value);
+                console.log('[TODOS] Retrieved', todos.length, 'todos from user_data');
+                return res.json(todos);
+            }
+        } catch (err) {
+            // user_data表可能不存在，继续使用旧方式
+            if (!err.message.includes('no such table')) {
+                console.error('[TODOS] Error getting from user_data:', err);
+            }
+        }
+        
+        // 向后兼容：从app_data表获取（仅当userId为0时，即旧的管理员账号）
+        // 新用户不应该看到旧数据
+        if (userId === 0) {
+            const row = await db.get("SELECT value FROM app_data WHERE key = 'todos'");
+            const todos = row ? JSON.parse(row.value) : [];
+            console.log('[TODOS] Retrieved', todos.length, 'todos from app_data (fallback)');
+            res.json(todos);
+        } else {
+            // 新用户返回空数组
+            console.log('[TODOS] New user, returning empty array');
+            res.json([]);
+        }
+    } catch (err) {
+        console.error('[TODOS] Get error:', err);
+        console.error('[TODOS] Error stack:', err.stack);
+        res.status(500).json({ error: err.message || 'Internal server error' });
+    }
+});
+
+app.post('/api/todos', requireAuth, async (req, res) => {
+    try {
+        const userId = req.userId || 0;
+        console.log('[TODOS] Save request received for user:', userId);
+        console.log('[TODOS] Request body type:', typeof req.body);
+        console.log('[TODOS] Request body is array:', Array.isArray(req.body));
+        
+        if (!Array.isArray(req.body)) {
+            console.error('[TODOS] Invalid format: not an array');
+            return res.status(400).json({ error: 'Invalid todos format: must be an array' });
+        }
+        
+        const todosJson = JSON.stringify(req.body);
+        console.log('[TODOS] Todos count:', req.body.length);
+        console.log('[TODOS] Todos JSON length:', todosJson.length);
+        
+        // 保存到user_data表（多用户模式）
+        try {
+            await db.run(
+                "INSERT OR REPLACE INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                [userId, 'todos', todosJson]
+            );
+            console.log('[TODOS] Saved to user_data table');
+            return res.json({ success: true });
+        } catch (err) {
+            // 如果user_data表不存在，使用旧方式
+            if (err.message.includes('no such table')) {
+                await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", ['todos', todosJson]);
+                console.log('[TODOS] Saved to app_data table (fallback)');
+                return res.json({ success: true });
+            }
+            throw err;
+        }
+        
+    } catch (err) {
+        console.error('[TODOS] Save error:', err);
+        console.error('[TODOS] Error stack:', err.stack);
+        res.status(500).json({ error: err.message || 'Internal server error' });
+    }
+});
+
+// ===== 备份管理API =====
+
+// 获取备份配置列表
+app.get('/api/backup/configs', requireAuth, async (req, res) => {
+    try {
+        const configs = await db.all(
+            "SELECT id, backup_type, config, enabled, schedule, last_backup FROM backup_configs WHERE user_id = ? ORDER BY created_at DESC",
+            [req.userId || 0]
+        );
+        
+        const result = configs.map(c => ({
+            id: c.id,
+            backupType: c.backup_type,
+            config: JSON.parse(c.config),
+            enabled: c.enabled === 1,
+            schedule: c.schedule,
+            lastBackup: c.last_backup
+        }));
+        
+        res.json({ success: true, configs: result });
+    } catch (err) {
+        console.error('[GET BACKUP CONFIGS] Error:', err);
+        // 如果backup_configs表不存在，返回空数组
+        if (err.message.includes('no such table')) {
+            return res.json({ success: true, configs: [] });
+        }
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 创建备份配置
+app.post('/api/backup/configs', requireAuth, async (req, res) => {
+    try {
+        const { backupType, config, enabled = true, schedule } = req.body;
+        
+        if (!backupType || !config) {
+            return res.status(400).json({ error: 'backupType and config required' });
+        }
+        
+        const result = await db.run(
+            "INSERT INTO backup_configs (user_id, backup_type, config, enabled, schedule) VALUES (?, ?, ?, ?, ?)",
+            [req.userId || 0, backupType, JSON.stringify(config), enabled ? 1 : 0, schedule || null]
+        );
+        
+        res.json({ success: true, id: result.lastID });
+    } catch (err) {
+        console.error('[CREATE BACKUP CONFIG] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 更新备份配置
+app.put('/api/backup/configs/:id', requireAuth, async (req, res) => {
+    try {
+        const configId = req.params.id;
+        const { backupType, config, enabled, schedule } = req.body;
+        
+        // 验证配置属于当前用户
+        const existing = await db.get("SELECT user_id FROM backup_configs WHERE id = ?", [configId]);
+        if (!existing || existing.user_id !== (req.userId || 0)) {
+            return res.status(404).json({ error: 'Backup config not found' });
+        }
+        
+        let updateFields = [];
+        let params = [];
+        
+        if (backupType) {
+            updateFields.push("backup_type = ?");
+            params.push(backupType);
+        }
+        
+        if (config) {
+            updateFields.push("config = ?");
+            params.push(JSON.stringify(config));
+        }
+        
+        if (enabled !== undefined) {
+            updateFields.push("enabled = ?");
+            params.push(enabled ? 1 : 0);
+        }
+        
+        if (schedule !== undefined) {
+            updateFields.push("schedule = ?");
+            params.push(schedule);
+        }
+        
+        if (updateFields.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+        
+        updateFields.push("updated_at = CURRENT_TIMESTAMP");
+        params.push(configId);
+        
+        await db.run(
+            `UPDATE backup_configs SET ${updateFields.join(', ')} WHERE id = ?`,
+            params
+        );
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[UPDATE BACKUP CONFIG] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 删除备份配置
+app.delete('/api/backup/configs/:id', requireAuth, async (req, res) => {
+    try {
+        const configId = req.params.id;
+        
+        // 验证配置属于当前用户
+        const existing = await db.get("SELECT user_id FROM backup_configs WHERE id = ?", [configId]);
+        if (!existing || existing.user_id !== (req.userId || 0)) {
+            return res.status(404).json({ error: 'Backup config not found' });
+        }
+        
+        await db.run("DELETE FROM backup_configs WHERE id = ?", [configId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[DELETE BACKUP CONFIG] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 执行手动备份
+app.post('/api/backup/run/:id', requireAuth, async (req, res) => {
+    try {
+        const configId = req.params.id;
+        
+        // 获取备份配置
+        const backupConfig = await db.get(
+            "SELECT * FROM backup_configs WHERE id = ? AND user_id = ?",
+            [configId, req.userId || 0]
+        );
+        
+        if (!backupConfig) {
+            return res.status(404).json({ error: 'Backup config not found' });
+        }
+        
+        if (!backupConfig.enabled) {
+            return res.status(400).json({ error: 'Backup config is disabled' });
+        }
+        
+        // 异步执行备份（不阻塞响应）
+        executeBackup(backupConfig, req.userId || 0).catch(err => {
+            console.error('[BACKUP] Error:', err);
+        });
+        
+        res.json({ success: true, message: 'Backup started' });
+    } catch (err) {
+        console.error('[RUN BACKUP] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 获取备份历史
+app.get('/api/backup/history', requireAuth, async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 50;
+        const history = await db.all(
+            "SELECT id, backup_config_id, backup_type, status, file_path, file_size, error_message, created_at FROM backup_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            [req.userId || 0, limit]
+        );
+        
+        res.json({ success: true, history });
+    } catch (err) {
+        console.error('[GET BACKUP HISTORY] Error:', err);
+        // 如果backup_history表不存在，返回空数组
+        if (err.message.includes('no such table')) {
+            return res.json({ success: true, history: [] });
+        }
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 恢复备份
+app.post('/api/backup/restore/:id', requireAuth, async (req, res) => {
+    try {
+        const backupId = req.params.id;
+        
+        // 获取备份记录
+        const backupRecord = await db.get(
+            "SELECT * FROM backup_history WHERE id = ? AND user_id = ?",
+            [backupId, req.userId || 0]
+        );
+        
+        if (!backupRecord) {
+            return res.status(404).json({ error: 'Backup record not found' });
+        }
+        
+        if (backupRecord.status !== 'success') {
+            return res.status(400).json({ error: 'Cannot restore a failed backup' });
+        }
+        
+        // 读取备份文件
+        let backupData;
+        const filePath = backupRecord.file_path;
+        
+        if (filePath && (filePath.startsWith('http://') || filePath.startsWith('https://'))) {
+            // 阿里云OSS备份，从URL下载（简化处理，实际应该使用OSS SDK）
+            try {
+                const https = require('https');
+                const http = require('http');
+                const url = require('url');
+                
+                const parsedUrl = new URL(filePath);
+                const protocol = parsedUrl.protocol === 'https:' ? https : http;
+                
+                const fileContent = await new Promise((resolve, reject) => {
+                    protocol.get(filePath, (response) => {
+                        let data = '';
+                        response.on('data', (chunk) => { data += chunk; });
+                        response.on('end', () => { resolve(data); });
+                        response.on('error', reject);
+                    }).on('error', reject);
+                });
+                
+                backupData = JSON.parse(fileContent);
+            } catch (err) {
+                return res.status(500).json({ error: `Failed to download backup from cloud: ${err.message}` });
+            }
+        } else if (filePath && filePath.startsWith('baidu://')) {
+            // 百度云备份，从本地backups目录读取
+            const fileName = path.basename(filePath.replace('baidu://', ''));
+            const localPath = path.join(__dirname, 'backups', 'baidu', `baidu_${backupRecord.backup_type}_${fileName}`);
+            
+            if (!fs.existsSync(localPath)) {
+                return res.status(404).json({ error: 'Backup file not found' });
+            }
+            
+            const fileContent = fs.readFileSync(localPath, 'utf-8');
+            backupData = JSON.parse(fileContent);
+        } else if (filePath && fs.existsSync(filePath)) {
+            // 本地备份文件
+            const fileContent = fs.readFileSync(filePath, 'utf-8');
+            backupData = JSON.parse(fileContent);
+        } else {
+            // 尝试从backups目录查找
+            const fileName = filePath ? path.basename(filePath) : `backup_${req.userId || 0}_*.json`;
+            const possiblePaths = [
+                path.join(__dirname, 'backups', fileName),
+                path.join(__dirname, 'backups', 'local', fileName)
+            ];
+            
+            let found = false;
+            for (const possiblePath of possiblePaths) {
+                if (fs.existsSync(possiblePath)) {
+                    const fileContent = fs.readFileSync(possiblePath, 'utf-8');
+                    backupData = JSON.parse(fileContent);
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                return res.status(404).json({ error: 'Backup file not found' });
+            }
+        }
+        
+        // 恢复用户数据
+        // 删除现有用户数据
+        await db.run("DELETE FROM user_data WHERE user_id = ?", [req.userId || 0]);
+        
+        // 恢复备份数据
+        for (const [key, value] of Object.entries(backupData)) {
+            await db.run(
+                "INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                [req.userId || 0, key, typeof value === 'string' ? value : JSON.stringify(value)]
+            );
+        }
+        
+        console.log('[BACKUP RESTORE] Restored backup for user:', req.userId || 0);
+        res.json({ success: true, message: 'Backup restored successfully' });
+    } catch (err) {
+        console.error('[BACKUP RESTORE] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 执行备份的内部函数
+async function executeBackup(backupConfig, userId) {
+    const config = JSON.parse(backupConfig.config);
+    const backupType = backupConfig.backup_type;
+    let status = 'success';
+    let filePath = null;
+    let fileSize = null;
+    let errorMessage = null;
+    
+    try {
+        // 获取用户所有数据
+        const userData = await getUserAllData(userId);
+        
+        // 创建备份文件
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupFileName = `backup_${userId}_${timestamp}.json`;
+        
+        // 根据备份类型执行备份
+        switch (backupType) {
+            case 'local':
+                filePath = await backupToLocal(userData, config.path || './backups', backupFileName);
+                break;
+            case 'aliyun':
+                filePath = await backupToAliyun(userData, config, backupFileName);
+                break;
+            case 'baidu':
+                filePath = await backupToBaidu(userData, config, backupFileName);
+                break;
+            default:
+                throw new Error(`Unknown backup type: ${backupType}`);
+        }
+        
+        // 获取文件大小
+        if (filePath && fs.existsSync(filePath)) {
+            const stats = fs.statSync(filePath);
+            fileSize = stats.size;
+        }
+        
+        // 更新最后备份时间
+        await db.run(
+            "UPDATE backup_configs SET last_backup = CURRENT_TIMESTAMP WHERE id = ?",
+            [backupConfig.id]
+        );
+        
+    } catch (err) {
+        status = 'failed';
+        errorMessage = err.message;
+        console.error('[BACKUP] Error:', err);
+    }
+    
+    // 记录备份历史
+    await db.run(
+        "INSERT INTO backup_history (user_id, backup_config_id, backup_type, status, file_path, file_size, error_message) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [userId, backupConfig.id, backupType, status, filePath, fileSize, errorMessage]
+    );
+}
+
+// 获取用户所有数据
+async function getUserAllData(userId) {
+    try {
+        // 获取用户的所有数据
+        const userDataRows = await db.all(
+            "SELECT key, value FROM user_data WHERE user_id = ?",
+            [userId]
+        );
+        
+        const userData = {};
+        userDataRows.forEach(row => {
+            try {
+                userData[row.key] = JSON.parse(row.value);
+            } catch (e) {
+                userData[row.key] = row.value;
+            }
+        });
+        
+        return userData;
+    } catch (err) {
+        // 如果user_data表不存在，返回空数据
+        if (err.message.includes('no such table')) {
+            return {};
+        }
+        throw err;
+    }
+}
+
+// 备份到本地/NAS
+async function backupToLocal(data, backupPath, fileName) {
+    // 确保备份目录存在
+    if (!fs.existsSync(backupPath)) {
+        fs.mkdirSync(backupPath, { recursive: true });
+    }
+    
+    const filePath = path.join(backupPath, fileName);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    
+    return filePath;
+}
+
+// 备份到阿里云OSS
+async function backupToAliyun(data, config, fileName) {
+    try {
+        const OSS = require('ali-oss');
+        
+        const client = new OSS({
+            region: config.region,
+            accessKeyId: config.accessKeyId,
+            accessKeySecret: config.accessKeySecret,
+            bucket: config.bucket
+        });
+        
+        // 构建文件路径（包含前缀）
+        const objectName = config.prefix ? `${config.prefix.replace(/\/$/, '')}/${fileName}` : fileName;
+        
+        // 将数据转换为Buffer
+        const buffer = Buffer.from(JSON.stringify(data, null, 2), 'utf-8');
+        
+        // 上传文件
+        const result = await client.put(objectName, buffer);
+        
+        console.log('[ALIYUN OSS] Backup uploaded:', result.url);
+        
+        // 返回OSS URL作为文件路径标识
+        return result.url;
+    } catch (err) {
+        console.error('[ALIYUN OSS] Upload error:', err);
+        throw new Error(`阿里云OSS上传失败: ${err.message}`);
+    }
+}
+
+// 备份到百度云
+async function backupToBaidu(data, config, fileName) {
+    try {
+        // 百度云对象存储BOS需要使用bos-sdk
+        // 如果未安装，使用通用的HTTP API方式
+        const https = require('https');
+        const crypto = require('crypto');
+        const { URL } = require('url');
+        
+        const accessKeyId = config.accessKeyId;
+        const secretAccessKey = config.secretKey;
+        const bucket = config.bucket;
+        const region = config.region || 'bj'; // 默认北京区域
+        
+        // 构建文件路径
+        const objectName = config.prefix ? `${config.prefix.replace(/\/$/, '')}/${fileName}` : fileName;
+        
+        // 构建BOS API endpoint
+        const endpoint = `${bucket}.bcebos.com`;
+        
+        // 创建签名和时间戳
+        const timestamp = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
+        const expirationInSeconds = 3600;
+        const authString = `bce-auth-v1/${accessKeyId}/${timestamp}/${expirationInSeconds}`;
+        
+        // 简化版：使用AccessKey和SecretKey生成签名
+        // 实际生产环境应该使用百度云BOS SDK
+        const dataString = JSON.stringify(data, null, 2);
+        const buffer = Buffer.from(dataString, 'utf-8');
+        
+        // 这里使用简化的实现，实际应该使用百度云BOS SDK
+        // const BOS = require('baidubce-sdk');
+        // const bosClient = new BOS.BosClient({
+        //     credentials: {
+        //         ak: accessKeyId,
+        //         sk: secretAccessKey
+        //     },
+        //     endpoint: `https://${endpoint}`
+        // });
+        // const result = await bosClient.putObject(bucket, objectName, buffer);
+        
+        // 临时方案：保存到本地，并返回标识符
+        // 实际部署时应该使用百度云BOS SDK
+        const localBackupPath = path.join(__dirname, 'backups', 'baidu');
+        if (!fs.existsSync(localBackupPath)) {
+            fs.mkdirSync(localBackupPath, { recursive: true });
+        }
+        
+        const localFilePath = path.join(localBackupPath, `baidu_${bucket}_${fileName}`);
+        fs.writeFileSync(localFilePath, buffer);
+        
+        console.log('[BAIDU CLOUD] Backup saved locally (BOS SDK not implemented):', localFilePath);
+        
+        // 返回标识符
+        return `baidu://${bucket}/${objectName}`;
+    } catch (err) {
+        console.error('[BAIDU CLOUD] Upload error:', err);
+        throw new Error(`百度云上传失败: ${err.message}`);
+    }
+}
+
+// 初始化定时备份任务
+function initBackupScheduler() {
+    // 每分钟检查一次是否有需要执行的备份任务
+    cron.schedule('* * * * *', async () => {
+        try {
+            const backupConfigs = await db.all(
+                "SELECT * FROM backup_configs WHERE enabled = 1 AND schedule IS NOT NULL"
+            );
+            
+            for (const config of backupConfigs) {
+                // 简单的cron解析（可以改进）
+                // schedule格式: "0 2 * * *" (每天凌晨2点)
+                if (shouldRunBackup(config.schedule, config.last_backup)) {
+                    executeBackup(config, config.user_id).catch(err => {
+                        console.error('[SCHEDULED BACKUP] Error:', err);
+                    });
+                }
+            }
+        } catch (err) {
+            // 如果backup_configs表不存在，忽略错误
+            if (!err.message.includes('no such table')) {
+                console.error('[BACKUP SCHEDULER] Error:', err);
+            }
+        }
+    });
+}
+
+// 检查是否应该运行备份
+function shouldRunBackup(schedule, lastBackup) {
+    // 简单的实现：如果距离上次备份超过24小时，则运行
+    if (!lastBackup) return true;
+    
+    const lastBackupTime = new Date(lastBackup).getTime();
+    const now = Date.now();
+    const hoursSinceLastBackup = (now - lastBackupTime) / (1000 * 60 * 60);
+    
+    // 默认每天备份一次
+    return hoursSinceLastBackup >= 24;
+}
+
+// 启动备份调度器
+initBackupScheduler();
+
+// 静态文件服务（必须在所有API路由之后，避免拦截API请求）
+// 设置CSP头（不允许eval和unsafe-inline脚本，但允许内联样式）
+app.use((req, res, next) => {
+    // 只对HTML文件设置CSP
+    if (req.path.endsWith('.html') || req.path === '/' || req.path === '') {
+        res.setHeader('Content-Security-Policy', 
+            "default-src 'self'; " +
+            "script-src 'self' https://fonts.googleapis.com; " +  // 允许Google Fonts的脚本
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; " +
+            "font-src 'self' https://fonts.gstatic.com data:; " +
+            "img-src 'self' data: https: http:; " +
+            "connect-src 'self'; " +
+            "frame-ancestors 'none';"
+        );
+    }
+    next();
+});
+
+app.use(express.static(path.join(__dirname, '/')));
+
+// 404 处理（捕获所有未匹配的路由）
+app.use((req, res) => {
+    // 只记录非静态资源的404
+    if (!req.path.startsWith('/js/') && !req.path.startsWith('/css/') && !req.path.startsWith('/assets/')) {
+        console.log(`[404] ${req.method} ${req.path}`);
+    }
+    // 如果是API请求，返回JSON格式的错误
+    if (req.path.startsWith('/api/')) {
+        res.status(404).json({ error: 'Not Found', path: req.path, method: req.method });
+    } else {
+        // 静态文件404由浏览器处理
+        res.status(404).send('Not Found');
+    }
+});
+
+// Start Server
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`API routes available at /api/*`);
+    console.log(`Todos API: GET /api/todos, POST /api/todos (requireAuth)`);
+    console.log(`Bookmark Sync API: POST /api/bookmark/sync, POST /api/bookmark/sync-all`);
+});

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>God's Bookmark</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+    <!-- 黑洞背景 -->
+    <canvas id="blackhole-canvas"></canvas>
+
+    <!-- 管理员侧边栏（布局设置面板）-->
+    <aside id="admin-sidebar" class="admin-sidebar">
+        <button id="admin-sidebar-close-btn" class="admin-sidebar-close-btn" title="关闭设置">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </button>
+        <div id="card-controls-list">
+            <!-- 卡片控制项会由JS动态生成 -->
+        </div>
+    </aside>
+
+    <header>
+        <div class="container">
+            <a href="index.html" class="logo">God's Bookmark</a>
+            <nav>
+                <ul>
+                    <li id="login-link-item"><a href="login.html">登录</a></li>
+                    <!-- 控制中心下拉菜单 -->
+                    <li id="control-center-item" style="display: list-item;">
+                        <button id="control-center-btn" class="control-center-btn" title="控制中心">
+                            <span class="control-center-icon">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M3 5H17M3 10H17M3 15H17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    <circle cx="4.5" cy="5" r="1" fill="currentColor"/>
+                                    <circle cx="4.5" cy="10" r="1" fill="currentColor"/>
+                                    <circle cx="4.5" cy="15" r="1" fill="currentColor"/>
+                                </svg>
+                            </span>
+                        </button>
+                        <div id="control-center-menu" class="control-center-menu" style="display: none;">
+                            <!-- 菜单内容会由 JavaScript 动态生成 -->
+                        </div>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+        <!-- 导入文件输入框（保留用于导入书签功能） -->
+        <input type="file" id="import-file" accept=".html" style="display: none;">
+    </header>
+
+    <main class="container">
+        <!-- 世界时间与日期 -->
+        <section id="datetime-section"
+            style="position: fixed; top: 0; left: 0; right: 0; width: 100%; height: 260px; margin-bottom: 0; padding-bottom: 2rem; padding-top: 0; z-index: 10; background: transparent; box-sizing: border-box; display: flex; justify-content: center; align-items: center; padding-left: 2rem; padding-right: 2rem;">
+            <!-- 中间：时间日期区域（居中，垂直居中，向下偏移50px） -->
+            <div id="datetime-content" style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-top: 50px;">
+                <!-- 主时间显示 -->
+                <div id="main-time"
+                    style="font-size: 4rem; font-weight: 700; letter-spacing: -0.05em; color: var(--text-primary);">
+                </div>
+                <!-- 日期和阴历 -->
+                <div id="date-info" style="font-size: 1rem; color: var(--text-secondary); margin-top: 0.5rem;"></div>
+            </div>
+            
+            <!-- 右侧：便签待办区域（仅在登录状态显示） -->
+            <div id="todos-section" style="display: none; position: fixed; top: 260px; left: 0; width: 320px; overflow: visible; max-height: calc(100vh - 260px - 2rem); z-index: 20; user-select: none; pointer-events: auto; transform: translateX(-310px); transition: transform 0.3s ease-out;">
+                <div style="background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid var(--card-border); border-radius: 0.75rem; padding: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <h3 id="todos-title" style="color: var(--accent-color); font-size: 1.1rem; margin: 0; cursor: pointer;" title="双击固定位置">📝 便签待办</h3>
+                        <button id="btn-add-todo" style="background: var(--accent-color); color: white; border: none; border-radius: 0.375rem; width: 24px; height: 24px; cursor: pointer; font-size: 1rem; line-height: 1; display: flex; align-items: center; justify-content: center; padding: 0;">+</button>
+                    </div>
+                    <!-- 添加待办输入框 -->
+                    <div id="add-todo-input-container" style="display: none; margin-bottom: 0.75rem;">
+                        <input type="text" id="new-todo-input" placeholder="输入待办事项或直接粘贴图片..." 
+                            style="width: 100%; padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid var(--card-border); border-radius: 0.375rem; color: var(--text-primary); font-size: 0.875rem; box-sizing: border-box;">
+                        <div id="add-todo-image-preview" style="display: none; margin-top: 0.5rem;">
+                            <img id="add-todo-image-display" src="" alt="预览图片" style="max-width: 100%; max-height: 150px; border-radius: 0.375rem;">
+                            <button id="add-todo-image-remove" style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">删除图片</button>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                            <button id="btn-add-todo-confirm" style="flex: 1; padding: 0.375rem; background: var(--success-color); color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">添加</button>
+                            <button id="btn-add-todo-cancel" style="flex: 1; padding: 0.375rem; background: transparent; color: var(--text-secondary); border: 1px solid var(--card-border); border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">取消</button>
+                        </div>
+                    </div>
+                    <!-- 待办列表 -->
+                    <div id="todos-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <!-- 待办事项会由 JS 动态生成 -->
+                    </div>
+                    <!-- 展开/收起按钮 -->
+                    <button id="todos-toggle-button" 
+                        style="display: none; width: 100%; margin-top: 0.5rem; padding: 0.5rem; background: transparent; border: 1px solid var(--card-border); border-radius: 0.375rem; cursor: pointer; text-align: center; transition: all 0.2s;">
+                        <span style="font-size: 0.75rem; color: var(--text-secondary);">展开更多 ▼</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 常用标签栏 -->
+        <section id="frequent-bookmarks-bar" class="frequent-bookmarks-bar fixed-top-section"
+            style="position: fixed; top: 260px; left: 0; right: 0; z-index: 10;">
+            <div class="frequent-bar-header">
+                <h3>🔥 上帝的指引</h3>
+                <div class="global-search-container">
+                    <div class="global-search-wrapper">
+                    <input type="text" id="global-search-input" class="global-search-input" 
+                            placeholder="admin" 
+                            autocomplete="off">
+                        <!-- 网页内搜索下拉结果 -->
+                        <div id="global-search-dropdown" class="global-search-dropdown">
+                            <div id="global-search-dropdown-results" class="global-search-dropdown-results"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="frequent-bookmarks-list" class="frequent-bookmarks-list">
+                <!-- 常用书签会由JS动态生成 -->
+            </div>
+        </section>
+
+        <!-- 全局搜索浮窗 -->
+        <div id="global-search-modal" class="global-search-modal" style="display: none;">
+            <div class="global-search-modal-content">
+                <div class="global-search-modal-header">
+                    <input type="text" id="global-search-modal-input" class="global-search-modal-input" 
+                        placeholder="搜索书签或输入关键词搜索网络..." 
+                        autocomplete="off">
+                </div>
+                <div id="global-search-results" class="global-search-results">
+                    <!-- 搜索结果会动态生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Bookmarks Section -->
+        <section>
+            <div id="bookmarks-container" class="grid grid-cols-4">
+                <!-- Bookmarks will be injected here by JS -->
+            </div>
+        </section>
+
+    </main>
+
+    <script src="js/data-manager.js"></script>
+    <script src="js/user-manager.js"></script>
+    <script src="js/backup-manager.js"></script>
+    <script src="js/blackhole.js"></script>
+    <script src="js/datetime-weather.js"></script>
+    <script src="js/dashboard-layout.js"></script>
+    <script src="js/app.js"></script>
+    <!-- Bookmark Modal -->
+    <div id="bookmark-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 1rem;">添加书签</h3>
+            <div style="margin-bottom: 1rem;">
+                <label for="bookmark-name" style="display: block; color: var(--text-secondary); margin-bottom: 0.5rem;">名称</label>
+                <input type="text" id="bookmark-name" class="input-field" placeholder="网站名称">
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                <label for="bookmark-url" style="display: block; color: var(--text-secondary); margin-bottom: 0.5rem;">网址</label>
+                <input type="url" id="bookmark-url" class="input-field" placeholder="https://example.com">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                <button id="bookmark-modal-cancel" class="btn" style="background: transparent; border: 1px solid var(--card-border);">取消</button>
+                <button id="bookmark-modal-save" class="btn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Modal -->
+    <div id="category-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 1rem;">添加分类</h3>
+            <div style="margin-bottom: 1.5rem;">
+                <label for="category-name" style="display: block; color: var(--text-secondary); margin-bottom: 0.5rem;">分类名称</label>
+                <input type="text" id="category-name" class="input-field" placeholder="例如:设计工具">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                <button id="category-modal-cancel" class="btn" style="background: transparent; border: 1px solid var(--card-border);">取消</button>
+                <button id="category-modal-save" class="btn">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Modal -->
+    <div id="custom-confirm-modal" class="custom-modal-overlay">
+        <div class="custom-modal">
+            <h3 id="custom-confirm-title">确认操作</h3>
+            <p id="custom-confirm-message">您确定要执行此操作吗？</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="custom-confirm-cancel">取消</button>
+                <button class="btn" id="custom-confirm-ok"
+                    style="background: #ef4444; color: white; border: none;">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Management Modal -->
+    <div id="user-management-modal" class="custom-modal-overlay" style="display: none;">
+        <div class="custom-modal" style="max-width: 700px; max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; color: var(--accent-color);">👥 用户管理</h3>
+                <button id="user-management-close" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.5rem; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">&times;</button>
+            </div>
+            <div style="margin-bottom: 1rem;">
+                <button id="add-user-btn" class="btn" style="background: var(--accent-color); color: white; border: none; padding: 0.5rem 1rem;">+ 添加用户</button>
+                <button id="refresh-users-btn" class="btn btn-secondary" style="margin-left: 0.5rem; padding: 0.5rem 1rem;">刷新</button>
+            </div>
+            <div id="users-list" style="max-height: 60vh; overflow-y: auto;">
+                <!-- 用户列表会由JS动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- User Edit Modal -->
+    <div id="user-edit-modal" class="custom-modal-overlay" style="display: none;">
+        <div class="custom-modal" style="max-width: 500px;">
+            <h3 id="user-edit-title">添加用户</h3>
+            <div style="margin-top: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">用户名</label>
+                <input type="text" id="user-edit-username" class="input-field" placeholder="输入用户名" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">密码</label>
+                <input type="password" id="user-edit-password" class="input-field" placeholder="输入密码（编辑用户时留空则不修改）" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">角色</label>
+                <select id="user-edit-role" class="input-field" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                    <option value="user">普通用户</option>
+                    <option value="admin">管理员</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="user-edit-cancel">取消</button>
+                <button class="btn" id="user-edit-save" style="background: var(--accent-color); color: white; border: none;">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Profile Modal (修改密码) -->
+    <div id="user-profile-modal" class="custom-modal-overlay" style="display: none;">
+        <div class="custom-modal" style="max-width: 500px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; color: var(--accent-color);">🔐 修改密码</h3>
+                <button id="user-profile-close" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.5rem; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">&times;</button>
+            </div>
+            <div style="margin-top: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">用户名</label>
+                <input type="text" id="user-profile-username" class="input-field" disabled style="width: 100%; padding: 0.5rem; margin-bottom: 1rem; opacity: 0.6;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">当前密码</label>
+                <input type="password" id="user-profile-old-password" class="input-field" placeholder="输入当前密码" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">新密码</label>
+                <input type="password" id="user-profile-new-password" class="input-field" placeholder="输入新密码" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">确认新密码</label>
+                <input type="password" id="user-profile-confirm-password" class="input-field" placeholder="再次输入新密码" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="user-profile-cancel">取消</button>
+                <button class="btn" id="user-profile-save" style="background: var(--accent-color); color: white; border: none;">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Management Modal -->
+    <div id="backup-management-modal" class="custom-modal-overlay" style="display: none;">
+        <div class="custom-modal" style="max-width: 800px; max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; color: var(--accent-color);">💾 备份管理</h3>
+                <button id="backup-management-close" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.5rem; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">&times;</button>
+            </div>
+            <div style="margin-bottom: 1rem;">
+                <button id="add-backup-config-btn" class="btn" style="background: var(--accent-color); color: white; border: none; padding: 0.5rem 1rem;">+ 添加备份配置</button>
+                <button id="refresh-backups-btn" class="btn btn-secondary" style="margin-left: 0.5rem; padding: 0.5rem 1rem;">刷新</button>
+            </div>
+            <div id="backup-configs-list" style="max-height: 60vh; overflow-y: auto;">
+                <!-- 备份配置列表会由JS动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Config Edit Modal -->
+    <div id="backup-config-edit-modal" class="custom-modal-overlay" style="display: none;">
+        <div class="custom-modal" style="max-width: 600px; max-height: 85vh; overflow-y: auto;">
+            <h3 id="backup-config-edit-title">添加备份配置</h3>
+            <div style="margin-top: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">备份类型</label>
+                <select id="backup-config-type" class="input-field" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                    <option value="local">本地/NAS</option>
+                    <option value="aliyun">阿里云OSS</option>
+                    <option value="baidu">百度云</option>
+                </select>
+                <div id="backup-config-options" style="margin-top: 1rem;">
+                    <!-- 配置选项会根据备份类型动态生成 -->
+                </div>
+                <label style="display: block; margin-bottom: 0.5rem; margin-top: 1rem; font-weight: 500; color: var(--text-primary);">启用状态</label>
+                <label style="display: flex; align-items: center; margin-bottom: 1rem; color: var(--text-primary);">
+                    <input type="checkbox" id="backup-config-enabled" checked style="margin-right: 0.5rem;">
+                    <span>启用此备份配置</span>
+                </label>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">定时计划（Cron表达式，留空则仅手动备份）</label>
+                <input type="text" id="backup-config-schedule" class="input-field" placeholder="例如: 0 2 * * * (每天凌晨2点)" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
+                <small style="color: var(--text-secondary);">格式: 分钟 小时 日 月 星期。示例: 0 2 * * * 表示每天凌晨2点</small>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="backup-config-edit-cancel">取消</button>
+                <button class="btn" id="backup-config-edit-save" style="background: var(--accent-color); color: white; border: none;">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup History Detail Modal -->
+    <div id="backup-history-detail-modal" class="custom-modal-overlay" style="display: none;">
+        <div class="custom-modal" style="max-width: 700px; max-height: 80vh; overflow-y: auto;">
+            <h3>备份历史详情</h3>
+            <div id="backup-history-detail-content" style="margin-top: 1rem;">
+                <!-- 详情内容会动态生成 -->
+            </div>
+            <div class="modal-actions" style="margin-top: 1rem;">
+                <button class="btn btn-secondary" id="backup-history-detail-close">关闭</button>
+                <button class="btn" id="backup-history-detail-restore" style="background: #10b981; color: white; border: none; display: none;">恢复此备份</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

@@ -1,0 +1,4967 @@
+// Main App Logic dependent on DataManager
+
+// 切换单个菜单显示（用于单独按钮）
+window.toggleHubMenu = function(menuId) {
+    const menu = document.getElementById(menuId);
+    const wrapper = menu ? menu.closest('.hub-button-wrapper') : null;
+    
+    if (!menu || !wrapper) return;
+    
+    const isActive = menu.classList.contains('active') || 
+                     menu.style.opacity === '1' || 
+                     menu.style.visibility === 'visible';
+    
+    if (isActive) {
+        // 关闭当前菜单
+        menu.classList.remove('active');
+        menu.style.opacity = '0';
+        menu.style.visibility = 'hidden';
+        wrapper.classList.remove('active');
+    } else {
+        // 关闭其他菜单
+        closeHubMenus();
+        
+        // 打开当前菜单
+        menu.classList.add('active');
+        menu.style.opacity = '1';
+        menu.style.visibility = 'visible';
+        wrapper.classList.add('active');
+    }
+};
+
+// 关闭所有菜单
+window.closeHubMenus = function() {
+    document.querySelectorAll('.hub-menu').forEach(menu => {
+        menu.classList.remove('active');
+        menu.style.opacity = '0';
+        menu.style.visibility = 'hidden';
+    });
+    document.querySelectorAll('.hub-button-wrapper').forEach(wrapper => {
+        wrapper.classList.remove('active');
+    });
+};
+
+// 点击外部关闭菜单
+document.addEventListener('click', function(e) {
+    const adminHub = document.getElementById('admin-hub-container');
+    const btnHub = document.querySelector('.btn-hub');
+    if (adminHub && btnHub && !adminHub.contains(e.target)) {
+        adminHub.classList.remove('active');
+    }
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // 静默处理favicon加载错误（避免控制台显示404错误）
+    window.addEventListener('error', function(e) {
+        if (e.target && e.target.tagName === 'IMG' && e.target.src) {
+            const src = e.target.src;
+            // 匹配所有favicon相关的URL（包括Google的favicon服务）
+            if (src.includes('favicon') || 
+                src.includes('gstatic.com') || 
+                src.includes('google.com/s2') ||
+                src.includes('faviconV2')) {
+                // 静默处理favicon加载错误
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                return true;
+            }
+        }
+        // 处理全局错误消息（可能来自网络请求）
+        if (e.message && (
+            e.message.includes('favicon') || 
+            e.message.includes('gstatic.com') ||
+            e.message.includes('faviconV2') ||
+            e.message.includes('Failed to load resource'))) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            return true;
+        }
+    }, true);
+    
+    // 也监听unhandledrejection事件（处理Promise rejections）
+    window.addEventListener('unhandledrejection', function(e) {
+        if (e.reason && e.reason.message && 
+            (e.reason.message.includes('favicon') || 
+             e.reason.message.includes('gstatic.com') ||
+             e.reason.message.includes('faviconV2'))) {
+            e.preventDefault();
+        }
+    });
+    
+    // 重写console.error来过滤favicon相关的错误
+    const originalConsoleError = console.error;
+    console.error = function(...args) {
+        const message = args.join(' ');
+        if (message.includes('favicon') || 
+            message.includes('gstatic.com') ||
+            message.includes('faviconV2') ||
+            (message.includes('Failed to load resource') && message.includes('favicon'))) {
+            // 静默favicon相关的错误
+            return;
+        }
+        originalConsoleError.apply(console, args);
+    };
+    
+    // 绑定HTML中的内联事件处理器（符合CSP）
+    bindInlineEventHandlers();
+    
+    // Check if on login page, if so skip
+    if (window.location.pathname.includes('login.html')) return;
+
+    await initGlobalUI();
+
+    const path = window.location.pathname;
+    // Handle both root path and index.html
+    if (path.endsWith('index.html') || path === '/' || path.endsWith('/')) {
+        initDashboard();
+    }
+});
+
+// 绑定HTML中的内联事件处理器（符合CSP）
+function bindInlineEventHandlers() {
+    // 控制中心按钮
+    const controlCenterBtn = document.getElementById('control-center-btn');
+    if (controlCenterBtn) {
+        controlCenterBtn.addEventListener('click', (e) => {
+            if (typeof toggleControlCenter === 'function') {
+                toggleControlCenter(e);
+            }
+        });
+    }
+    
+    // 导入文件输入框
+    const importFile = document.getElementById('import-file');
+    if (importFile) {
+        importFile.addEventListener('change', function() {
+            if (typeof handleBookmarkImport === 'function') {
+                handleBookmarkImport(this);
+            }
+        });
+    }
+    
+    // 待办事项相关按钮
+    const btnAddTodo = document.getElementById('btn-add-todo');
+    if (btnAddTodo) {
+        btnAddTodo.addEventListener('click', () => {
+            if (typeof showAddTodoInput === 'function') {
+                showAddTodoInput();
+            }
+        });
+    }
+    
+    const newTodoInput = document.getElementById('new-todo-input');
+    if (newTodoInput) {
+        newTodoInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                // 回车键确认添加（Shift+Enter 换行）
+                e.preventDefault();
+                if (typeof addTodo === 'function') {
+                    addTodo();
+                }
+            } else if (e.key === 'Escape') {
+                // ESC 键取消
+                e.preventDefault();
+                if (typeof hideAddTodoInput === 'function') {
+                    hideAddTodoInput();
+                }
+            }
+        });
+    }
+    
+    const btnAddTodoConfirm = document.getElementById('btn-add-todo-confirm');
+    if (btnAddTodoConfirm) {
+        btnAddTodoConfirm.addEventListener('click', () => {
+            if (typeof addTodo === 'function') {
+                addTodo();
+            }
+        });
+    }
+    
+    const btnAddTodoCancel = document.getElementById('btn-add-todo-cancel');
+    if (btnAddTodoCancel) {
+        btnAddTodoCancel.addEventListener('click', () => {
+            if (typeof hideAddTodoInput === 'function') {
+                hideAddTodoInput();
+            }
+        });
+    }
+    
+    // 绑定添加待办图片删除按钮
+    const addTodoImageRemove = document.getElementById('add-todo-image-remove');
+    if (addTodoImageRemove) {
+        addTodoImageRemove.addEventListener('click', () => {
+            const container = document.getElementById('add-todo-input-container');
+            const imagePreview = document.getElementById('add-todo-image-preview');
+            const imageDisplay = document.getElementById('add-todo-image-display');
+            if (imagePreview) imagePreview.style.display = 'none';
+            if (imageDisplay) imageDisplay.src = '';
+            if (container) container.dataset.todoImage = '';
+        });
+    }
+    
+    const todosToggleButton = document.getElementById('todos-toggle-button');
+    if (todosToggleButton) {
+        todosToggleButton.addEventListener('click', () => {
+            if (typeof toggleTodosExpanded === 'function') {
+                toggleTodosExpanded();
+            }
+        });
+    }
+    
+    // 书签模态框按钮
+    const bookmarkModalCancel = document.getElementById('bookmark-modal-cancel');
+    if (bookmarkModalCancel) {
+        bookmarkModalCancel.addEventListener('click', () => {
+            if (typeof closeBookmarkModal === 'function') {
+                closeBookmarkModal();
+            }
+        });
+    }
+    
+    const bookmarkModalSave = document.getElementById('bookmark-modal-save');
+    if (bookmarkModalSave) {
+        bookmarkModalSave.addEventListener('click', () => {
+            if (typeof saveBookmarkFromModal === 'function') {
+                saveBookmarkFromModal();
+            }
+        });
+    }
+    
+    // 为书签名称和网址输入框添加回车键确认
+    const bookmarkNameInput = document.getElementById('bookmark-name');
+    const bookmarkUrlInput = document.getElementById('bookmark-url');
+    
+    if (bookmarkNameInput) {
+        bookmarkNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                // 如果网址输入框为空，聚焦到网址输入框；否则保存
+                if (bookmarkUrlInput && !bookmarkUrlInput.value.trim()) {
+                    bookmarkUrlInput.focus();
+                } else if (typeof saveBookmarkFromModal === 'function') {
+                    saveBookmarkFromModal();
+                }
+            }
+        });
+    }
+    
+    if (bookmarkUrlInput) {
+        bookmarkUrlInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (typeof saveBookmarkFromModal === 'function') {
+                    saveBookmarkFromModal();
+                }
+            }
+        });
+    }
+    
+    // 分类模态框按钮
+    const categoryModalCancel = document.getElementById('category-modal-cancel');
+    if (categoryModalCancel) {
+        categoryModalCancel.addEventListener('click', () => {
+            if (typeof closeCategoryModal === 'function') {
+                closeCategoryModal();
+            }
+        });
+    }
+    
+    const categoryModalSave = document.getElementById('category-modal-save');
+    if (categoryModalSave) {
+        categoryModalSave.addEventListener('click', () => {
+            if (typeof saveCategoryFromModal === 'function') {
+                saveCategoryFromModal();
+            }
+        });
+    }
+    
+    // 为分类名称输入框添加回车键确认
+    const categoryNameInput = document.getElementById('category-name');
+    if (categoryNameInput) {
+        categoryNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (typeof saveCategoryFromModal === 'function') {
+                    saveCategoryFromModal();
+                }
+            }
+        });
+    }
+    
+    // 地点模态框按钮
+    const locationModalCancel = document.getElementById('location-modal-cancel');
+    if (locationModalCancel) {
+        locationModalCancel.addEventListener('click', () => {
+            if (typeof closeLocationModal === 'function') {
+                closeLocationModal();
+            }
+        });
+    }
+}
+
+async function initGlobalUI() {
+    // 绑定设置侧边栏关闭按钮事件
+    const closeBtn = document.getElementById('admin-sidebar-close-btn');
+    if (closeBtn) {
+        // 移除旧的事件监听器（如果存在）
+        const newCloseBtn = closeBtn.cloneNode(true);
+        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+        
+        newCloseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            // 直接操作DOM关闭设置面板
+            const sidebar = document.getElementById('admin-sidebar');
+            if (sidebar) {
+                sidebar.classList.remove('open');
+                document.body.classList.remove('sidebar-open');
+            }
+            // 如果函数存在，也调用它
+            if (typeof window.closeSettingsSidebar === 'function') {
+                window.closeSettingsSidebar();
+            }
+        });
+    }
+    
+    try {
+        // 加载并显示网站标题
+        try {
+            const config = await dataManager.getDashboardConfig();
+            const siteTitle = config.siteTitle || 'God\'s Bookmark';
+            const logoElement = document.querySelector('.logo');
+            if (logoElement) {
+                logoElement.textContent = siteTitle;
+            }
+            document.title = siteTitle;
+        } catch (error) {
+            console.error('Failed to load dashboard config:', error);
+            // 使用默认标题
+            const logoElement = document.querySelector('.logo');
+            if (logoElement) {
+                logoElement.textContent = 'God\'s Bookmark';
+            }
+            document.title = 'God\'s Bookmark';
+        }
+        
+        // Inject Admin Controls to Header
+        const navUl = document.querySelector('nav ul');
+        if (!navUl) {
+            console.error('[initGlobalUI] Navigation ul not found!');
+            return;
+        }
+        
+        // 获取HTML中的登录链接（如果存在）
+        const loginLinkItem = document.getElementById('login-link-item');
+        
+        // 清除之前动态添加的退出登录链接（保留HTML中的登录链接）
+        const allNavLinks = navUl.querySelectorAll('li a');
+        allNavLinks.forEach(link => {
+            const onclick = link.getAttribute('onclick');
+            // 只移除动态添加的退出登录链接，不删除HTML中的登录链接
+            if (onclick && onclick.includes('logout')) {
+                link.closest('li')?.remove();
+            }
+        });
+
+        // 检查登录状态，如果失败则默认显示登录链接
+        let isLoggedIn = false;
+        try {
+            console.log('[initGlobalUI] Checking login status...');
+            isLoggedIn = await dataManager.isLoggedIn();
+            console.log('[initGlobalUI] Login status:', isLoggedIn);
+            
+            // 同时检查多用户认证状态，确保userManager.currentUser被设置
+            if (window.userManager) {
+                try {
+                    const authResult = await window.userManager.checkAuth();
+                    console.log('[initGlobalUI] User auth check result:', authResult);
+                    if (authResult && authResult.isLoggedIn && authResult.user) {
+                        console.log('[initGlobalUI] Current user:', authResult.user);
+                    }
+                } catch (error) {
+                    console.error('[initGlobalUI] Error checking user auth:', error);
+                }
+            }
+        } catch (error) {
+            console.error('[initGlobalUI] Failed to check login status:', error);
+            // API 调用失败时，默认显示登录链接
+            isLoggedIn = false;
+        }
+
+        // 控制中心始终可见（无论登录状态）
+        showControlCenter();
+        
+        // 隐藏HTML中的登录链接（控制中心中会显示登录选项）
+        if (loginLinkItem) {
+            loginLinkItem.style.display = 'none';
+        }
+
+        // 根据登录状态更新控制中心菜单内容
+        updateControlCenterMenu(isLoggedIn);
+
+        // 隐藏Admin Hub Top（已合并到控制中心）
+        const adminHubTop = document.getElementById('admin-hub-top');
+        if (adminHubTop) {
+            adminHubTop.style.display = 'none';
+        }
+
+        // 未登录时隐藏所有板块，只保留时间板块
+        if (!isLoggedIn) {
+            // 隐藏便签待办区域
+            const todosSection = document.getElementById('todos-section');
+            if (todosSection) {
+                todosSection.style.display = 'none';
+            }
+            
+            // 隐藏常用标签栏（上帝的指引）
+            const frequentBookmarksBar = document.getElementById('frequent-bookmarks-bar');
+            if (frequentBookmarksBar) {
+                frequentBookmarksBar.style.display = 'none';
+            }
+            
+            // 隐藏书签容器
+            const bookmarksContainer = document.getElementById('bookmarks-container');
+            if (bookmarksContainer) {
+                bookmarksContainer.closest('section')?.style.setProperty('display', 'none', 'important');
+            }
+            
+            // 隐藏搜索浮窗
+            const searchModal = document.getElementById('global-search-modal');
+            if (searchModal) {
+                searchModal.style.display = 'none';
+            }
+            
+            // 隐藏管理员侧边栏
+            const adminSidebar = document.getElementById('admin-sidebar');
+            if (adminSidebar) {
+                adminSidebar.style.display = 'none';
+            }
+            
+            // 确保时间板块可见
+            const datetimeSection = document.getElementById('datetime-section');
+            if (datetimeSection) {
+                datetimeSection.style.display = 'flex';
+                datetimeSection.style.visibility = 'visible';
+            }
+            
+            // 在屏幕中心显示提示文字
+            showLoginMessage();
+        } else {
+            // 登录时显示所有板块
+            const frequentBookmarksBar = document.getElementById('frequent-bookmarks-bar');
+            if (frequentBookmarksBar) {
+                frequentBookmarksBar.style.display = '';
+            }
+            
+            const bookmarksContainer = document.getElementById('bookmarks-container');
+            if (bookmarksContainer) {
+                bookmarksContainer.closest('section')?.style.removeProperty('display');
+            }
+            
+            const adminSidebar = document.getElementById('admin-sidebar');
+            if (adminSidebar) {
+                adminSidebar.style.display = '';
+            }
+            
+            // 隐藏登录提示信息
+            hideLoginMessage();
+        }
+    } catch (error) {
+        console.error('[initGlobalUI] Error in initGlobalUI:', error);
+        // 确保至少显示登录链接
+        const navUl = document.querySelector('nav ul');
+        if (navUl) {
+            // 确保控制中心可见
+            showControlCenter();
+            updateControlCenterMenu(false);
+        } else {
+            console.error('[initGlobalUI] Navigation ul not found in error handler');
+        }
+        
+        // 错误时也隐藏所有板块，只保留时间板块
+        const todosSection = document.getElementById('todos-section');
+        if (todosSection) {
+            todosSection.style.display = 'none';
+        }
+        
+        const frequentBookmarksBar = document.getElementById('frequent-bookmarks-bar');
+        if (frequentBookmarksBar) {
+            frequentBookmarksBar.style.display = 'none';
+        }
+        
+        const bookmarksContainer = document.getElementById('bookmarks-container');
+        if (bookmarksContainer) {
+            bookmarksContainer.closest('section')?.style.setProperty('display', 'none', 'important');
+        }
+        
+        const searchModal = document.getElementById('global-search-modal');
+        if (searchModal) {
+            searchModal.style.display = 'none';
+        }
+        
+        const adminSidebar = document.getElementById('admin-sidebar');
+        if (adminSidebar) {
+            adminSidebar.style.display = 'none';
+        }
+        
+        // 确保时间板块可见
+        const datetimeSection = document.getElementById('datetime-section');
+        if (datetimeSection) {
+            datetimeSection.style.display = 'flex';
+            datetimeSection.style.visibility = 'visible';
+        }
+        
+        // 在屏幕中心显示提示文字
+        showLoginMessage();
+    }
+    
+    console.log('[initGlobalUI] Initialization completed');
+    
+    // 页面完全加载后再次确保控制中心正确显示并更新菜单
+    if (document.readyState === 'complete') {
+        showControlCenter();
+        dataManager.isLoggedIn().then(isLoggedIn => {
+            updateControlCenterMenu(isLoggedIn);
+        }).catch(() => {
+            updateControlCenterMenu(false);
+        });
+    } else {
+        window.addEventListener('load', () => {
+            showControlCenter();
+            dataManager.isLoggedIn().then(isLoggedIn => {
+                updateControlCenterMenu(isLoggedIn);
+            }).catch(() => {
+                updateControlCenterMenu(false);
+            });
+        });
+    }
+}
+
+// 显示登录提示信息
+function showLoginMessage() {
+    // 检查是否已存在提示信息
+    let loginMessage = document.getElementById('login-message');
+    if (!loginMessage) {
+        // 创建提示信息元素
+        loginMessage = document.createElement('div');
+        loginMessage.id = 'login-message';
+        loginMessage.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+            z-index: 1000;
+            text-align: center;
+            pointer-events: none;
+            animation: fadeInUp 0.8s ease-out;
+        `;
+        loginMessage.textContent = '做难事必有所得！';
+        document.body.appendChild(loginMessage);
+    } else {
+        loginMessage.style.display = 'block';
+    }
+}
+
+// 隐藏登录提示信息
+function hideLoginMessage() {
+    const loginMessage = document.getElementById('login-message');
+    if (loginMessage) {
+        loginMessage.style.display = 'none';
+    }
+}
+
+// 显示控制中心的统一函数（始终显示）
+function showControlCenter() {
+    const controlCenterItem = document.getElementById('control-center-item');
+    const controlCenterBtn = document.getElementById('control-center-btn');
+    
+    if (!controlCenterItem) {
+        console.error('[showControlCenter] ❌ control-center-item NOT FOUND in DOM!');
+        return;
+    }
+    
+    // 始终显示控制中心
+    controlCenterItem.style.display = 'list-item';
+    controlCenterItem.style.visibility = 'visible';
+    controlCenterItem.style.opacity = '1';
+    
+    // 确保按钮也可见
+    if (controlCenterBtn) {
+        controlCenterBtn.style.display = 'flex';
+        controlCenterBtn.style.visibility = 'visible';
+        controlCenterBtn.style.opacity = '1';
+    }
+    
+    console.log('[showControlCenter] ✅ Control center displayed');
+}
+
+// 根据登录状态更新控制中心菜单内容
+async function updateControlCenterMenu(isLoggedIn) {
+    const menu = document.getElementById('control-center-menu');
+    if (!menu) {
+        console.error('[updateControlCenterMenu] ❌ control-center-menu NOT FOUND!');
+        return;
+    }
+    
+    console.log('[updateControlCenterMenu] Updating menu for logged in:', isLoggedIn);
+    
+    if (isLoggedIn) {
+        // 登录后的菜单内容
+        menu.innerHTML = `
+            <a href="#" class="control-menu-link" data-action="settings">
+                <span class="menu-icon">⚙️</span>
+                <span>全局设置</span>
+            </a>
+            <a href="#" class="control-menu-link" data-action="add-category">
+                <span class="menu-icon">➕</span>
+                <span>添加分组</span>
+            </a>
+            <a href="#" class="control-menu-link" data-action="import">
+                <span class="menu-icon">📂</span>
+                <span>导入书签</span>
+            </a>
+            <a href="#" class="control-menu-link" data-action="export">
+                <span class="menu-icon">💾</span>
+                <span>导出书签</span>
+            </a>
+            <div class="menu-divider"></div>
+            <a href="#" class="control-menu-link" data-action="logout">
+                <span class="menu-icon">🚪</span>
+                <span>退出登录</span>
+            </a>
+        `;
+    } else {
+        // 未登录时的菜单内容
+        menu.innerHTML = `
+            <a href="login.html" class="control-menu-link" data-action="login">
+                <span class="menu-icon">🔑</span>
+                <span>登录</span>
+            </a>
+        `;
+    }
+    
+    // 绑定菜单项点击事件
+    bindControlCenterMenuEvents();
+}
+
+// 绑定控制中心菜单项的事件（使用事件委托，避免重复绑定）
+let controlCenterMenuHandler = null;
+
+function bindControlCenterMenuEvents() {
+    const menu = document.getElementById('control-center-menu');
+    if (!menu) return;
+    
+    // 移除旧的事件监听器（如果存在）
+    if (controlCenterMenuHandler) {
+        menu.removeEventListener('click', controlCenterMenuHandler);
+    }
+    
+    // 创建新的事件处理器
+    controlCenterMenuHandler = async (e) => {
+        // 阻止事件冒泡，避免触发覆盖层的点击事件
+        e.stopPropagation();
+        
+        const link = e.target.closest('.control-menu-link');
+        if (!link) return;
+        
+        e.preventDefault();
+        
+        const action = link.getAttribute('data-action');
+        console.log('[bindControlCenterMenuEvents] Menu item clicked:', action);
+        
+        switch(action) {
+            case 'settings':
+                console.log('[bindControlCenterMenuEvents] Opening settings sidebar...');
+                closeControlCenter();
+                // 延迟执行，确保菜单已关闭
+                setTimeout(async () => {
+                    // 直接操作DOM打开设置面板
+                    const sidebar = document.getElementById('admin-sidebar');
+                    if (sidebar) {
+                        sidebar.classList.add('open');
+                        document.body.classList.add('sidebar-open');
+                        
+                        // 尝试调用renderCardControls，多次重试
+                        let retries = 0;
+                        const maxRetries = 5;
+                        const tryRenderCardControls = async () => {
+                            if (typeof window.renderCardControls === 'function') {
+                                try {
+                                    await window.renderCardControls();
+                                    console.log('[bindControlCenterMenuEvents] renderCardControls called successfully');
+                                } catch (error) {
+                                    console.error('[bindControlCenterMenuEvents] renderCardControls error:', error);
+                                }
+                            } else {
+                                retries++;
+                                if (retries < maxRetries) {
+                                    console.log(`[bindControlCenterMenuEvents] renderCardControls not found, retrying... (${retries}/${maxRetries})`);
+                                    setTimeout(tryRenderCardControls, 200);
+                                } else {
+                                    console.error('[bindControlCenterMenuEvents] renderCardControls is not a function after', maxRetries, 'retries!');
+                                    console.error('[bindControlCenterMenuEvents] Available window functions:', Object.keys(window).filter(k => k.includes('render') || k.includes('Card') || k.includes('Settings')));
+                                }
+                            }
+                        };
+                        tryRenderCardControls();
+                    } else {
+                        console.error('[bindControlCenterMenuEvents] admin-sidebar element not found!');
+                    }
+                }, 100);
+                break;
+            case 'add-category':
+                console.log('[bindControlCenterMenuEvents] Opening add category modal...');
+                closeControlCenter();
+                setTimeout(() => {
+                    if (typeof window.openAddCategoryModal === 'function') {
+                        window.openAddCategoryModal();
+                    } else {
+                        console.error('[bindControlCenterMenuEvents] openAddCategoryModal is not a function!', typeof window.openAddCategoryModal);
+                    }
+                }, 100);
+                break;
+            case 'import':
+                closeControlCenter();
+                setTimeout(() => {
+                    const importFile = document.getElementById('import-file');
+                    if (importFile) {
+                        importFile.click();
+                    }
+                }, 100);
+                break;
+            case 'export':
+                closeControlCenter();
+                setTimeout(async () => {
+                    if (typeof window.exportBookmarks === 'function') {
+                        await window.exportBookmarks();
+                    }
+                }, 100);
+                break;
+            case 'logout':
+                console.log('[bindControlCenterMenuEvents] Logging out...');
+                closeControlCenter();
+                try {
+                    // 使用全局的 dataManager 变量（在 data-manager.js 中定义）
+                    if (typeof dataManager !== 'undefined' && typeof dataManager.logout === 'function') {
+                        console.log('[bindControlCenterMenuEvents] Calling dataManager.logout()...');
+                        // logout 函数内部会调用 window.location.reload()，不需要手动刷新
+                        await dataManager.logout();
+                    } else {
+                        console.error('[bindControlCenterMenuEvents] dataManager.logout not found!', typeof dataManager, dataManager);
+                        // 尝试直接调用 API 登出
+                        try {
+                            await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+                            window.location.reload();
+                        } catch (fetchError) {
+                            console.error('[bindControlCenterMenuEvents] Failed to logout via API:', fetchError);
+                        }
+                    }
+                } catch (error) {
+                    console.error('[bindControlCenterMenuEvents] Logout error:', error);
+                    // 即使出错也尝试刷新页面
+                    window.location.reload();
+                }
+                break;
+            case 'login':
+                // 直接跳转到登录页面
+                window.location.href = 'login.html';
+                break;
+            default:
+                console.warn('[bindControlCenterMenuEvents] Unknown action:', action);
+        }
+    };
+    
+    // 绑定新的事件监听器
+    menu.addEventListener('click', controlCenterMenuHandler);
+    console.log('[bindControlCenterMenuEvents] ✅ Event handler bound');
+}
+
+// 控制中心下拉菜单
+window.toggleControlCenter = async function(event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    const menu = document.getElementById('control-center-menu');
+    if (!menu) return;
+    
+    // 检查菜单是否打开（通过 class 判断）
+    const isOpen = menu.classList.contains('open');
+    
+    if (isOpen) {
+        closeControlCenter();
+    } else {
+        // 在打开菜单前，先检查登录状态并更新菜单内容
+        const isLoggedIn = await dataManager.isLoggedIn().catch(() => false);
+        await updateControlCenterMenu(isLoggedIn);
+        // 确保事件已绑定
+        bindControlCenterMenuEvents();
+        // 打开菜单
+        openControlCenter();
+    }
+};
+
+window.openControlCenter = function() {
+    const menu = document.getElementById('control-center-menu');
+    const btn = document.getElementById('control-center-btn');
+    const frequentBar = document.getElementById('frequent-bookmarks-bar');
+    
+    if (menu && btn) {
+        // 获取按钮位置用于设置菜单的top
+        const btnRect = btn.getBoundingClientRect();
+        menu.style.top = btnRect.top + 'px';
+        
+        // 定位菜单：优先使用按钮右侧定位，如果按钮太靠右则使用左侧定位
+        const viewportWidth = window.innerWidth;
+        const menuWidth = 180; // 菜单最大宽度
+        const padding = 20; // 距离边缘的最小距离
+        
+        // 如果按钮右侧有足够空间，使用右侧定位
+        if (btnRect.right + menuWidth + padding <= viewportWidth) {
+            menu.style.left = (btnRect.right + 8) + 'px';
+            menu.style.right = 'auto';
+        } else {
+            // 如果按钮右侧空间不足，使用左侧定位（对齐按钮左侧）
+            menu.style.left = 'auto';
+            menu.style.right = (viewportWidth - btnRect.left + 8) + 'px';
+        }
+        menu.style.height = 'auto'; // 改为自动高度
+        menu.style.maxHeight = 'calc(100vh - ' + btnRect.top + 'px)'; // 限制最大高度
+        
+        // 显示菜单（使用 class 触发动画）
+        menu.style.display = 'flex';
+        
+        // 使用 requestAnimationFrame 确保 display 已经应用后再添加 class
+        requestAnimationFrame(() => {
+            menu.classList.add('open');
+            // 设置点击空白处关闭功能
+            setupControlCenterOutsideClick();
+        });
+    }
+};
+
+window.closeControlCenter = function() {
+    const menu = document.getElementById('control-center-menu');
+    
+    // 移除点击空白处关闭的事件监听器
+    if (controlCenterOutsideClickHandler) {
+        document.removeEventListener('click', controlCenterOutsideClickHandler);
+        controlCenterOutsideClickHandler = null;
+    }
+    
+    if (menu) {
+        // 移除 open class 触发动画
+        menu.classList.remove('open');
+        
+        // 动画结束后隐藏
+        setTimeout(() => {
+            menu.style.display = 'none';
+        }, 200); // 与 CSS transition 时间一致
+    }
+};
+
+// 点击空白处关闭控制中心菜单
+let controlCenterOutsideClickHandler = null;
+
+function setupControlCenterOutsideClick() {
+    // 移除旧的事件监听器（如果存在）
+    if (controlCenterOutsideClickHandler) {
+        document.removeEventListener('click', controlCenterOutsideClickHandler);
+        controlCenterOutsideClickHandler = null;
+    }
+    
+    // 延迟添加事件监听器，避免立即触发（因为打开菜单的点击事件可能还在冒泡）
+    setTimeout(() => {
+        controlCenterOutsideClickHandler = function(event) {
+            const menu = document.getElementById('control-center-menu');
+            const btn = document.getElementById('control-center-btn');
+            
+            if (!menu || !menu.classList.contains('open')) {
+                // 菜单未打开，移除监听器
+                if (controlCenterOutsideClickHandler) {
+                    document.removeEventListener('click', controlCenterOutsideClickHandler);
+                    controlCenterOutsideClickHandler = null;
+                }
+                return;
+            }
+            
+            // 检查点击的目标是否在菜单内或按钮上
+            const isClickInsideMenu = menu && menu.contains(event.target);
+            const isClickOnButton = btn && btn.contains(event.target);
+            
+            // 如果点击的是外部（既不是菜单也不是按钮），则关闭菜单
+            if (!isClickInsideMenu && !isClickOnButton) {
+                closeControlCenter();
+                // 移除事件监听器
+                if (controlCenterOutsideClickHandler) {
+                    document.removeEventListener('click', controlCenterOutsideClickHandler);
+                    controlCenterOutsideClickHandler = null;
+                }
+            }
+        };
+        
+        // 添加事件监听器
+        document.addEventListener('click', controlCenterOutsideClickHandler);
+    }, 100);
+}
+
+/* --- Dashboard Logic --- */
+async function initDashboard() {
+    // 恢复主题设置（优先执行）
+    if (typeof window.restoreTheme === 'function') {
+        await window.restoreTheme();
+    }
+    
+    await loadBookmarks();
+    await initMonitor();
+    
+    // 加载常用标签栏
+    await loadFrequentBookmarks();
+    
+    // 初始化全局搜索（在加载书签后，确保缓存已更新）
+    await initGlobalSearch();
+
+    // 检查用户认证状态（多用户模式）
+    if (window.userManager) {
+        try {
+            const authResult = await window.userManager.checkAuth();
+            console.log('[initDashboard] User auth check result:', authResult);
+            if (authResult && authResult.isLoggedIn && authResult.user) {
+                console.log('[initDashboard] Current user:', authResult.user);
+            }
+        } catch (error) {
+            console.error('[initDashboard] Error checking user auth:', error);
+        }
+    }
+    
+    // 加载便签待办
+    const isLoggedIn = await dataManager.isLoggedIn();
+    if (isLoggedIn) {
+        await initTodos();
+    }
+    
+    // 初始化滚动检测，为时间天气区域添加毛玻璃背景
+    initDatetimeScrollEffect();
+}
+
+// 检测滚动内容是否经过时间天气区域，添加毛玻璃背景
+function initDatetimeScrollEffect() {
+    const datetimeSection = document.getElementById('datetime-section');
+    const mainContainer = document.querySelector('main.container');
+    
+    if (!datetimeSection) return;
+    
+    function checkScrollOverlap() {
+        const datetimeRect = datetimeSection.getBoundingClientRect();
+        const scrollY = window.scrollY || window.pageYOffset;
+        
+        // 时间区域是固定的（position: fixed, top: 0），高度约260px
+        // 主容器有 padding-top: 375px，所以主内容从375px位置开始
+        // 当滚动时，如果滚动位置使得主内容的可见部分进入时间区域范围，就应该添加毛玻璃
+        
+        // 检测所有可能的内容元素（书签卡片、上帝的指引区域等）
+        let hasContentBehind = false;
+        
+        // 检测主容器是否与时间区域重叠
+        if (mainContainer) {
+            const mainRect = mainContainer.getBoundingClientRect();
+            // 如果主容器的任何部分与时间区域重叠，并且已经滚动
+            if (mainRect.top < datetimeRect.bottom && 
+                mainRect.bottom > datetimeRect.top &&
+                scrollY > 0) {
+                hasContentBehind = true;
+            }
+        }
+        
+        // 检测所有书签卡片是否与时间区域重叠
+        const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
+        if (!hasContentBehind && bookmarkCards.length > 0) {
+            bookmarkCards.forEach(card => {
+                const cardRect = card.getBoundingClientRect();
+                // 如果任何书签卡片与时间区域重叠
+                if (cardRect.top < datetimeRect.bottom && 
+                    cardRect.bottom > datetimeRect.top) {
+                    hasContentBehind = true;
+                }
+            });
+        }
+        
+        // 检测上帝的指引区域是否与时间区域重叠
+        const frequentBar = document.getElementById('frequent-bookmarks-bar');
+        if (!hasContentBehind && frequentBar) {
+            const frequentRect = frequentBar.getBoundingClientRect();
+            if (frequentRect.top < datetimeRect.bottom && 
+                frequentRect.bottom > datetimeRect.top) {
+                hasContentBehind = true;
+            }
+        }
+        
+        // 如果页面滚动且有任何内容在时间区域范围内，添加毛玻璃效果
+        if (hasContentBehind && scrollY > 50) {
+            datetimeSection.classList.add('has-content-behind');
+        } else {
+            datetimeSection.classList.remove('has-content-behind');
+        }
+    }
+    
+    // 监听滚动事件（使用节流优化性能）
+    let ticking = false;
+    function onScroll() {
+        if (!ticking) {
+            window.requestAnimationFrame(() => {
+                checkScrollOverlap();
+                ticking = false;
+            });
+            ticking = true;
+        }
+    }
+    
+    window.addEventListener('scroll', onScroll, { passive: true });
+    // 初始检查
+    checkScrollOverlap();
+    // 使用 ResizeObserver 监听容器大小变化
+    if (window.ResizeObserver && mainContainer) {
+        const resizeObserver = new ResizeObserver(() => {
+            checkScrollOverlap();
+        });
+        resizeObserver.observe(mainContainer);
+    }
+    
+    // 监听DOM变化，确保新添加的内容也能被检测到
+    if (window.MutationObserver && mainContainer) {
+        const mutationObserver = new MutationObserver(() => {
+            checkScrollOverlap();
+        });
+        mutationObserver.observe(mainContainer, {
+            childList: true,
+            subtree: true
+        });
+    }
+}
+
+/* --- Todos Logic --- */
+let todosList = [];
+
+// 待办事项展开/收起状态
+let todosExpanded = false;
+
+// 便签待办面板折叠状态（完全折叠）- 已废弃
+let todosCollapsed = false;
+
+// 便签待办面板钉住状态（双击后钉住，不再悬浮停靠）
+let todosPinned = false;
+
+// 初始化便签待办
+async function initTodos() {
+    const todosSection = document.getElementById('todos-section');
+    if (!todosSection) {
+        console.warn('[Todos] todos-section element not found');
+        return;
+    }
+
+    try {
+        const isLoggedIn = await dataManager.isLoggedIn();
+        console.log('[Todos] Init - isLoggedIn:', isLoggedIn);
+        
+        if (isLoggedIn) {
+            // 加载便签待办设置
+            try {
+                const config = await dataManager.getDashboardConfig();
+                const todosSettings = config.todosSettings || {
+                    title: '便签待办',
+                    visible: true,
+                    opacity: 0.1,
+                    mainColor: '#8b5cf6'
+                };
+                
+                // 应用标题
+                const todosTitleElement = document.getElementById('todos-title');
+                if (todosTitleElement) {
+                    const titleText = todosSettings.title || '便签待办';
+                    // 不显示固定图标
+                    todosTitleElement.textContent = titleText;
+                    // 添加双击钉住功能
+                    window.bindTodosTitleDoubleClick();
+                }
+                
+                // 应用显示/隐藏状态
+                todosSection.style.display = todosSettings.visible !== false ? 'block' : 'none';
+            } catch (error) {
+                console.error('[Todos] Load settings error:', error);
+                todosSection.style.display = 'block'; // 默认显示
+            }
+            
+            // 强制设置固定位置（左侧悬浮停靠），避免移动到中间
+            todosSection.style.position = 'fixed';
+            todosSection.style.left = '0';
+            todosSection.style.right = 'auto';
+            todosSection.style.top = '260px';
+            todosSection.style.width = '320px';
+            todosSection.style.transform = 'translateX(-310px)'; // 默认收起，只露出10px
+            todosSection.style.transition = 'transform 0.3s ease-out';
+            todosSection.style.overflow = 'visible';
+            todosSection.style.zIndex = '20';
+            todosSection.style.pointerEvents = 'auto';
+            
+            // 添加鼠标悬停事件，确保滑出功能正常工作
+            todosSection.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateX(0)';
+            });
+            todosSection.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateX(-310px)';
+            });
+            
+            // 更新配置缓存
+            await updateTodosConfigCache();
+            
+            await loadTodos();
+            // 不再加载保存的位置（待办面板固定位置）
+            // loadTodosPosition 函数现在也会强制设置固定位置
+            if (window.loadTodosPosition && typeof window.loadTodosPosition === 'function') {
+                await window.loadTodosPosition();
+            }
+        } else {
+            console.log('[Todos] User not logged in, hiding todos section');
+            todosSection.style.display = 'none';
+        }
+    } catch (error) {
+            console.error('[Todos] Init error:', error);
+        todosSection.style.display = 'none';
+    }
+}
+
+// 绑定便签待办标题的双击事件（钉住/取消固定）
+window.bindTodosTitleDoubleClick = function() {
+    const todosTitleElement = document.getElementById('todos-title');
+    if (!todosTitleElement) return;
+    
+    // 移除旧的事件监听器（通过克隆节点）
+    const newTitle = todosTitleElement.cloneNode(true);
+    todosTitleElement.parentNode.replaceChild(newTitle, todosTitleElement);
+    
+    // 获取新的标题元素
+    const titleElement = document.getElementById('todos-title');
+    if (!titleElement) return;
+    
+    // 添加双击事件
+    titleElement.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTodosPin();
+    });
+    
+    // 添加样式提示（鼠标悬停时显示可双击）
+    titleElement.style.cursor = 'pointer';
+    updateTodosPinTooltip();
+}
+
+// 切换便签待办面板的完全折叠状态（已废弃，保留用于兼容）
+window.toggleTodosCollapse = function() {
+    todosCollapsed = !todosCollapsed;
+    applyTodosCollapse();
+};
+
+// 切换便签待办面板的钉住状态（双击后钉住，不再悬浮停靠）
+window.toggleTodosPin = function() {
+    todosPinned = !todosPinned;
+    applyTodosPin();
+};
+
+// 应用便签待办面板的钉住状态
+function applyTodosPin() {
+    const todosSection = document.getElementById('todos-section');
+    const todosTitleElement = document.getElementById('todos-title');
+    
+    if (!todosSection) return;
+    
+    if (todosPinned) {
+        // 钉住：固定在当前位置，移除悬浮停靠效果
+        todosSection.style.transform = 'translateX(0)';
+        todosSection.style.transition = 'none';
+        todosSection.classList.add('todos-pinned');
+        
+        // 移除hover事件监听器（如果存在）
+        todosSection.onmouseenter = null;
+        todosSection.onmouseleave = null;
+        
+        // 更新标题，不添加图标（移除固定图标）
+        if (todosTitleElement) {
+            const currentText = todosTitleElement.textContent;
+            // 移除所有可能的图标标记和特殊字符，使用更完善的清理函数
+            const textWithoutMarkers = cleanTodosTitle(currentText);
+            todosTitleElement.textContent = textWithoutMarkers;
+        }
+    } else {
+        // 取消钉住：恢复悬浮停靠模式
+        todosSection.style.transform = 'translateX(-310px)';
+        todosSection.style.transition = 'transform 0.3s ease-out';
+        todosSection.classList.remove('todos-pinned');
+        
+        // 重新添加hover事件监听器
+        todosSection.addEventListener('mouseenter', function() {
+            if (!todosPinned) {
+                this.style.transform = 'translateX(0)';
+            }
+        });
+        todosSection.addEventListener('mouseleave', function() {
+            if (!todosPinned) {
+                this.style.transform = 'translateX(-310px)';
+            }
+        });
+        
+        // 更新标题，移除钉住指示器（取消📍图标）
+        if (todosTitleElement) {
+            const currentText = todosTitleElement.textContent;
+            // 移除所有可能的图标标记和特殊字符，使用更完善的清理函数
+            const textWithoutMarkers = cleanTodosTitle(currentText);
+            // 未钉住时不显示图标
+            todosTitleElement.textContent = textWithoutMarkers;
+        }
+    }
+    
+    updateTodosPinTooltip();
+}
+
+// 清理便签标题文本，移除所有图标和特殊字符
+window.cleanTodosTitle = function(text) {
+    if (!text) return '便签待办';
+    // 移除所有可能的图标标记（包括emoji、问号等）
+    // 使用更全面的正则表达式匹配各种可能的图标
+    let cleaned = text.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}❓?▶▼📌📍]\s*/gu, '').trim();
+    // 如果还有问号或其他特殊字符在开头，再次清理
+    cleaned = cleaned.replace(/^[❓?]\s*/g, '').trim();
+    // 确保返回的文本不为空
+    return cleaned || '便签待办';
+};
+
+// 更新钉住状态提示文字
+function updateTodosPinTooltip() {
+    const todosTitleElement = document.getElementById('todos-title');
+    if (!todosTitleElement) return;
+    
+    todosTitleElement.title = todosPinned ? '双击取消固定' : '双击固定位置';
+}
+
+// 应用便签待办面板的折叠状态
+function applyTodosCollapse() {
+    const todosListContainer = document.getElementById('todos-list');
+    const addInputContainer = document.getElementById('add-todo-input-container');
+    const toggleButton = document.getElementById('todos-toggle-button');
+    const todosTitleElement = document.getElementById('todos-title');
+    const btnAddTodo = document.getElementById('btn-add-todo');
+    
+    if (todosCollapsed) {
+        // 折叠：隐藏所有内容，只显示标题
+        if (todosListContainer) {
+            todosListContainer.style.display = 'none';
+        }
+        if (addInputContainer) {
+            addInputContainer.style.display = 'none';
+        }
+        if (toggleButton) {
+            toggleButton.style.display = 'none';
+        }
+        if (btnAddTodo) {
+            btnAddTodo.style.display = 'none';
+        }
+        
+        // 更新标题，添加折叠指示器
+        if (todosTitleElement) {
+            const currentText = todosTitleElement.textContent;
+            // 移除所有可能的图标标记和特殊字符，使用更完善的清理函数
+            const textWithoutMarkers = cleanTodosTitle(currentText);
+            todosTitleElement.textContent = `▶ ${textWithoutMarkers}`;
+        }
+    } else {
+        // 展开：显示所有内容
+        if (todosListContainer) {
+            todosListContainer.style.display = 'flex';
+        }
+        if (toggleButton && todosList.length > 5) {
+            toggleButton.style.display = 'block';
+        }
+        if (btnAddTodo) {
+            btnAddTodo.style.display = 'flex';
+        }
+        
+        // 更新标题，添加展开指示器（取消📍图标）
+        if (todosTitleElement) {
+            const currentText = todosTitleElement.textContent;
+            // 移除所有可能的图标标记和特殊字符，使用更完善的清理函数
+            const textWithoutMarkers = cleanTodosTitle(currentText);
+            // 未钉住时不显示图标
+            todosTitleElement.textContent = textWithoutMarkers;
+        }
+    }
+}
+
+// 加载待办事项
+async function loadTodos() {
+    try {
+        console.log('[Todos] Loading todos...');
+        const isLoggedIn = await dataManager.isLoggedIn();
+        if (!isLoggedIn) {
+            console.warn('[Todos] User not logged in, cannot load todos');
+        todosList = [];
+        await renderTodos();
+        return;
+        }
+        
+        todosList = await dataManager.getTodos();
+        
+        // 确保每个待办项都有原始索引（用于恢复位置）
+        todosList.forEach((todo, index) => {
+            if (todo.originalIndex === undefined) {
+                todo.originalIndex = index;
+            }
+        });
+        
+        console.log('[Todos] Loaded', todosList.length, 'todos');
+        await renderTodos();
+        enableTodosDrag(); // 启用拖拽功能
+    } catch (error) {
+        console.error('[Todos] Load error:', error);
+        console.error('[Todos] Error details:', {
+            message: error.message,
+            name: error.name
+        });
+        todosList = [];
+        await renderTodos();
+    }
+}
+
+// 待办项颜色映射（确保同一待办项总是相同颜色）
+const todoColorMap = {};
+
+// 预定义的待办项背景颜色（柔和的颜色，透明度降低50%：从0.2降到0.1）
+const todoColors = [
+    'rgba(139, 92, 246, 0.1)',   // 紫色
+    'rgba(59, 130, 246, 0.1)',   // 蓝色
+    'rgba(16, 185, 129, 0.1)',   // 绿色
+    'rgba(245, 158, 11, 0.1)',   // 黄色
+    'rgba(239, 68, 68, 0.1)',    // 红色
+    'rgba(236, 72, 153, 0.1)',   // 粉色
+    'rgba(14, 165, 233, 0.1)',   // 天蓝色
+    'rgba(34, 197, 94, 0.1)',    // 浅绿色
+    'rgba(251, 146, 60, 0.1)',   // 橙色
+    'rgba(168, 85, 247, 0.1)',   // 紫罗兰
+    'rgba(99, 102, 241, 0.1)',   // 靛蓝
+    'rgba(20, 184, 166, 0.1)',   // 青绿色
+];
+
+// 便签待办配置缓存（避免每次渲染都异步获取）
+let todosConfigCache = {
+    mainColor: '#8b5cf6',
+    opacity: 0.1
+};
+
+// 更新便签待办配置缓存
+async function updateTodosConfigCache() {
+    try {
+        const config = await dataManager.getDashboardConfig();
+        if (config.todosSettings) {
+            todosConfigCache.mainColor = config.todosSettings.mainColor || todosConfigCache.mainColor;
+            todosConfigCache.opacity = config.todosSettings.opacity !== undefined ? config.todosSettings.opacity : todosConfigCache.opacity;
+        }
+    } catch (error) {
+        console.error('[Todos] Get config error:', error);
+    }
+}
+
+// 渲染待办事项
+async function renderTodos() {
+    const todosListContainer = document.getElementById('todos-list');
+    if (!todosListContainer) return;
+
+    if (todosList.length === 0) {
+        todosListContainer.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.75rem; text-align: center; padding: 0.5rem;">暂无待办事项</div>';
+        // 隐藏展开/收起按钮
+        const toggleButton = document.getElementById('todos-toggle-button');
+        if (toggleButton) toggleButton.style.display = 'none';
+        return;
+    }
+    
+    // 获取配置中的主颜色和透明度（同步获取，避免异步问题）
+    let mainColor = '#8b5cf6';
+    let opacity = 0.1;
+    
+    try {
+        const config = await dataManager.getDashboardConfig();
+        if (config.todosSettings) {
+            mainColor = config.todosSettings.mainColor || mainColor;
+            opacity = config.todosSettings.opacity !== undefined ? config.todosSettings.opacity : opacity;
+        }
+    } catch (error) {
+        console.error('[Todos] Get config error:', error);
+    }
+    
+    // 将主颜色转换为RGB
+    function hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        } : null;
+    }
+    
+    // 根据主颜色和透明度生成待办项颜色（更鲜艳的随机色）
+    function generateTodoColor(todoId, baseColor, baseOpacity) {
+        // 为待办项生成一个稳定的颜色（基于ID哈希）
+        let hash = 0;
+        const idStr = String(todoId);
+        for (let i = 0; i < idStr.length; i++) {
+            hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        
+        // 使用更鲜艳的预定义颜色数组，基于hash选择
+        const vibrantColors = [
+            { r: 139, g: 92, b: 246 },   // 紫色
+            { r: 59, g: 130, b: 246 },   // 蓝色
+            { r: 16, g: 185, b: 129 },   // 绿色
+            { r: 245, g: 158, b: 11 },   // 黄色
+            { r: 239, g: 68, b: 68 },    // 红色
+            { r: 236, g: 72, b: 153 },   // 粉色
+            { r: 14, g: 165, b: 233 },   // 天蓝色
+            { r: 34, g: 197, b: 94 },    // 浅绿色
+            { r: 251, g: 146, b: 60 },   // 橙色
+            { r: 168, g: 85, b: 247 },   // 紫罗兰
+            { r: 99, g: 102, b: 241 },   // 靛蓝
+            { r: 20, g: 184, b: 166 },   // 青绿色
+            { r: 249, g: 115, b: 22 },   // 橙红色
+            { r: 147, g: 51, b: 234 },   // 深紫色
+            { r: 37, g: 99, b: 235 },    // 深蓝色
+            { r: 5, g: 150, b: 105 },    // 深绿色
+        ];
+        
+        const colorIndex = Math.abs(hash) % vibrantColors.length;
+        const selectedColor = vibrantColors[colorIndex];
+        
+        // 使用适中的透明度（0.15，降低一半）使颜色更柔和
+        const enhancedOpacity = Math.max(0.15, baseOpacity * 1.5);
+        
+        return `rgba(${selectedColor.r}, ${selectedColor.g}, ${selectedColor.b}, ${enhancedOpacity})`;
+    }
+
+    // 决定显示哪些待办事项
+    const maxVisible = 5;
+    const shouldShowToggle = todosList.length > maxVisible;
+    const visibleTodos = todosExpanded ? todosList : todosList.slice(0, maxVisible);
+
+    todosListContainer.innerHTML = visibleTodos.map((todo, visibleIndex) => {
+        // 获取原始索引（用于操作）
+        // 如果展开，visibleTodos就是todosList，索引相同
+        // 如果未展开，visibleTodos是todosList.slice(0, 5)，索引对应关系不变
+        // 为了更安全，从todosList中找到对应的索引
+        const actualIndex = todosList.findIndex(t => 
+            (t.id && t.id === todo.id) || 
+            (!t.id && !todo.id && t.text === todo.text && t.completed === todo.completed)
+        );
+        const finalIndex = actualIndex >= 0 ? actualIndex : visibleIndex;
+        const todoColor = generateTodoColor(todo.id || finalIndex.toString(), mainColor, opacity);
+        const hasImage = todo.image && todo.image.trim() !== '';
+        const imageIconHtml = hasImage ? `<span class="todo-image-icon" data-todo-index="${finalIndex}" style="color: var(--accent-color); font-size: 0.875rem; cursor: pointer; flex-shrink: 0; padding: 0.25rem;" title="双击查看图片">🖼️</span>` : '';
+        return `
+        <div class="todo-item" data-todo-index="${finalIndex}" data-todo-id="${todo.id || finalIndex}" 
+            style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: ${todoColor}; border-radius: 0.375rem; ${todo.completed ? 'opacity: 0.6;' : ''} cursor: move; position: relative; user-select: none;">
+            <span class="todo-drag-handle" style="color: var(--text-secondary); font-size: 0.875rem; cursor: move; user-select: none; line-height: 1; flex-shrink: 0;">⋮⋮</span>
+            <input type="checkbox" class="todo-checkbox" data-todo-index="${finalIndex}" ${todo.completed ? 'checked' : ''} 
+                style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent-color); flex-shrink: 0;">
+            <span style="flex: 1; font-size: 0.875rem; color: var(--text-primary); ${todo.completed ? 'text-decoration: line-through;' : ''}">${escapeHtml(todo.text)}</span>
+            ${imageIconHtml}
+            <button class="todo-delete-btn" data-todo-index="${finalIndex}" 
+                style="background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 0.875rem; padding: 0.25rem; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">×</button>
+        </div>
+    `;
+    }).join('');
+    
+    // 显示/隐藏展开/收起按钮
+    const toggleButton = document.getElementById('todos-toggle-button');
+    if (toggleButton) {
+        if (shouldShowToggle) {
+            toggleButton.style.display = 'block';
+            toggleButton.innerHTML = todosExpanded 
+                ? `<span style="font-size: 0.75rem; color: var(--text-secondary);">收起 ▲</span>`
+                : `<span style="font-size: 0.75rem; color: var(--text-secondary);">展开更多 (${todosList.length - maxVisible} 项) ▼</span>`;
+        } else {
+            toggleButton.style.display = 'none';
+        }
+    }
+    
+    // 应用折叠状态（如果折叠了，隐藏内容）
+    applyTodosCollapse();
+    
+    // 渲染后启用拖拽（如果未折叠）
+    if (!todosCollapsed) {
+        enableTodosDrag();
+    }
+    
+    // 绑定事件监听器（避免内联事件处理器，符合CSP）
+    bindTodoEvents(todosListContainer);
+}
+
+// 绑定待办事项事件监听器（符合CSP）
+function bindTodoEvents(container) {
+    // 使用事件委托处理复选框和删除按钮
+    container.addEventListener('change', (e) => {
+        if (e.target.classList.contains('todo-checkbox')) {
+            const index = parseInt(e.target.getAttribute('data-todo-index'));
+            if (!isNaN(index) && window.toggleTodo) {
+                window.toggleTodo(index);
+            }
+        }
+    });
+    
+    container.addEventListener('click', (e) => {
+        // 阻止事件冒泡（避免触发其他点击事件）
+        if (e.target.classList.contains('todo-checkbox')) {
+            e.stopPropagation();
+        }
+        
+        // 处理删除按钮
+        if (e.target.classList.contains('todo-delete-btn')) {
+            e.stopPropagation();
+            const index = parseInt(e.target.getAttribute('data-todo-index'));
+            if (!isNaN(index) && window.deleteTodo) {
+                window.deleteTodo(index);
+            }
+        }
+    });
+    
+    // 处理图片图标双击（仅双击，不响应单击）
+    container.addEventListener('dblclick', (e) => {
+        if (e.target.classList.contains('todo-image-icon')) {
+            e.stopPropagation();
+            e.preventDefault();
+            const index = parseInt(e.target.getAttribute('data-todo-index'));
+            if (!isNaN(index) && window.showTodoImageModal) {
+                window.showTodoImageModal(index);
+            }
+        }
+    });
+    
+    // 处理右键菜单（编辑）
+    container.addEventListener('contextmenu', (e) => {
+        const todoItem = e.target.closest('.todo-item');
+        if (todoItem) {
+            e.preventDefault();
+            e.stopPropagation();
+            const index = parseInt(todoItem.getAttribute('data-todo-index'));
+            if (!isNaN(index) && window.editTodo) {
+                window.editTodo(index);
+            }
+        }
+    });
+    
+    container.addEventListener('mousedown', (e) => {
+        // 阻止复选框和删除按钮的事件冒泡
+        if (e.target.classList.contains('todo-checkbox') || e.target.classList.contains('todo-delete-btn')) {
+            e.stopPropagation();
+        }
+    });
+}
+
+// 切换待办事项展开/收起状态
+window.toggleTodosExpanded = async function() {
+    todosExpanded = !todosExpanded;
+    await renderTodos();
+};
+
+// 回到顶部
+window.scrollToTop = function() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+// 初始化右侧导航的滚动显示/隐藏功能
+let rightNavScrollHandler = null;
+
+function initRightNavScroll() {
+    const rightNav = document.getElementById('right-nav-container');
+    if (!rightNav) return;
+    
+    // 如果已经存在监听器，先移除避免重复绑定
+    if (rightNavScrollHandler) {
+        window.removeEventListener('scroll', rightNavScrollHandler);
+    }
+    
+    let ticking = false;
+    
+    rightNavScrollHandler = function() {
+        if (!ticking) {
+            window.requestAnimationFrame(() => {
+                const scrollY = window.scrollY || window.pageYOffset;
+                const scrollThreshold = 200; // 滚动200px后显示
+                
+                if (scrollY > scrollThreshold) {
+                    // 向下滚动超过阈值，显示右侧导航（完整界面）
+                    rightNav.classList.add('show');
+                } else {
+                    // 回到顶部，隐藏右侧导航
+                    rightNav.classList.remove('show');
+                }
+                
+                ticking = false;
+            });
+            ticking = true;
+        }
+    };
+    
+    // 监听滚动事件
+    window.addEventListener('scroll', rightNavScrollHandler, { passive: true });
+    
+    // 初始检查
+    rightNavScrollHandler();
+}
+
+// 显示添加待办输入框
+window.showAddTodoInput = function() {
+    const container = document.getElementById('add-todo-input-container');
+    const input = document.getElementById('new-todo-input');
+    const imagePreview = document.getElementById('add-todo-image-preview');
+    const imageDisplay = document.getElementById('add-todo-image-display');
+    
+    if (container && input) {
+        container.style.display = 'block';
+        input.focus();
+        
+        // 清除之前的图片预览
+        if (imagePreview) imagePreview.style.display = 'none';
+        if (imageDisplay) imageDisplay.src = '';
+        container.dataset.todoImage = '';
+        
+        // 绑定图片粘贴事件
+        if (input) {
+            input.addEventListener('paste', handleAddTodoImagePaste, { once: false });
+        }
+    }
+};
+
+// 隐藏添加待办输入框
+window.hideAddTodoInput = function() {
+    const container = document.getElementById('add-todo-input-container');
+    const input = document.getElementById('new-todo-input');
+    const imagePreview = document.getElementById('add-todo-image-preview');
+    const imageDisplay = document.getElementById('add-todo-image-display');
+    
+    if (container && input) {
+        container.style.display = 'none';
+        input.value = '';
+        
+        // 清除图片预览
+        if (imagePreview) imagePreview.style.display = 'none';
+        if (imageDisplay) imageDisplay.src = '';
+        container.dataset.todoImage = '';
+        
+        // 移除粘贴事件监听器
+        if (input) {
+            input.removeEventListener('paste', handleAddTodoImagePaste);
+        }
+    }
+};
+
+// 处理输入框按键
+window.handleTodoInputKeydown = function(event) {
+    if (event.key === 'Enter') {
+        addTodo();
+    } else if (event.key === 'Escape') {
+        hideAddTodoInput();
+    }
+};
+
+// 处理添加待办时的图片粘贴
+function handleAddTodoImagePaste(e) {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            const file = items[i].getAsFile();
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const imageData = event.target.result;
+                const container = document.getElementById('add-todo-input-container');
+                const imagePreview = document.getElementById('add-todo-image-preview');
+                const imageDisplay = document.getElementById('add-todo-image-display');
+                
+                if (container) {
+                    container.dataset.todoImage = imageData;
+                }
+                if (imageDisplay) {
+                    imageDisplay.src = imageData;
+                }
+                if (imagePreview) {
+                    imagePreview.style.display = 'block';
+                }
+            };
+            reader.readAsDataURL(file);
+            break;
+        }
+    }
+}
+
+// 添加待办事项
+window.addTodo = async function() {
+    const input = document.getElementById('new-todo-input');
+    const container = document.getElementById('add-todo-input-container');
+    if (!input || !container) return;
+
+    const text = input.value.trim();
+    const imageData = container.dataset.todoImage || '';
+    
+    // 允许只有文字或只有图片
+    if (!text && !imageData) {
+        alert('请输入待办事项内容或粘贴图片');
+        return;
+    }
+
+    const newTodo = {
+        id: Date.now().toString(),
+        text: text || '',
+        image: imageData,
+        completed: false,
+        createdAt: new Date().toISOString(),
+        originalIndex: todosList.filter(t => !t.completed).length // 新待办项放在未完成部分的末尾
+    };
+
+    // 添加到未完成部分的开头（置顶）
+    // 找到第一个已完成待办项的索引，如果没有则添加到开头
+    const firstCompletedIndex = todosList.findIndex(t => t.completed);
+    if (firstCompletedIndex === -1) {
+        // 没有已完成的待办项，直接添加到开头
+        todosList.unshift(newTodo);
+    } else {
+        // 有已完成的待办项，插入到第一个已完成待办项之前（未完成部分的开头）
+        todosList.splice(firstCompletedIndex, 0, newTodo);
+    }
+    
+    // 更新所有未完成待办项的 originalIndex（因为新项插入了）
+    todosList.forEach((todo, index) => {
+        if (!todo.completed) {
+            todo.originalIndex = index;
+        }
+    });
+    
+    await saveTodos();
+    await renderTodos();
+    hideAddTodoInput();
+};
+
+// 切换待办事项完成状态
+window.toggleTodo = async function(index) {
+    if (index >= 0 && index < todosList.length) {
+        const todo = todosList[index];
+        const wasCompleted = todo.completed;
+        
+        // 切换完成状态
+        todo.completed = !todo.completed;
+        
+        // 分离未完成和已完成的待办项（不包括当前待办项）
+        const incompleteTodos = todosList.filter((t, i) => i !== index && !t.completed);
+        const completedTodos = todosList.filter((t, i) => i !== index && t.completed);
+        
+        if (todo.completed) {
+            // 如果完成，移动到已完成部分的末尾
+            completedTodos.push(todo);
+            todosList.length = 0;
+            todosList.push(...incompleteTodos, ...completedTodos);
+        } else {
+            // 如果取消完成，恢复到原始位置（在未完成部分）
+            // 如果原始索引有效且在范围内，恢复到原始位置
+            if (todo.originalIndex !== undefined && todo.originalIndex < incompleteTodos.length) {
+                incompleteTodos.splice(todo.originalIndex, 0, todo);
+            } else {
+                // 如果原始索引无效或超出范围，添加到未完成部分的末尾
+                incompleteTodos.push(todo);
+            }
+            
+            todosList.length = 0;
+            todosList.push(...incompleteTodos, ...completedTodos);
+            
+            // 更新未完成待办项的原始索引
+            todosList.forEach((t, i) => {
+                if (!t.completed) {
+                    t.originalIndex = i;
+                }
+            });
+        }
+        
+        await saveTodos();
+        await renderTodos();
+    }
+};
+
+// 删除待办事项
+window.deleteTodo = async function(index) {
+    if (index >= 0 && index < todosList.length) {
+        todosList.splice(index, 1);
+        await saveTodos();
+        await renderTodos();
+    }
+};
+
+// 编辑待办事项
+window.editTodo = function(index) {
+    if (index < 0 || index >= todosList.length) return;
+    
+    const todo = todosList[index];
+    showTodoEditModal(todo, index);
+};
+
+// 显示待办事项编辑模态框
+function showTodoEditModal(todo, index) {
+    // 创建或获取编辑模态框
+    let editModal = document.getElementById('todo-edit-modal');
+    if (!editModal) {
+        editModal = document.createElement('div');
+        editModal.id = 'todo-edit-modal';
+        editModal.className = 'todo-edit-modal';
+        editModal.innerHTML = `
+            <div class="todo-edit-modal-content">
+                <div class="todo-edit-modal-header">
+                    <h3>编辑待办事项</h3>
+                    <button class="todo-edit-modal-close" id="todo-edit-modal-close">×</button>
+                </div>
+                <div class="todo-edit-modal-body">
+                    <textarea id="todo-edit-text" class="todo-edit-text" placeholder="输入待办事项内容..." rows="4"></textarea>
+                    <div class="todo-edit-image-preview" id="todo-edit-image-preview" style="display: none;">
+                        <img id="todo-edit-image-display" src="" alt="预览图片" style="max-width: 100%; max-height: 200px; border-radius: 0.375rem; margin-top: 0.5rem;">
+                        <button class="todo-edit-image-remove" id="todo-edit-image-remove" style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">删除图片</button>
+                    </div>
+                    <div class="todo-edit-image-icon-container" id="todo-edit-image-icon-container" style="display: none;">
+                        <span style="color: var(--accent-color); font-size: 0.875rem;">🖼️ 已添加图片</span>
+                    </div>
+                </div>
+                <div class="todo-edit-modal-footer">
+                    <button class="todo-edit-modal-save" id="todo-edit-modal-save">保存</button>
+                    <button class="todo-edit-modal-cancel" id="todo-edit-modal-cancel">取消</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(editModal);
+        
+        // 绑定事件
+        const closeBtn = document.getElementById('todo-edit-modal-close');
+        const cancelBtn = document.getElementById('todo-edit-modal-cancel');
+        const saveBtn = document.getElementById('todo-edit-modal-save');
+        const textarea = document.getElementById('todo-edit-text');
+        const removeImageBtn = document.getElementById('todo-edit-image-remove');
+        
+        if (closeBtn) {
+            closeBtn.addEventListener('click', hideTodoEditModal);
+        }
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', hideTodoEditModal);
+        }
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                const currentIndex = parseInt(editModal.dataset.todoIndex);
+                if (!isNaN(currentIndex)) {
+                    saveTodoEdit(currentIndex);
+                }
+            });
+        }
+        
+        // 点击背景关闭
+        editModal.addEventListener('click', (e) => {
+            if (e.target === editModal) {
+                hideTodoEditModal();
+            }
+        });
+        
+        // 支持粘贴图片
+        if (textarea) {
+            textarea.addEventListener('paste', handleTodoImagePaste);
+        }
+        
+        // 删除图片
+        if (removeImageBtn) {
+            removeImageBtn.addEventListener('click', () => {
+                const preview = document.getElementById('todo-edit-image-preview');
+                const iconContainer = document.getElementById('todo-edit-image-icon-container');
+                const imageDisplay = document.getElementById('todo-edit-image-display');
+                if (preview) preview.style.display = 'none';
+                if (iconContainer) iconContainer.style.display = 'none';
+                if (imageDisplay) imageDisplay.src = '';
+                editModal.dataset.todoImage = '';
+            });
+        }
+    }
+    
+    // 填充数据
+    const textarea = document.getElementById('todo-edit-text');
+    const imagePreview = document.getElementById('todo-edit-image-preview');
+    const imageDisplay = document.getElementById('todo-edit-image-display');
+    const iconContainer = document.getElementById('todo-edit-image-icon-container');
+    
+    if (textarea) {
+        textarea.value = todo.text || '';
+    }
+    
+    if (todo.image && todo.image.trim() !== '') {
+        if (imageDisplay) imageDisplay.src = todo.image;
+        if (imagePreview) imagePreview.style.display = 'block';
+        if (iconContainer) iconContainer.style.display = 'block';
+        editModal.dataset.todoImage = todo.image;
+    } else {
+        if (imagePreview) imagePreview.style.display = 'none';
+        if (iconContainer) iconContainer.style.display = 'none';
+        editModal.dataset.todoImage = '';
+    }
+    
+    editModal.dataset.todoIndex = index;
+    editModal.style.display = 'flex';
+    
+    // 聚焦文本框
+    if (textarea) {
+        setTimeout(() => textarea.focus(), 100);
+    }
+}
+
+// 隐藏待办事项编辑模态框
+function hideTodoEditModal() {
+    const editModal = document.getElementById('todo-edit-modal');
+    if (editModal) {
+        editModal.style.display = 'none';
+    }
+}
+
+// 处理图片粘贴
+function handleTodoImagePaste(e) {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            const file = items[i].getAsFile();
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const imageData = event.target.result;
+                const editModal = document.getElementById('todo-edit-modal');
+                const imagePreview = document.getElementById('todo-edit-image-preview');
+                const imageDisplay = document.getElementById('todo-edit-image-display');
+                const iconContainer = document.getElementById('todo-edit-image-icon-container');
+                
+                if (editModal) {
+                    editModal.dataset.todoImage = imageData;
+                }
+                if (imageDisplay) {
+                    imageDisplay.src = imageData;
+                }
+                if (imagePreview) {
+                    imagePreview.style.display = 'block';
+                }
+                if (iconContainer) {
+                    iconContainer.style.display = 'block';
+                }
+            };
+            reader.readAsDataURL(file);
+            break;
+        }
+    }
+}
+
+// 保存待办事项编辑
+async function saveTodoEdit(index) {
+    const editModal = document.getElementById('todo-edit-modal');
+    const textarea = document.getElementById('todo-edit-text');
+    
+    if (!editModal || !textarea || index < 0 || index >= todosList.length) return;
+    
+    const text = textarea.value.trim();
+    if (!text && !editModal.dataset.todoImage) {
+        alert('请输入待办事项内容或添加图片');
+        return;
+    }
+    
+    const todo = todosList[index];
+    todo.text = text || '';
+    todo.image = editModal.dataset.todoImage || '';
+    
+    await saveTodos();
+    await renderTodos();
+    hideTodoEditModal();
+}
+
+// 显示待办事项图片浮窗
+window.showTodoImageModal = function(index) {
+    if (index < 0 || index >= todosList.length) return;
+    
+    const todo = todosList[index];
+    if (!todo.image || todo.image.trim() === '') return;
+    
+    // 创建或获取图片浮窗
+    let imageModal = document.getElementById('todo-image-modal');
+    if (!imageModal) {
+        imageModal = document.createElement('div');
+        imageModal.id = 'todo-image-modal';
+        imageModal.className = 'todo-image-modal';
+        imageModal.innerHTML = `
+            <div class="todo-image-modal-content">
+                <button class="todo-image-modal-close" id="todo-image-modal-close">×</button>
+                <img id="todo-image-modal-display" src="" alt="待办事项图片" style="max-width: 90vw; max-height: 90vh; border-radius: 0.5rem;">
+            </div>
+        `;
+        document.body.appendChild(imageModal);
+        
+        // 绑定关闭事件
+        const closeBtn = document.getElementById('todo-image-modal-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                if (imageModal) imageModal.style.display = 'none';
+            });
+        }
+        
+        // 点击背景关闭
+        imageModal.addEventListener('click', (e) => {
+            if (e.target === imageModal) {
+                imageModal.style.display = 'none';
+            }
+        });
+        
+        // ESC键关闭
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && imageModal && imageModal.style.display === 'flex') {
+                imageModal.style.display = 'none';
+            }
+        });
+    }
+    
+    const imageDisplay = document.getElementById('todo-image-modal-display');
+    if (imageDisplay) {
+        imageDisplay.src = todo.image;
+    }
+    
+    imageModal.style.display = 'flex';
+};
+
+// 启用待办项拖拽功能
+function enableTodosDrag() {
+    const todoItems = document.querySelectorAll('#todos-list .todo-item');
+    
+    todoItems.forEach((item) => {
+        // 移除旧的事件监听器
+        item.removeEventListener('dragstart', handleTodoDragStart);
+        item.removeEventListener('dragend', handleTodoDragEnd);
+        item.removeEventListener('dragover', handleTodoDragOver);
+        item.removeEventListener('drop', handleTodoDrop);
+        
+        // 更新 data-todo-index（确保索引正确）
+        const index = todosList.findIndex(t => (t.id || '') === (item.dataset.todoId || ''));
+        if (index >= 0) {
+            item.dataset.todoIndex = index;
+        }
+        
+        // 设置可拖拽
+        item.setAttribute('draggable', 'true');
+        item.style.cursor = 'move';
+        
+        // 添加事件监听器
+        item.addEventListener('dragstart', handleTodoDragStart);
+        item.addEventListener('dragend', handleTodoDragEnd);
+        item.addEventListener('dragover', handleTodoDragOver);
+        item.addEventListener('drop', handleTodoDrop);
+        
+        // 拖拽手柄点击时开始拖拽
+        const dragHandle = item.querySelector('.todo-drag-handle');
+        if (dragHandle) {
+            dragHandle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                // 可以在这里触发拖拽，或者让用户手动拖拽
+            });
+        }
+    });
+}
+
+// 待办项拖拽相关变量
+let draggedTodoItem = null;
+let draggedTodoIndex = -1;
+
+// 处理待办项拖拽开始
+function handleTodoDragStart(e) {
+    // 如果点击的是复选框、删除按钮，取消拖拽
+    if (e.target.tagName === 'INPUT' || (e.target.tagName === 'BUTTON' && e.target.textContent === '×')) {
+        e.preventDefault();
+        return false;
+    }
+    
+    draggedTodoItem = this;
+    draggedTodoIndex = parseInt(this.dataset.todoIndex);
+    
+    if (isNaN(draggedTodoIndex) || draggedTodoIndex < 0 || draggedTodoIndex >= todosList.length) {
+        e.preventDefault();
+        return false;
+    }
+    
+    this.style.opacity = '0.5';
+    this.classList.add('dragging');
+    
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', draggedTodoIndex.toString());
+}
+
+// 处理待办项拖拽结束
+function handleTodoDragEnd(e) {
+    if (draggedTodoItem) {
+        draggedTodoItem.style.opacity = '';
+        draggedTodoItem.classList.remove('dragging', 'drag-over');
+    }
+    draggedTodoItem = null;
+    draggedTodoIndex = -1;
+    
+    // 移除所有拖拽悬停效果
+    document.querySelectorAll('#todos-list .todo-item').forEach(item => {
+        item.classList.remove('drag-over');
+    });
+}
+
+// 处理待办项拖拽悬停
+function handleTodoDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (draggedTodoItem && this !== draggedTodoItem) {
+        this.classList.add('drag-over');
+    }
+}
+
+// 处理待办项放置
+async function handleTodoDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedTodoItem || this === draggedTodoItem) {
+        return;
+    }
+    
+    const targetIndex = parseInt(this.dataset.todoIndex);
+    const sourceIndex = draggedTodoIndex;
+    
+    if (isNaN(sourceIndex) || isNaN(targetIndex) || 
+        sourceIndex === targetIndex || 
+        sourceIndex < 0 || targetIndex < 0 || 
+        sourceIndex >= todosList.length || targetIndex >= todosList.length) {
+        return;
+    }
+    
+    // 移动待办项
+    const draggedTodo = todosList[sourceIndex];
+    todosList.splice(sourceIndex, 1);
+    
+    // 计算插入位置（如果源索引小于目标索引，目标索引需要减1，因为已经移除了源项）
+    let insertIndex = targetIndex;
+    if (sourceIndex < targetIndex) {
+        insertIndex = targetIndex; // 索引不变（因为已经移除了一项）
+    }
+    
+    todosList.splice(insertIndex, 0, draggedTodo);
+    
+    // 更新未完成待办项的原始索引
+    const incompleteCount = todosList.filter(t => !t.completed).length;
+    todosList.forEach((todo, index) => {
+        if (!todo.completed && index < incompleteCount) {
+            todo.originalIndex = index;
+        }
+    });
+    
+    // 保存并重新渲染
+    await saveTodos();
+    await renderTodos();
+}
+
+// 保存待办事项
+async function saveTodos() {
+    try {
+        // 检查是否已登录
+        const isLoggedIn = await dataManager.isLoggedIn();
+        if (!isLoggedIn) {
+            console.error('Save todos failed: User not logged in');
+            alert('保存失败：请先登录');
+            return;
+        }
+
+        // 检查数据格式
+        if (!Array.isArray(todosList)) {
+            console.error('Save todos failed: todosList is not an array', todosList);
+            alert('保存失败：数据格式错误');
+            return;
+        }
+
+        await dataManager.saveTodos(todosList);
+        console.log('Todos saved successfully:', todosList.length, 'items');
+    } catch (error) {
+        console.error('Save todos error:', error);
+        console.error('Error details:', {
+            message: error.message,
+            name: error.name,
+            stack: error.stack
+        });
+        
+        // 提供更详细的错误信息
+        let errorMessage = '保存待办事项失败';
+        if (error.message) {
+            if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                errorMessage = '保存失败：请先登录';
+            } else if (error.message.includes('无法连接到服务器')) {
+                errorMessage = '保存失败：无法连接到服务器，请确保服务器正在运行';
+            } else {
+                errorMessage = `保存失败：${error.message}`;
+            }
+        }
+        alert(errorMessage);
+    }
+}
+
+// HTML 转义辅助函数
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 绑定favicon图片的错误处理（符合CSP，不使用内联事件处理器）
+function bindFaviconErrorHandlers(container) {
+    if (!container) return;
+    
+    // 查找所有favicon图片（包括Google的各种favicon服务）
+    const faviconImgs = container.querySelectorAll('img[src*="favicon"], img[src*="google.com/s2"], img[src*="gstatic.com"], img[src*="faviconV2"]');
+    
+    faviconImgs.forEach(img => {
+        // 如果已经绑定过，跳过
+        if (img.dataset.faviconBound === 'true') return;
+        img.dataset.faviconBound = 'true';
+        
+        // 查找fallback图标
+        let fallbackSpan = img.nextElementSibling;
+        if (!fallbackSpan || fallbackSpan.tagName !== 'SPAN') {
+            // 如果没有fallback，创建一个
+            fallbackSpan = document.createElement('span');
+            fallbackSpan.textContent = '🔗';
+            fallbackSpan.style.display = 'none';
+            img.parentNode.insertBefore(fallbackSpan, img.nextSibling);
+        }
+        
+        // 绑定错误处理（静默处理，不显示错误）
+        img.addEventListener('error', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            this.style.display = 'none';
+            if (fallbackSpan) {
+                fallbackSpan.style.display = 'inline';
+            }
+            // 阻止默认的错误行为
+            return false;
+        }, true);
+        
+        // 绑定加载检查
+        img.addEventListener('load', function() {
+            if (this.naturalWidth === 0 || this.naturalHeight === 0) {
+                this.dispatchEvent(new Event('error'));
+            }
+        });
+    });
+}
+
+// 加载常用标签栏（Top10）
+async function loadFrequentBookmarks() {
+    try {
+        const topBookmarks = await dataManager.getTopBookmarks(10);
+        const container = document.getElementById('frequent-bookmarks-list');
+        const section = document.getElementById('frequent-bookmarks-bar');
+        
+        if (!container || !section) return;
+
+        // 检查登录状态，未登录时不显示
+        const isLoggedIn = await dataManager.isLoggedIn();
+        if (!isLoggedIn) {
+            section.style.display = 'none';
+            return;
+        }
+
+        // 常驻显示，即使没有数据也显示
+        section.style.display = 'block';
+
+        // 如果没有常用书签，显示空状态
+        if (!topBookmarks || topBookmarks.length === 0) {
+            container.innerHTML = '<div class="frequent-empty-state">暂无上帝的指引，点击书签后会自动显示</div>';
+            return;
+        }
+
+        let html = '';
+        topBookmarks.forEach((bookmark) => {
+            // 严格限制为10个字符，超出截断
+            const displayName = bookmark.name.length > 10 ? bookmark.name.substring(0, 10) : bookmark.name;
+            // 使用保存的logo或默认图标（不使用内联事件处理器）
+            const iconHtml = bookmark.logo ? 
+                `<img src="${escapeHtml(bookmark.logo)}" width="16" height="16" style="vertical-align: middle;">` : 
+                '';
+            const fallbackIcon = bookmark.logo ? '' : (bookmark.icon || '🔗');
+            html += `
+                <a href="${escapeHtml(bookmark.url)}" target="_blank" class="frequent-bookmark-item" title="${escapeHtml(bookmark.name)} (点击 ${bookmark.count} 次)">
+                    <span class="frequent-bookmark-icon">${iconHtml}<span style="display: ${bookmark.logo ? 'none' : 'inline'}">${fallbackIcon}</span></span>
+                    <span class="frequent-bookmark-name">${escapeHtml(displayName)}</span>
+                </a>
+            `;
+        });
+
+        container.innerHTML = html;
+        
+        // 绑定favicon错误处理（符合CSP）
+        setTimeout(() => {
+            bindFaviconErrorHandlers(container);
+        }, 0);
+        
+        // 上帝的指引标题颜色固定为紫色渐变，不再跟随卡片主题色
+        // updateFrequentHeaderColor(); // 已禁用，使用固定的紫色渐变
+    } catch (error) {
+        console.error('Load frequent bookmarks error:', error);
+        const container = document.getElementById('frequent-bookmarks-list');
+        if (container) {
+            container.innerHTML = '<div class="frequent-empty-state">加载失败，请刷新页面</div>';
+        }
+    }
+}
+
+// 更新上帝的指引标题颜色为第一个书签卡片的颜色（已禁用，使用固定的紫色渐变）
+function updateFrequentHeaderColor() {
+    // 已禁用：上帝的指引标题颜色固定为紫色渐变，不再跟随卡片主题色
+    // const firstBookmarkCard = document.querySelector('#bookmarks-container .bookmark-card');
+    // if (firstBookmarkCard) {
+    //     const cardColor = firstBookmarkCard.dataset.customColor || '#8b5cf6';
+    //     const headerH3 = document.querySelector('.frequent-bar-header h3');
+    //     if (headerH3) {
+    //         headerH3.style.color = cardColor;
+    //     }
+    // }
+}
+
+// 暴露到全局
+window.updateFrequentHeaderColor = updateFrequentHeaderColor;
+
+// 检查是否是本地URL
+function isLocalUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname;
+        return domain === 'localhost' || 
+               domain === '127.0.0.1' || 
+               domain.startsWith('192.168.') || 
+               domain.startsWith('10.') || 
+               domain.startsWith('172.') ||
+               domain === '0.0.0.0';
+    } catch (e) {
+        return false;
+    }
+}
+
+// 获取网站favicon
+function getFaviconUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname;
+        
+        // 跳过本地URL（localhost、127.0.0.1、本地IP等）
+        if (isLocalUrl(url)) {
+            return null;
+        }
+        
+        // 使用Google的favicon服务
+        return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+    } catch (e) {
+        return null;
+    }
+}
+
+// 更新书签的logo
+async function updateBookmarkLogo(url, name, catIndex, itemIndex) {
+    try {
+        const faviconUrl = getFaviconUrl(url);
+        if (!faviconUrl) return;
+
+        const bookmarks = await dataManager.getBookmarks();
+        if (bookmarks && bookmarks[catIndex] && bookmarks[catIndex].items[itemIndex]) {
+            const bookmark = bookmarks[catIndex].items[itemIndex];
+            
+            // 如果logo已存在且相同，不更新
+            if (bookmark.logo === faviconUrl) return;
+            
+            // 更新logo
+            bookmark.logo = faviconUrl;
+            
+            // 如果icon是emoji，保留；如果是img标签，更新src（不使用内联事件处理器）
+            if (bookmark.icon && bookmark.icon.includes('<img')) {
+                // 更新img标签的src
+                bookmark.icon = `<img src="${faviconUrl}" width="16" height="16" style="vertical-align: middle;">`;
+            } else {
+                // 如果icon是emoji，添加logo但保留emoji作为fallback
+                bookmark.icon = `<img src="${faviconUrl}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${bookmark.icon || '🔗'}</span>`;
+            }
+            
+            // 保存更新
+            await dataManager.saveBookmarks(bookmarks);
+            
+            // 重新加载书签显示
+            loadBookmarks();
+        }
+    } catch (error) {
+        console.error('Update bookmark logo error:', error);
+    }
+}
+
+async function loadBookmarks() {
+    console.log('[loadBookmarks] Starting to load bookmarks...');
+    const container = document.getElementById('bookmarks-container');
+    if (!container) {
+        console.error('[loadBookmarks] Bookmarks container not found!');
+        return;
+    }
+
+    try {
+        let bookmarksData = null;
+        let isAdmin = false;
+        
+        try {
+            console.log('[loadBookmarks] Fetching bookmarks from API...');
+            bookmarksData = await dataManager.getBookmarks();
+            console.log('[loadBookmarks] Bookmarks loaded:', bookmarksData?.length || 0, 'categories');
+            
+            // 如果没有数据，使用空数组而不是 null
+            if (!bookmarksData) {
+                console.warn('[loadBookmarks] No bookmarks data, using empty array');
+                bookmarksData = [];
+            }
+        } catch (error) {
+            console.error('[loadBookmarks] Failed to load bookmarks:', error);
+            // 如果API失败，尝试使用默认数据，而不是直接返回
+            console.log('[loadBookmarks] Attempting to use default bookmarks...');
+            try {
+                bookmarksData = dataManager.getDefaultBookmarks();
+                console.log('[loadBookmarks] Using default bookmarks:', bookmarksData?.length || 0, 'categories');
+            } catch (defaultError) {
+                console.error('[loadBookmarks] Failed to get default bookmarks:', defaultError);
+                // 如果默认数据也失败，显示错误提示
+                container.innerHTML = '<p style="color: var(--text-secondary); padding: 2rem; text-align: center;">⚠️ 无法加载书签：请确保服务器正在运行</p>';
+                return;
+            }
+        }
+
+        try {
+            isAdmin = await dataManager.isLoggedIn();
+        } catch (error) {
+            console.error('Failed to check login status:', error);
+            // 默认未登录状态
+            isAdmin = false;
+        }
+
+        const isSettingsMode = document.getElementById('admin-sidebar')?.classList.contains('open');
+
+        let html = '';
+
+        // 工具栏控制代码迁移至 initGlobalUI 或在此处重新检查
+        const toolbar = document.getElementById('admin-toolbar');
+        if (toolbar) {
+            toolbar.style.display = isAdmin ? 'flex' : 'none';
+            // 管理员移动端适配
+            if (isAdmin && window.innerWidth < 768) {
+                toolbar.style.flexDirection = 'column';
+                toolbar.style.alignItems = 'stretch';
+            }
+        }
+
+        if (bookmarksData) {
+        // 获取配置以检查隐藏和折叠状态
+        let bookmarkLayoutConfig = [];
+        try {
+            const config = await dataManager.getDashboardConfig();
+            bookmarkLayoutConfig = config.bookmarkLayout || [];
+        } catch (error) {
+            console.error('获取书签布局配置失败:', error);
+        }
+        
+        bookmarksData.forEach((cat, catIndex) => {
+            // 查找该分类的配置
+            const layoutItem = bookmarkLayoutConfig.find(item => item.category === cat.category);
+            const isHidden = layoutItem?.hidden === true;
+            const isCollapsed = layoutItem?.collapsed === true;
+            
+            html += `
+                <div class="glass-card bookmark-card ${isCollapsed ? 'bookmark-card-collapsed' : ''}" 
+                     data-category="${cat.category}" 
+                     style="${isHidden ? 'display: none !important;' : ''}">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 10px;">
+                        ${isAdmin && isSettingsMode ? `
+                            <input type="text" value="${cat.category}" 
+                                class="category-name-input" data-category-index="${catIndex}"
+                                style="background: rgba(255,255,255,0.1); border: 1px solid transparent; color: var(--accent-color); font-size: 1.1rem; font-weight: bold; width: 100%; border-radius: 4px; padding: 2px 5px;">
+                        ` : `
+                            <h3 class="bookmark-card-title" 
+                                data-category="${cat.category}"
+                                style="color: var(--accent-color); cursor: pointer; user-select: none;" 
+                                title="双击折叠/展开">${cat.category} ${isCollapsed ? '▼' : '▲'}</h3>
+                        `}
+                        
+                        ${isAdmin ? `
+                            <button class="add-bookmark-btn" data-category-index="${catIndex}" 
+                                style="background: rgba(255,255,255,0.1); border: none; cursor: pointer; color: var(--text-secondary); width: 28px; height: 28px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;"
+                                title="添加书签">
+                                +
+                            </button>
+                        ` : ''}
+                    </div>
+                    <div class="bookmark-grid ${isCollapsed ? 'bookmark-grid-collapsed' : ''}" style="display: ${isCollapsed ? 'none' : 'grid'}; grid-template-columns: repeat(auto-fill, minmax(120px, 120px)); gap: 0.75rem; transition: all 0.3s ease;">
+                        ${cat.items.map((item, itemIndex) => {
+                            // 限制名称显示为10个字符
+                            const displayName = item.name.length > 10 ? item.name.substring(0, 10) : item.name;
+                            // 优先使用保存的logo，如果没有则使用icon
+                            let iconDisplay = '';
+                            if (item.logo) {
+                                // 如果有保存的logo，使用img标签，emoji作为fallback（不使用内联事件处理器）
+                                const fallbackIcon = item.icon && !item.icon.includes('<img') ? item.icon : '🔗';
+                                iconDisplay = `<img src="${item.logo}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${fallbackIcon}</span>`;
+                            } else if (item.icon && item.icon.includes('<img')) {
+                                // 如果icon已经是img标签，移除内联事件处理器
+                                iconDisplay = item.icon.replace(/onerror="[^"]*"/g, '').replace(/onload="[^"]*"/g, '');
+                            } else {
+                                // 使用emoji图标
+                                iconDisplay = item.icon || '🔗';
+                            }
+                            return `
+                            <div class="bookmark-item-wrapper" style="position: relative;">
+                                <a href="${escapeHtml(item.url)}" target="_blank" class="bookmark-item" 
+                                   data-cat-index="${catIndex}" data-item-index="${itemIndex}"
+                                   style="display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; border-radius: 0.5rem; transition: background 0.2s; width: 100%;">
+                                    <span class="bookmark-icon" style="flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 16px; height: 16px;">${iconDisplay}</span>
+                                    <span class="bookmark-name" title="${escapeHtml(item.name)}">${escapeHtml(displayName)}</span>
+                                </a>
+                            </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    <!-- 添加书签 (均需要管理员权限 + 添加权限) -->
+                    ${isAdmin ? `
+                    <!-- Add Button Moved to Header -->
+                    ` : ''}
+                </div>
+            `;
+        });
+    }
+
+        // Add empty state
+        if ((!bookmarksData || bookmarksData.length === 0) && !isAdmin) {
+            html = '<p style="color: var(--text-secondary); padding: 2rem; text-align: center;">暂无书签</p>';
+        }
+
+        container.innerHTML = html;
+        
+        // 绑定favicon错误处理（符合CSP）
+        bindFaviconErrorHandlers(container);
+
+        // Bind Events mainly for Right Click (Context Menu) and Click
+        container.querySelectorAll('.bookmark-item').forEach(item => {
+            const cIdx = parseInt(item.dataset.catIndex);
+            const iIdx = parseInt(item.dataset.itemIndex);
+            item.addEventListener('contextmenu', (e) => handleBookmarkRightClick(e, cIdx, iIdx));
+            // 绑定点击事件（避免内联onclick，符合CSP）
+            item.addEventListener('click', (e) => {
+                // 如果正在拖拽书签，不处理点击
+                if (document.body.classList.contains('is-dragging-bookmark')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+                if (window.handleBookmarkClick) {
+                    window.handleBookmarkClick(e, cIdx, iIdx);
+                }
+            });
+        });
+        
+        // 绑定分类名称输入框和添加书签按钮事件（符合CSP）
+        container.querySelectorAll('.category-name-input').forEach(input => {
+            const catIndex = parseInt(input.getAttribute('data-category-index'));
+            if (!isNaN(catIndex)) {
+                input.addEventListener('change', (e) => {
+                    const value = e.target.value;
+                    if (window.renameCategory) {
+                        window.renameCategory(catIndex, value);
+                    }
+                });
+                input.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+            }
+        });
+        
+        container.querySelectorAll('.add-bookmark-btn').forEach(btn => {
+            const catIndex = parseInt(btn.getAttribute('data-category-index'));
+            if (!isNaN(catIndex) && window.openAddBookmarkModal) {
+                btn.addEventListener('click', () => {
+                    window.openAddBookmarkModal(catIndex);
+                });
+            }
+        });
+
+        // 绑定书签卡片标题双击事件（折叠功能）
+        container.querySelectorAll('.bookmark-card-title').forEach(titleEl => {
+            let lastClickTime = 0;
+            titleEl.addEventListener('click', (e) => {
+                const now = Date.now();
+                if (now - lastClickTime < 300) {
+                    // 双击
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const categoryName = titleEl.getAttribute('data-category');
+                    if (categoryName && window.toggleBookmarkCardCollapse) {
+                        window.toggleBookmarkCardCollapse(categoryName);
+                    }
+                }
+                lastClickTime = now;
+            });
+        });
+
+        // Hover effects
+        document.querySelectorAll('.bookmark-item').forEach(item => {
+            item.addEventListener('mouseenter', () => item.style.backgroundColor = 'rgba(255,255,255,0.05)');
+            item.addEventListener('mouseleave', () => item.style.backgroundColor = 'transparent');
+        });
+
+        // 恢复书签卡片布局设置
+        setTimeout(async () => {
+            await restoreBookmarkStyles();
+            // 恢复书签缩放比例
+            if (typeof window.restoreBookmarkScale === 'function') {
+                await window.restoreBookmarkScale();
+            }
+            // 上帝的指引标题颜色固定为紫色渐变，不再跟随卡片主题色
+            // updateFrequentHeaderColor(); // 已禁用
+            // 延迟渲染右侧导航，确保布局完全恢复后再生成（按实际显示顺序）
+            setTimeout(() => {
+                renderRightNav(); // Update nav after rendering
+            }, 200);
+            // 更新书签分类索引映射（供删除分类使用）
+            if (typeof window.setBookmarkCategoryIndexes === 'function') {
+                window.setBookmarkCategoryIndexes();
+            }
+            
+            // 如果登录状态，启用书签拖拽功能
+            if (isAdmin) {
+                enableBookmarkDragAndDrop();
+            }
+            
+            // 如果设置已打开，为书签卡片添加边界resize handles
+            if (document.body.classList.contains('sidebar-open')) {
+                const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
+                bookmarkCards.forEach(card => {
+                    if (typeof window.addResizeHandle === 'function') {
+                        window.addResizeHandle(card);
+                    }
+                });
+            }
+        }, 100);
+    } catch (error) {
+        console.error('loadBookmarks error:', error);
+        container.innerHTML = '<p style="color: var(--text-secondary); padding: 2rem; text-align: center;">⚠️ 加载书签时发生错误：' + (error.message || '未知错误') + '</p>';
+    } finally {
+        // 加载书签后刷新搜索缓存
+        if (typeof refreshBookmarksCache === 'function') {
+            await refreshBookmarksCache();
+        }
+    }
+}
+
+// 设置书签分类索引映射（供 dashboard-layout.js 使用）
+window.setBookmarkCategoryIndexes = async function() {
+    // 这个函数会在 loadBookmarks 后调用，确保分类索引映射是最新的
+    // renderCardControls 会调用 getBookmarkCategoryIndex 来获取正确的索引
+};
+
+// 启用书签拖拽功能（登录状态下）
+function enableBookmarkDragAndDrop() {
+    const bookmarkWrappers = document.querySelectorAll('#bookmarks-container .bookmark-item-wrapper');
+    const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
+    const bookmarkGrids = document.querySelectorAll('#bookmarks-container .bookmark-grid');
+    
+    // 为每个书签项启用拖拽
+    bookmarkWrappers.forEach(wrapper => {
+        const bookmarkItem = wrapper.querySelector('.bookmark-item');
+        if (!bookmarkItem) return;
+        
+        // 从HTML中的data属性获取索引（注意：HTML中使用的是data-cat-index和data-item-index）
+        const catIndex = parseInt(bookmarkItem.getAttribute('data-cat-index'));
+        const itemIndex = parseInt(bookmarkItem.getAttribute('data-item-index'));
+        
+        if (isNaN(catIndex) || isNaN(itemIndex)) return;
+        
+        // 设置为可拖拽
+        wrapper.setAttribute('draggable', 'true');
+        wrapper.dataset.catIndex = catIndex;
+        wrapper.dataset.itemIndex = itemIndex;
+        
+        // 添加拖拽样式
+        wrapper.classList.add('bookmark-draggable');
+        
+        // 移除旧的事件监听器（如果存在）
+        wrapper.removeEventListener('dragstart', handleBookmarkDragStart);
+        wrapper.removeEventListener('dragend', handleBookmarkDragEnd);
+        
+        // 添加拖拽事件监听器
+        wrapper.addEventListener('dragstart', handleBookmarkDragStart);
+        wrapper.addEventListener('dragend', handleBookmarkDragEnd);
+    });
+    
+    // 为每个分类卡片添加drop区域
+    bookmarkCards.forEach(card => {
+        // 使用新的监听器，使用 { capture: false } 确保事件冒泡
+        card.addEventListener('dragover', handleBookmarkDragOver, { passive: false });
+        card.addEventListener('drop', handleBookmarkDrop, { passive: false });
+        card.addEventListener('dragleave', handleBookmarkDragLeave);
+    });
+    
+    // 为每个网格添加drop区域
+    bookmarkGrids.forEach(grid => {
+        grid.addEventListener('dragover', handleBookmarkDragOver, { passive: false });
+        grid.addEventListener('drop', handleBookmarkDrop, { passive: false });
+        grid.addEventListener('dragleave', handleBookmarkDragLeave);
+    });
+    
+    // 为每个书签项wrapper也添加drop事件（允许拖到其他书签上插入）
+    bookmarkWrappers.forEach(wrapper => {
+        wrapper.addEventListener('dragover', handleBookmarkDragOver, { passive: false });
+        wrapper.addEventListener('drop', handleBookmarkDrop, { passive: false });
+    });
+}
+
+// 书签拖拽开始
+let draggedBookmark = null;
+function handleBookmarkDragStart(e) {
+    console.log('[书签拖拽] dragstart事件触发', this);
+    
+    const wrapper = this;
+    const catIndex = parseInt(wrapper.dataset.catIndex);
+    const itemIndex = parseInt(wrapper.dataset.itemIndex);
+    
+    draggedBookmark = {
+        wrapper: wrapper,
+        catIndex: catIndex,
+        itemIndex: itemIndex
+    };
+    
+    wrapper.classList.add('dragging');
+    document.body.classList.add('is-dragging-bookmark');
+    
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.setData('text/html', wrapper.innerHTML);
+    
+    // 阻止链接的默认行为（导航）
+    e.stopPropagation();
+}
+
+// 书签拖拽结束
+function handleBookmarkDragEnd(e) {
+    console.log('[书签拖拽] dragend事件触发', this);
+    
+    // 清除样式，但不立即清空draggedBookmark（drop事件可能还未处理）
+    if (draggedBookmark && draggedBookmark.wrapper) {
+        draggedBookmark.wrapper.classList.remove('dragging');
+    }
+    
+    document.body.classList.remove('is-dragging-bookmark');
+    
+    // 清除所有拖拽悬停样式
+    document.querySelectorAll('.bookmark-card.drag-over, .bookmark-grid.drag-over').forEach(el => {
+        el.classList.remove('drag-over');
+    });
+    
+    // 延迟清空draggedBookmark，确保drop事件能访问到数据
+    // drop事件会在dragend之前或之后触发，但顺序不确定，所以延迟清空更安全
+    setTimeout(() => {
+        draggedBookmark = null;
+    }, 200);
+}
+
+// 书签拖拽悬停
+function handleBookmarkDragOver(e) {
+    if (!draggedBookmark) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    
+    // 添加悬停样式
+    const card = this.closest('.bookmark-card');
+    const grid = this.closest('.bookmark-grid') || this;
+    if (card) card.classList.add('drag-over');
+    if (grid && grid !== card) grid.classList.add('drag-over');
+}
+
+// 书签拖拽离开
+function handleBookmarkDragLeave(e) {
+    // 只有当真正离开时才移除样式
+    if (!this.contains(e.relatedTarget)) {
+        const card = this.closest('.bookmark-card');
+        const grid = this.closest('.bookmark-grid') || this;
+        if (card) card.classList.remove('drag-over');
+        if (grid) grid.classList.remove('drag-over');
+    }
+}
+
+// 书签拖拽释放
+async function handleBookmarkDrop(e) {
+    console.log('[书签拖拽] drop事件触发', {
+        target: e.target,
+        currentTarget: e.currentTarget,
+        draggedBookmark: draggedBookmark
+    });
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // 保存拖拽信息（因为dragend可能会清空draggedBookmark）
+    const dragInfo = draggedBookmark;
+    if (!dragInfo) {
+        console.log('[书签拖拽] 没有拖拽中的书签，忽略drop');
+        return;
+    }
+    
+    // 查找目标卡片 - 从事件目标开始向上查找
+    let targetCard = e.target.closest('.bookmark-card');
+    if (!targetCard) {
+        // 如果从target找不到，尝试从this找
+        targetCard = this.closest ? this.closest('.bookmark-card') : null;
+    }
+    
+    const targetGrid = targetCard ? targetCard.querySelector('.bookmark-grid') : null;
+    
+    // 移除悬停样式
+    document.querySelectorAll('.bookmark-card.drag-over, .bookmark-grid.drag-over').forEach(el => {
+        el.classList.remove('drag-over');
+    });
+    
+    if (!targetCard) {
+        console.log('[书签拖拽] 未找到目标卡片', e.target, this);
+        return;
+    }
+    
+    const targetCategoryName = targetCard.dataset.category;
+    if (!targetCategoryName) {
+        console.log('[书签拖拽] 目标卡片缺少分类名称', targetCard);
+        return;
+    }
+    
+    try {
+        const bookmarks = await dataManager.getBookmarks();
+        
+        // 获取源分类和目标分类（使用保存的dragInfo）
+        const srcCatIndex = dragInfo.catIndex;
+        const srcItemIndex = dragInfo.itemIndex;
+        const targetCatIndex = bookmarks.findIndex(cat => cat.category === targetCategoryName);
+        
+        if (targetCatIndex === -1) {
+            console.error('[书签拖拽] 未找到目标分类:', targetCategoryName);
+            return;
+        }
+        
+        if (srcCatIndex < 0 || srcCatIndex >= bookmarks.length) {
+            console.error('[书签拖拽] 源分类索引无效:', srcCatIndex);
+            return;
+        }
+        
+        if (srcItemIndex < 0 || srcItemIndex >= bookmarks[srcCatIndex].items.length) {
+            console.error('[书签拖拽] 源书签索引无效:', srcItemIndex);
+            return;
+        }
+        
+        // 获取要移动的书签数据
+        const itemData = bookmarks[srcCatIndex].items[srcItemIndex];
+        
+        // 确定插入位置
+        let insertIndex = bookmarks[targetCatIndex].items.length; // 默认追加到尾部
+        
+        // 检查是否拖到了某个书签项上
+        let targetBookmarkWrapper = e.target.closest('.bookmark-item-wrapper');
+        
+        // 如果target是bookmark-item，向上查找wrapper
+        if (!targetBookmarkWrapper && e.target.classList.contains('bookmark-item')) {
+            targetBookmarkWrapper = e.target.closest('.bookmark-item-wrapper');
+        }
+        
+        if (targetBookmarkWrapper && targetGrid && targetGrid.contains(targetBookmarkWrapper)) {
+            // 拖到了其他书签上，插入到该位置
+            const targetItem = targetBookmarkWrapper.querySelector('.bookmark-item');
+            if (targetItem) {
+                const targetCatIdx = parseInt(targetItem.getAttribute('data-cat-index'));
+                const targetItemIdx = parseInt(targetItem.getAttribute('data-item-index'));
+                
+                if (!isNaN(targetCatIdx) && !isNaN(targetItemIdx) && targetCatIdx === targetCatIndex) {
+                    // 如果是在同一分类内移动，需要调整索引
+                    if (srcCatIndex === targetCatIndex && srcItemIndex < targetItemIdx) {
+                        // 从前面移动到后面，目标索引不变（因为先删除源，索引会自动调整）
+                        insertIndex = targetItemIdx;
+                    } else if (srcCatIndex === targetCatIndex && srcItemIndex === targetItemIdx) {
+                        // 原地不动，不做任何操作
+                        console.log('[书签拖拽] 原地不动');
+                        return;
+                    } else {
+                        insertIndex = targetItemIdx;
+                    }
+                    console.log('[书签拖拽] 插入到位置:', insertIndex);
+                }
+            }
+        } else {
+            console.log('[书签拖拽] 拖到空白处，追加到尾部');
+        }
+        
+        // 从源分类移除
+        bookmarks[srcCatIndex].items.splice(srcItemIndex, 1);
+        
+        // 插入到目标位置
+        bookmarks[targetCatIndex].items.splice(insertIndex, 0, itemData);
+        
+        // 保存并重新加载
+        await dataManager.saveBookmarks(bookmarks);
+        
+        // 同步书签位置到浏览器
+        await syncBookmarkMoveToBrowser(itemData.url, targetCategoryName, insertIndex);
+        
+        loadBookmarks();
+        
+    } catch (error) {
+        console.error('[书签拖拽] 保存失败:', error);
+        console.error('[书签拖拽] 错误详情:', error.stack);
+        // 恢复书签样式（使用保存的dragInfo）
+        if (dragInfo && dragInfo.wrapper) {
+            dragInfo.wrapper.classList.remove('dragging');
+        }
+        document.body.classList.remove('is-dragging-bookmark');
+    } finally {
+        // 延迟清空draggedBookmark，确保drop事件处理完成
+        setTimeout(() => {
+            draggedBookmark = null;
+        }, 100);
+    }
+}
+
+// Right Navigation（暴露到全局供其他模块调用）
+window.renderRightNav = function() {
+    renderRightNavInternal();
+};
+
+function renderRightNav() {
+    renderRightNavInternal();
+}
+
+function renderRightNavInternal() {
+    let navContainer = document.getElementById('right-nav-container');
+    if (!navContainer) {
+        navContainer = document.createElement('div');
+        navContainer.id = 'right-nav-container';
+        navContainer.className = 'right-nav';
+        document.body.appendChild(navContainer);
+    }
+
+    // Clear existing
+    navContainer.innerHTML = '';
+
+    // 添加"回到顶部"按钮（顶部）
+    const backToTopBtn = document.createElement('button');
+    backToTopBtn.className = 'nav-back-to-top';
+    backToTopBtn.innerHTML = '▲';
+    backToTopBtn.title = '回到顶部';
+    backToTopBtn.onclick = () => {
+        window.scrollToTop();
+    };
+    navContainer.appendChild(backToTopBtn);
+
+    // Find all cards in the bookmarks container (按照DOM中的实际显示顺序)
+    const bookmarksContainer = document.getElementById('bookmarks-container');
+    if (!bookmarksContainer) return;
+    
+    // 按照DOM中的实际顺序获取卡片（即用户看到的顺序）
+    const cards = Array.from(bookmarksContainer.querySelectorAll('.glass-card.bookmark-card'));
+    
+    cards.forEach((card, index) => {
+        const catName = card.dataset.category;
+        // 获取对应卡片的颜色
+        const cardColor = card.dataset.customColor || '#8b5cf6';
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'nav-dot-wrapper';
+        wrapper.setAttribute('data-category', catName); // 添加data-category属性，方便匹配
+        wrapper.style.setProperty('--card-color', cardColor); // 设置CSS变量
+        wrapper.onclick = () => {
+            // 跳转到对应书签分类的顶部
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Update active state
+            document.querySelectorAll('.nav-dot-wrapper').forEach(d => d.classList.remove('active'));
+            wrapper.classList.add('active');
+        };
+
+        const dot = document.createElement('div');
+        dot.className = 'nav-dot';
+        dot.style.background = cardColor;
+
+        const label = document.createElement('span');
+        label.className = 'nav-label';
+        label.innerText = catName;
+        label.style.color = cardColor;
+
+        wrapper.appendChild(dot);
+        wrapper.appendChild(label);
+        navContainer.appendChild(wrapper);
+    });
+    
+    // 初始化右侧导航的滚动显示/隐藏功能
+    initRightNavScroll();
+}
+
+// 切换监控组件显示/隐藏（保留此函数供initMonitor中的删除按钮使用）
+window.toggleConfig = async function (key) {
+    const config = await dataManager.getDashboardConfig();
+    config[key] = !config[key];
+    await dataManager.saveDashboardConfig(config);
+    initMonitor();
+}
+
+
+/* --- Monitor Logic --- */
+let monitorInterval;
+
+async function initMonitor() {
+    const config = await dataManager.getDashboardConfig();
+    const isAdmin = await dataManager.isLoggedIn();
+
+    // Toggle visibility based on config
+    const updateWidget = (id, show) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.display = show ? 'block' : 'none';
+
+        // Add Delete Button if Admin and not already there
+        if (show && isAdmin) {
+            let btn = el.querySelector('.delete-widget-btn');
+            if (!btn) {
+                btn = document.createElement('button');
+                btn.className = 'delete-widget-btn';
+                btn.innerHTML = '×';
+                btn.style.cssText = 'position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.5rem; line-height: 0.5; padding: 5px; opacity: 0.5; transition: opacity 0.2s;';
+                btn.onmouseenter = () => btn.style.opacity = '1';
+                btn.onmouseleave = () => btn.style.opacity = '0.5';
+                btn.title = '隐藏此卡片';
+
+                // Determine key based on ID
+                let key = '';
+                if (id === 'cpu-gauge') key = 'showCpu';
+                if (id === 'ram-gauge') key = 'showRam';
+                if (id === 'storage-gauge') key = 'showStorage';
+
+                btn.onclick = (e) => {
+                    e.stopPropagation(); // Prevent card clicks if any
+                    toggleConfig(key);
+                };
+                el.style.position = 'relative'; // Ensure positioning context
+                el.appendChild(btn);
+            }
+        }
+    };
+
+    updateWidget('cpu-gauge', config.showCpu);
+    updateWidget('ram-gauge', config.showRam);
+    updateWidget('storage-gauge', config.showStorage);
+
+    updateMonitorData();
+    if (monitorInterval) clearInterval(monitorInterval);
+    monitorInterval = setInterval(updateMonitorData, 3000);
+}
+
+function updateMonitorData() {
+    const cpu = Math.floor(Math.random() * 30) + 10;
+    const ram = Math.floor(Math.random() * 20) + 40;
+    const storage = 78;
+
+    updateGauge('cpu-gauge', cpu);
+    updateGauge('ram-gauge', ram);
+    updateGauge('storage-gauge', storage);
+}
+
+function updateGauge(id, value) {
+    const el = document.getElementById(id);
+    if (!el || el.style.display === 'none') return;
+
+    const fill = el.querySelector('.progress-fill');
+    const text = el.querySelector('.progress-text');
+    if (fill) fill.style.width = `${value}%`;
+    if (text) text.innerText = `${value}%`;
+}
+
+
+/* --- Mock Editor Functions (Simplification) --- */
+// In a real app these would open modals. For this demo we use prompt/confirm.
+
+/* --- Modal Logic --- */
+
+let currentModalState = {
+    type: null, // 'add_bookmark', 'edit_bookmark', 'add_category'
+    catIndex: null,
+    itemIndex: null
+};
+
+// --- Category Modal ---
+window.openAddCategoryModal = function () {
+    currentModalState.type = 'add_category';
+    document.getElementById('category-name').value = '';
+    document.getElementById('category-modal').style.display = 'flex';
+    document.getElementById('category-name').focus();
+}
+
+window.closeCategoryModal = function () {
+    document.getElementById('category-modal').style.display = 'none';
+}
+
+window.saveCategoryFromModal = async function () {
+    const name = document.getElementById('category-name').value;
+    if (!name) return;
+
+    const bookmarks = await dataManager.getBookmarks();
+    bookmarks.push({ category: name, items: [] });
+    await dataManager.saveBookmarks(bookmarks);
+
+    closeCategoryModal();
+    loadBookmarks();
+}
+
+// Global Custom Confirm
+window.showCustomConfirm = function (message, title = '确认操作') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('custom-confirm-modal');
+        const msgEl = document.getElementById('custom-confirm-message');
+        const titleEl = document.getElementById('custom-confirm-title');
+        const okBtn = document.getElementById('custom-confirm-ok');
+        const cancelBtn = document.getElementById('custom-confirm-cancel');
+
+        if (!modal || !msgEl || !okBtn || !cancelBtn) {
+            // 如果元素不存在，使用原生 confirm
+            resolve(confirm(message));
+            return;
+        }
+
+        // 设置消息和标题
+        msgEl.innerText = message;
+        if (titleEl) titleEl.innerText = title;
+
+        // 显示模态框
+        modal.classList.add('show');
+
+        // 清理函数
+        const cleanup = () => {
+            modal.classList.remove('show');
+            // 移除所有事件监听器
+            const newOkBtn = okBtn.cloneNode(true);
+            const newCancelBtn = cancelBtn.cloneNode(true);
+            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+        };
+
+        // 绑定确定按钮事件
+        okBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            cleanup();
+            resolve(true);
+        };
+
+        // 绑定取消按钮事件
+        cancelBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            cleanup();
+            resolve(false);
+        };
+
+        // 点击遮罩层关闭（可选）
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                cleanup();
+                resolve(false);
+            }
+        };
+
+        // ESC 键取消，回车键确认
+        const keyHandler = (e) => {
+            if (e.key === 'Escape') {
+                cleanup();
+                document.removeEventListener('keydown', keyHandler);
+                resolve(false);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                cleanup();
+                document.removeEventListener('keydown', keyHandler);
+                resolve(true);
+            }
+        };
+        document.addEventListener('keydown', keyHandler);
+        
+        // 聚焦确定按钮，方便回车键操作
+        setTimeout(() => {
+            if (okBtn) {
+                okBtn.focus();
+            }
+        }, 100);
+    });
+}
+
+// 获取书签分类索引（通过分类名称）
+window.getBookmarkCategoryIndex = async function(categoryName) {
+    const bookmarks = await dataManager.getBookmarks();
+    return bookmarks.findIndex(cat => cat.category === categoryName);
+};
+
+// 通过分类名称删除分类（更可靠的方式）
+window.deleteCategoryByName = async function(categoryName) {
+    const result = await showCustomConfirm("确定删除该分类吗?");
+    if (!result) return;
+
+    const bookmarks = await dataManager.getBookmarks();
+    const categoryIndex = bookmarks.findIndex(cat => cat.category === categoryName);
+    
+    if (categoryIndex === -1) {
+        alert('❌ 未找到该分类，无法删除');
+        console.error('Category not found:', categoryName);
+        return;
+    }
+    
+    bookmarks.splice(categoryIndex, 1);
+    await dataManager.saveBookmarks(bookmarks);
+    
+    // 清理布局配置中已删除分类的数据
+    const config = await dataManager.getDashboardConfig();
+    if (config && config.bookmarkLayout) {
+        config.bookmarkLayout = config.bookmarkLayout.filter(item => item.category !== categoryName);
+        await dataManager.saveDashboardConfig(config);
+    }
+    
+    // 重新加载书签
+    await loadBookmarks();
+    
+    // 等待书签加载完成后再重新渲染布局设置面板
+    // 使用 setTimeout 确保 DOM 已完全更新
+    setTimeout(async () => {
+        const sidebar = document.getElementById('admin-sidebar');
+        if (sidebar && sidebar.classList.contains('open')) {
+            if (typeof window.renderCardControls === 'function') {
+                await window.renderCardControls();
+            }
+        }
+    }, 300);
+};
+
+// 保留通过索引删除的方式（向后兼容）
+window.deleteCategory = async function (categoryIndex) {
+    // Replace native confirm with custom modal
+    const result = await showCustomConfirm("确定删除该分类吗?");
+    if (!result) return;
+
+    const bookmarks = await dataManager.getBookmarks();
+    
+    // 验证索引有效性
+    if (categoryIndex < 0 || categoryIndex >= bookmarks.length) {
+        alert('❌ 分类索引无效，无法删除');
+        console.error('Invalid category index:', categoryIndex, 'Total categories:', bookmarks.length);
+        return;
+    }
+    
+    // 获取要删除的分类名称
+    const categoryName = bookmarks[categoryIndex].category;
+    
+    bookmarks.splice(categoryIndex, 1);
+    await dataManager.saveBookmarks(bookmarks);
+    
+    // 清理布局配置中已删除分类的数据
+    const config = await dataManager.getDashboardConfig();
+    if (config && config.bookmarkLayout) {
+        config.bookmarkLayout = config.bookmarkLayout.filter(item => item.category !== categoryName);
+        await dataManager.saveDashboardConfig(config);
+    }
+    
+    // 重新加载书签
+    await loadBookmarks();
+    
+    // 等待书签加载完成后再重新渲染布局设置面板
+    // 使用 setTimeout 确保 DOM 已完全更新
+    setTimeout(async () => {
+        const sidebar = document.getElementById('admin-sidebar');
+        if (sidebar && sidebar.classList.contains('open')) {
+            if (typeof window.renderCardControls === 'function') {
+                await window.renderCardControls();
+            }
+        }
+    }, 300);
+}
+
+// --- Bookmark Modal ---
+window.openAddBookmarkModal = function (catIndex) {
+    currentModalState.type = 'add_bookmark';
+    currentModalState.catIndex = catIndex;
+
+    document.querySelector('#bookmark-modal h3').innerText = '添加书签';
+    document.getElementById('bookmark-name').value = '';
+    document.getElementById('bookmark-url').value = '';
+
+    document.getElementById('bookmark-modal').style.display = 'flex';
+    document.getElementById('bookmark-name').focus();
+
+    // 隐藏删除按钮（新增模式）
+    const delBtn = document.getElementById('modal-delete-btn');
+    if (delBtn) delBtn.style.display = 'none';
+}
+
+window.closeBookmarkModal = function () {
+    document.getElementById('bookmark-modal').style.display = 'none';
+}
+
+// 保存书签（从 Modal）
+window.saveBookmarkFromModal = async function () {
+    const name = document.getElementById('bookmark-name').value;
+    let url = document.getElementById('bookmark-url').value;
+
+    if (!name || !url) {
+        alert('请填写名称和网址');
+        return;
+    }
+
+    // Auto-prepend https:// if missing
+    if (!url.startsWith('http')) {
+        url = 'https://' + url;
+    }
+
+    // 自动获取 Favicon (Google S2)
+    // 尝试提取域名
+    let domain = url;
+    try {
+        const urlObj = new URL(url);
+        domain = urlObj.hostname;
+    } catch (e) {
+        // Fallback for invalid URLs or relative paths if any
+    }
+    // 跳过本地URL
+    let iconHtml;
+    if (isLocalUrl(url)) {
+        iconHtml = '🔗'; // 本地URL使用默认图标
+    } else {
+        const iconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+        iconHtml = `<img src="${iconUrl}" width="16" height="16" data-favicon-fallback="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTAgMGgyNHYyNEgwem0wIDBoMjR2MjRIMHoiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTIgMmEzLjUgMy41IDAgMCAwLTMuNSAzLjVjMCAuNzUuMjkgMS40NC43NyAxLjk3TDUuNDEgMTIuNzVsMi44MyAyLjgzTDEyIDEwLjgzbDMuNzUgMy43NS0yLjgzIDIuODMgMy41MyAzLjUzIDUuNjYtNS42NkwxMiAyem0wIDBhMy41IDMuNSAwIDAgMCAzLjUgMy41IDMuNSAzLjUgMCAwIDAtMy41LTMuNXoiLz48L3N2Zz4=" style="vertical-align: text-bottom;">`;
+    }
+
+
+    const bookmarks = await dataManager.getBookmarks();
+
+    if (currentModalState.type === 'add_bookmark') {
+        bookmarks[currentModalState.catIndex].items.push({
+            name,
+            url,
+            icon: iconHtml
+        });
+        await dataManager.saveBookmarks(bookmarks);
+        // 新添加的书签会通过扩展自动同步，无需手动同步
+    } else if (currentModalState.type === 'edit_bookmark') {
+        const item = bookmarks[currentModalState.catIndex].items[currentModalState.itemIndex];
+        const oldUrl = item.url;
+        const oldName = item.name;
+        
+        item.name = name;
+        item.url = url;
+        item.icon = iconHtml; // Update icon as well
+        
+        await dataManager.saveBookmarks(bookmarks);
+        
+        // 如果URL或名称改变了，同步到浏览器
+        if (oldUrl !== url || oldName !== name) {
+            await syncBookmarkUpdateToBrowser(oldUrl, url, name);
+        }
+    }
+
+    closeBookmarkModal();
+    loadBookmarks();
+}
+
+window.editBookmark = async function (catIndex, itemIndex) {
+    const bookmarks = await dataManager.getBookmarks();
+    const item = bookmarks[catIndex].items[itemIndex];
+
+    currentModalState.type = 'edit_bookmark';
+    currentModalState.catIndex = catIndex;
+    currentModalState.itemIndex = itemIndex;
+
+    const modal = document.getElementById('bookmark-modal');
+    if (modal) {
+        document.querySelector('#bookmark-modal h3').innerText = '编辑书签';
+        document.getElementById('bookmark-name').value = item.name;
+        document.getElementById('bookmark-url').value = item.url;
+        modal.style.display = 'flex';
+
+        // 显示删除按钮（编辑模式）并绑定事件
+        // 注意：我们需要在 HTML 中添加这个按钮，或者动态添加
+        let delBtn = document.getElementById('modal-delete-btn');
+        if (!delBtn) {
+            // 如果只有确认和取消按钮，插入一个删除按钮
+            const btnContainer = modal.querySelector('.modal-actions') || modal.querySelector('div[style*="justify-content: flex-end"]');
+            // 如果没有明显的 container，查找 append 位置
+            const container = modal.querySelector('div[style*="justify-content: flex-end"]') || modal.querySelector('div[style*="margin-top"]');
+
+            if (container) {
+                delBtn = document.createElement('button');
+                delBtn.id = 'modal-delete-btn';
+                delBtn.style.cssText = 'background: #ef4444; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; margin-right: auto; cursor: pointer;';
+                delBtn.innerText = '删除';
+                container.insertBefore(delBtn, container.firstChild);
+            }
+        }
+        if (delBtn) {
+            delBtn.style.display = 'block';
+            // 重新绑定事件以防闭包引用旧变量
+            delBtn.onclick = async () => {
+                if (await showCustomConfirm('确定删除此书签吗？')) {
+                    deleteBookmark(catIndex, itemIndex);
+                    closeBookmarkModal();
+                }
+            };
+        }
+    }
+}
+
+// 右键编辑书签
+window.handleBookmarkRightClick = async function (event, catIndex, itemIndex) {
+    if (!(await dataManager.isLoggedIn())) return;
+
+    event.preventDefault();
+    // 右键点击时打开编辑对话框
+    await editBookmark(catIndex, itemIndex);
+    return false;
+}
+
+// 书签点击处理（统一函数）
+window.handleBookmarkClick = async function (event, catIndex, itemIndex) {
+    const isSettingsMode = document.getElementById('admin-sidebar')?.classList.contains('open');
+    const isAdmin = await dataManager.isLoggedIn();
+
+    // 在设置模式下，如果点击的是书签卡片本身（不是书签项），高亮对应的布局设置项
+    if (isSettingsMode && isAdmin) {
+        const bookmarkCard = event.target.closest('.bookmark-card');
+        if (bookmarkCard && !event.target.closest('.bookmark-item')) {
+            // 找到对应的卡片索引
+            const allCards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
+            const cardIndex = Array.from(allCards).indexOf(bookmarkCard);
+            if (cardIndex >= 0) {
+                event.preventDefault();
+                event.stopPropagation();
+                // 高亮对应的布局设置项
+                if (window.highlightCardControl && typeof window.highlightCardControl === 'function') {
+                    window.highlightCardControl(cardIndex);
+                }
+                return false;
+            }
+        }
+        
+        // 在设置模式下，点击书签项时防止链接跳转，改为打开编辑
+        if (event.target.closest('.bookmark-item')) {
+            event.preventDefault();
+            window.editBookmark(catIndex, itemIndex);
+            return false;
+        }
+    }
+
+    // 记录点击统计和自动获取logo（异步，不阻塞跳转）
+    try {
+        const bookmarks = await dataManager.getBookmarks();
+        if (bookmarks && bookmarks[catIndex] && bookmarks[catIndex].items[itemIndex]) {
+            const bookmark = bookmarks[catIndex].items[itemIndex];
+            
+            // 记录点击统计
+            dataManager.recordBookmarkClick(bookmark.url, bookmark.name, bookmark.icon).catch(() => {});
+            
+            // 自动获取并更新logo（如果还没有logo）
+            if (!bookmark.logo) {
+                updateBookmarkLogo(bookmark.url, bookmark.name, catIndex, itemIndex).catch(() => {});
+            }
+            
+            // 更新常用标签栏（延迟更新，不阻塞页面）
+            setTimeout(() => {
+                loadFrequentBookmarks();
+            }, 500);
+        }
+    } catch (error) {
+        console.error('Record bookmark click error:', error);
+    }
+
+    // 如果没有拖拽且不是设置模式，允许跳转
+    return true;
+};
+
+// 删除单个书签
+window.deleteBookmark = async function (catIndex, itemIndex) {
+    // Internal call mostly used by other functions which already confirmed
+    // But if called directly, we might double confirm? 
+    // Usually deleteBookmark is called AFTER confirm.
+    // Let's keep it direct.
+
+    // if (!await showCustomConfirm("确定删除这个书签吗?")) return; 
+    // NO, callers like handleBookmarkRightClick already confirm.
+    // We should remove confirm check from here if it was there or ensure callers handle it.
+
+    // The previous code had confirm inside deleteBookmark? No, it was added in callers in previous steps.
+    // Checking previous steps: window.deleteBookmark = async function... if(!confirm...
+    // Wait, let's check current file. 
+
+    // Checking current file content via memory:
+    // Line 553: if (!confirm("确定删除这个书签吗?")) return;
+
+    // So we need to remove it or replace it if it is called directly without check.
+    // EditModal calls it after confirm. RightClick calls it after confirm.
+    // So we can remove the check inside.
+
+    const bookmarks = await dataManager.getBookmarks();
+    
+    // 获取要删除的书签信息（用于同步到浏览器）
+    const bookmarkToDelete = bookmarks[catIndex].items[itemIndex];
+    const bookmarkUrl = bookmarkToDelete?.url;
+    
+    // 从网站删除书签
+    bookmarks[catIndex].items.splice(itemIndex, 1);
+    await dataManager.saveBookmarks(bookmarks);
+    loadBookmarks();
+    
+    // 同步删除浏览器书签
+    if (bookmarkUrl) {
+        syncDeleteToBrowser(bookmarkUrl).catch(error => {
+            console.error('[书签删除] 同步删除浏览器书签失败:', error);
+            // 不显示错误提示，避免影响用户体验
+        });
+    }
+};
+
+// 同步删除到浏览器（通过扩展）
+async function syncDeleteToBrowser(url) {
+    try {
+        // 方法1: 尝试使用content script注入的全局函数
+        if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.deleteBookmark === 'function') {
+            console.log('[书签删除] 通过扩展API删除浏览器书签:', url);
+            window.godsBookmarkExtension.deleteBookmark(url);
+            return;
+        }
+        
+        // 方法2: 使用 window.postMessage 发送消息给content script
+        console.log('[书签删除] 通过postMessage删除浏览器书签:', url);
+        window.postMessage({
+            type: 'DELETE_BOOKMARK',
+            url: url
+        }, '*');
+        
+    } catch (error) {
+        // 扩展可能未安装，这是正常的
+        console.log('[书签删除] 无法同步到浏览器（扩展可能未安装）:', error.message);
+    }
+}
+
+// 同步书签移动/位置变更到浏览器（通过扩展）
+async function syncBookmarkMoveToBrowser(url, targetCategory, index) {
+    try {
+        console.log('[书签同步] 同步书签位置到浏览器:', { url, targetCategory, index });
+        
+        // 方法1: 尝试使用content script注入的全局函数
+        if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.moveBookmark === 'function') {
+            console.log('[书签同步] 通过扩展API移动浏览器书签:', url);
+            window.godsBookmarkExtension.moveBookmark(url, targetCategory, index);
+            return;
+        }
+        
+        // 方法2: 使用 window.postMessage 发送消息给content script
+        console.log('[书签同步] 通过postMessage移动浏览器书签:', url);
+        window.postMessage({
+            type: 'MOVE_BOOKMARK',
+            url: url,
+            targetCategory: targetCategory,
+            index: index
+        }, '*');
+        
+    } catch (error) {
+        // 扩展可能未安装，这是正常的
+        console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
+    }
+}
+
+// 同步书签更新（URL或名称）到浏览器
+async function syncBookmarkUpdateToBrowser(oldUrl, newUrl, newName) {
+    try {
+        console.log('[书签同步] 同步书签更新到浏览器:', { oldUrl, newUrl, newName });
+        
+        // 方法1: 尝试使用content script注入的全局函数
+        if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.updateBookmark === 'function') {
+            console.log('[书签同步] 通过扩展API更新浏览器书签:', oldUrl);
+            window.godsBookmarkExtension.updateBookmark(oldUrl, newUrl, newName);
+            return;
+        }
+        
+        // 方法2: 使用 window.postMessage 发送消息给content script
+        console.log('[书签同步] 通过postMessage更新浏览器书签:', oldUrl);
+        window.postMessage({
+            type: 'UPDATE_BOOKMARK',
+            oldUrl: oldUrl,
+            newUrl: newUrl,
+            newName: newName
+        }, '*');
+        
+    } catch (error) {
+        // 扩展可能未安装，这是正常的
+        console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
+    }
+}
+
+// 恢复书签卡片样式（在重新渲染后调用）
+async function restoreBookmarkStyles() {
+    const config = await dataManager.getDashboardConfig();
+    if (!config || !config.bookmarkLayout) return;
+
+    const container = document.getElementById('bookmarks-container');
+    if (!container) return;
+
+    // 强制刷新一次卡片列表
+    const cards = [...container.querySelectorAll('.bookmark-card')];
+
+    // 创建一个映射来存储卡片
+    const cardMap = new Map();
+    cards.forEach(card => {
+        const catName = card.dataset.category || '';
+        if (catName.trim()) {
+            cardMap.set(catName.trim(), card);
+        }
+    });
+
+    // 第一步：恢复所有卡片的样式
+    const sortedCards = [];
+    config.bookmarkLayout.forEach(item => {
+        const categoryName = item.category.trim();
+        const card = cardMap.get(categoryName);
+
+        if (card) {
+            // 恢复尺寸类
+            card.className = 'glass-card bookmark-card'; // 重置类
+            if (item.span >= 2 && item.span <= 4) {
+                card.classList.add(`span-${item.span}`);
+            }
+
+            // 恢复隐藏状态
+            if (item.hidden === true) {
+                card.style.display = 'none';
+            } else {
+                card.style.display = '';
+            }
+
+            // 恢复折叠状态
+            if (item.collapsed === true) {
+                card.classList.add('bookmark-card-collapsed');
+                const grid = card.querySelector('.bookmark-grid');
+                const title = card.querySelector('.bookmark-card-title');
+                if (grid) {
+                    grid.classList.add('bookmark-grid-collapsed');
+                    grid.style.display = 'none';
+                }
+                if (title) {
+                    title.textContent = categoryName + ' ▼';
+                }
+                // 折叠时使用默认大小，不恢复自定义尺寸
+                card.style.width = '';
+                card.style.height = '';
+            } else {
+                // 展开时恢复自定义尺寸
+                if (item.width) card.style.width = item.width;
+                if (item.height) card.style.height = item.height;
+            }
+
+            // 恢复颜色和透明度
+            const color = item.color || card.dataset.customColor || '#8b5cf6';
+            const opacity = item.opacity || card.dataset.customOpacity || '0.7';
+
+            card.dataset.customColor = color;
+            card.dataset.customOpacity = opacity;
+
+            // 调用 dashboard-layout.js 中的全局函数
+            // 使用 setTimeout 确保主题已经正确设置到 DOM
+            setTimeout(() => {
+                if (window.applyCardGradient) {
+                    window.applyCardGradient(card, color, opacity);
+                }
+            }, 0);
+
+            // 保存到排序数组
+            sortedCards.push({ card, index: item.index !== undefined ? item.index : 999 });
+        }
+    });
+
+    // 第二步：按保存的 index 重新排序
+    sortedCards.sort((a, b) => a.index - b.index);
+    sortedCards.forEach(({ card }) => {
+        container.appendChild(card);
+    });
+    
+    // 卡片重新排序后，更新右侧导航栏（按照实际显示顺序）
+    if (typeof window.renderRightNav === 'function') {
+        setTimeout(() => {
+            window.renderRightNav();
+        }, 100);
+    }
+    
+    // 上帝的指引标题颜色固定为紫色渐变，不再跟随卡片主题色
+    // updateFrequentHeaderColor(); // 已禁用
+}
+
+// 书签导入功能（完整版 - 按原始分类导入并合并到现有分类）
+window.handleBookmarkImport = async function (input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    try {
+        const reader = new FileReader();
+        reader.onload = async function (e) {
+            try {
+                const htmlContent = e.target.result;
+                
+                // 检查是否是有效的 HTML 书签文件
+                if (!htmlContent.includes('<DT>') && !htmlContent.includes('<H3>') && !htmlContent.includes('<DL>')) {
+                    alert('无法识别的书签文件格式。请使用浏览器导出的 HTML 格式书签文件。');
+                    input.value = '';
+                    return;
+                }
+
+                // 使用正则表达式解析，因为浏览器导出的HTML可能不标准
+                const bookmarkData = parseBookmarkHTML(htmlContent);
+                
+                if (bookmarkData.length === 0) {
+                    alert('未找到有效的书签数据。请确保书签文件格式正确。');
+                    input.value = '';
+                    return;
+                }
+
+                // 检查是否登录（保存书签需要登录）
+                let isLoggedIn = false;
+                try {
+                    isLoggedIn = await dataManager.isLoggedIn();
+                    console.log('[导入] 登录状态检查:', isLoggedIn);
+                } catch (error) {
+                    console.error('[导入] 检查登录状态失败:', error);
+                    alert('❌ 无法检查登录状态。请确保服务器正在运行。\n错误: ' + error.message);
+                    input.value = '';
+                    return;
+                }
+                
+                if (!isLoggedIn) {
+                    alert('❌ 需要登录才能导入书签。\n请先登录管理员账户（密码: admin）');
+                    input.value = '';
+                    return;
+                }
+                
+                console.log('[导入] 已登录，继续导入流程');
+
+                // 获取当前书签数据（保持布局状态）
+                let currentData = [];
+                try {
+                    currentData = await dataManager.getBookmarks();
+                } catch (error) {
+                    console.error('获取书签数据失败:', error);
+                    currentData = [];
+                }
+                
+                // 合并到现有分类，而不是替换
+                const merged = mergeBookmarks(currentData, bookmarkData);
+                
+                // 保存书签
+                try {
+                    const totalBookmarks = merged.reduce((sum, cat) => sum + cat.items.length, 0);
+                    console.log('[导入] 准备保存书签，数据量:', merged.length, '个分类，共', totalBookmarks, '个书签');
+                    console.log('[导入] 数据大小估算:', JSON.stringify(merged).length, '字符');
+                    
+                    await dataManager.saveBookmarks(merged);
+                    console.log('[导入] 书签保存成功');
+                } catch (error) {
+                    console.error('保存书签失败:', error);
+                    console.error('错误详情:', error.message, error.name);
+                    
+                    // 提供详细的诊断信息
+                    let errorMsg = '❌ 保存失败: ' + error.message;
+                    
+                    if (error.message.includes('413') || error.message.includes('Payload Too Large')) {
+                        errorMsg = '❌ 数据过大，无法保存\n\n' +
+                            '原因：导入的书签数据量太大（超过服务器限制）\n\n' +
+                            '解决方法：\n' +
+                            '1. 分批导入：将书签文件分成多个小文件分别导入\n' +
+                            '2. 服务器已自动调整限制，请刷新页面后重试\n' +
+                            '3. 如果问题仍然存在，请联系管理员';
+                    } else if (error.message.includes('无法连接到服务器') || 
+                        error.message.includes('Failed to fetch') || 
+                        error.message.includes('Network')) {
+                        errorMsg = '❌ 无法连接到服务器\n\n' +
+                            '请检查：\n' +
+                            '1. 服务器是否正在运行（运行 node server.js）\n' +
+                            '2. 服务器地址是否正确（http://localhost:3000）\n' +
+                            '3. 打开浏览器控制台（F12）查看详细错误信息\n' +
+                            '4. 确保您已登录管理员账户';
+                    } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                        errorMsg = '❌ 未登录或会话已过期\n请先登录管理员账户后再导入书签。';
+                    }
+                    
+                    alert(errorMsg);
+                    input.value = '';
+                    return;
+                }
+                
+                // 重新加载书签，但保持当前布局状态
+                await loadBookmarks();
+                
+                // 延迟恢复布局状态，确保DOM已更新
+                setTimeout(() => {
+                    restoreBookmarkStyles();
+                    // 重新初始化布局编辑（如果需要）
+                    if (window.enableLayoutEditing && document.body.classList.contains('layout-editing')) {
+                        window.enableLayoutEditing();
+                    }
+                }, 200);
+                
+                const totalItems = bookmarkData.reduce((sum, cat) => sum + cat.items.length, 0);
+                alert(`✅ 成功导入 ${bookmarkData.length} 个分类，共 ${totalItems} 个书签！\n书签已合并到现有分类中。`);
+                
+                input.value = '';
+            } catch (error) {
+                console.error('导入错误:', error);
+                // 提供更详细的错误信息
+                let errorMsg = '导入失败: ' + error.message;
+                if (error.message.includes('Failed to fetch') || error.message.includes('Network')) {
+                    errorMsg = '❌ 导入失败：无法连接到服务器。\n请确保服务器正在运行，并且您已登录管理员账户。';
+                }
+                alert(errorMsg);
+                input.value = '';
+            }
+        };
+
+        reader.onerror = function() {
+            alert('文件读取失败，请重试。');
+            input.value = '';
+        };
+
+        reader.readAsText(file);
+    } catch (error) {
+        console.error('导入处理错误:', error);
+        alert('导入失败: ' + error.message);
+        input.value = '';
+    }
+};
+
+// 解析书签HTML文件（完整解析所有分类和书签，包括嵌套文件夹）
+function parseBookmarkHTML(html) {
+    const categories = [];
+    
+    // 使用 DOMParser 更准确地解析
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // 查找根 DL 元素
+    const rootDl = doc.querySelector('body > dl, html > body > dl, dl');
+    if (!rootDl) {
+        // 如果找不到，尝试用正则解析
+        return parseBookmarkHTMLRegex(html);
+    }
+    
+    // 递归处理所有 DT 元素
+    function processDl(dl) {
+        const result = [];
+        
+        Array.from(dl.children).forEach(dt => {
+            if (dt.tagName !== 'DT') return;
+            
+            const h3 = dt.querySelector('h3');
+            const link = dt.querySelector('a');
+            
+            if (h3) {
+                // 这是一个文件夹
+                const folderName = h3.textContent.trim();
+                const subDl = dt.querySelector('dl');
+                
+                if (subDl && folderName) {
+                    const folderItems = [];
+                    const subFolders = [];
+                    
+                    // 处理该文件夹下的所有元素
+                    Array.from(subDl.children).forEach(subDt => {
+                        if (subDt.tagName !== 'DT') return;
+                        
+                        const subH3 = subDt.querySelector('h3');
+                        const subLink = subDt.querySelector('a');
+                        
+                        if (subH3) {
+                            // 子文件夹，递归处理
+                            const subFolderName = subH3.textContent.trim();
+                            const subSubDl = subDt.querySelector('dl');
+                            if (subSubDl) {
+                                const subFolderResult = processDl(subSubDl);
+                                // 子文件夹作为独立分类
+                                subFolders.push(...subFolderResult);
+                            }
+                        } else if (subLink) {
+                            // 书签
+                            const url = subLink.getAttribute('href') || subLink.href;
+                            const name = subLink.textContent.trim();
+                            
+                            if (name && url) {
+                                try {
+                                    if (isLocalUrl(url)) {
+                                        folderItems.push({ name, url, icon: '🔗' });
+                                    } else {
+                                        const domain = new URL(url).hostname;
+                                        const icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                                        folderItems.push({ name, url, icon });
+                                    }
+                                } catch (e) {
+                                    folderItems.push({ name, url, icon: '🔗' });
+                                }
+                            }
+                        }
+                    });
+                    
+                    // 如果该文件夹有书签，添加该分类
+                    if (folderItems.length > 0) {
+                        result.push({ category: folderName, items: folderItems });
+                    }
+                    
+                    // 添加所有子文件夹分类
+                    result.push(...subFolders);
+                }
+            } else if (link) {
+                // 这是一个书签（根级别的）
+                const url = link.getAttribute('href') || link.href;
+                const name = link.textContent.trim();
+                
+                if (name && url) {
+                    try {
+                        let icon;
+                        if (isLocalUrl(url)) {
+                            icon = '🔗';
+                        } else {
+                            const domain = new URL(url).hostname;
+                            icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                        }
+                        // 根级别书签
+                        let rootCategory = result.find(c => c.category === '导入书签');
+                        if (!rootCategory) {
+                            rootCategory = { category: '导入书签', items: [] };
+                            result.push(rootCategory);
+                        }
+                        rootCategory.items.push({ name, url, icon });
+                    } catch (e) {
+                        let rootCategory = result.find(c => c.category === '导入书签');
+                        if (!rootCategory) {
+                            rootCategory = { category: '导入书签', items: [] };
+                            result.push(rootCategory);
+                        }
+                        rootCategory.items.push({ name, url, icon: '🔗' });
+                    }
+                }
+            }
+        });
+        
+        return result;
+    }
+    
+    const result = processDl(rootDl);
+    categories.push(...result);
+    
+    // 如果没有解析到任何内容，尝试正则方式
+    if (categories.length === 0) {
+        return parseBookmarkHTMLRegex(html);
+    }
+    
+    return categories;
+}
+
+// 备用：使用正则表达式解析（用于处理非标准HTML）
+function parseBookmarkHTMLRegex(html) {
+    const categories = [];
+    
+    // 匹配 <DT><H3>文件夹名</H3><DL>...</DL></DT> 结构
+    const folderRegex = /<DT><H3[^>]*>(.*?)<\/H3>\s*<DL[^>]*>(.*?)<\/DL><\/DT>/gs;
+    
+    // 匹配 <DT><A HREF="url">名称</A></DT> 结构
+    const bookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
+    
+    // 提取所有文件夹
+    let folderMatch;
+    const processedFolders = new Set();
+    
+    while ((folderMatch = folderRegex.exec(html)) !== null) {
+        const folderName = folderMatch[1].trim();
+        const folderContent = folderMatch[2];
+        
+        if (processedFolders.has(folderName)) continue;
+        processedFolders.add(folderName);
+        
+        const items = [];
+        
+        // 提取该文件夹下的直接书签（不包含子文件夹中的）
+        const directBookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
+        let bookmarkMatch;
+        while ((bookmarkMatch = directBookmarkRegex.exec(folderContent)) !== null) {
+            const url = bookmarkMatch[1].trim();
+            let name = bookmarkMatch[2];
+            // 移除HTML标签
+            name = name.replace(/<[^>]+>/g, '').trim();
+            
+            if (name && url) {
+                try {
+                    let icon;
+                    if (isLocalUrl(url)) {
+                        icon = '🔗';
+                    } else {
+                        const domain = new URL(url).hostname;
+                        icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                    }
+                    items.push({ name, url, icon });
+                } catch (e) {
+                    items.push({ name, url, icon: '🔗' });
+                }
+            }
+        }
+        
+        // 递归处理子文件夹
+        const subFolders = parseSubFolders(folderContent);
+        subFolders.forEach(subFolder => {
+            if (subFolder.items.length > 0) {
+                categories.push(subFolder);
+            }
+        });
+        
+        if (items.length > 0) {
+            categories.push({ category: folderName, items });
+        }
+    }
+    
+    // 提取根级别的书签（不在任何文件夹中的）
+    const rootBookmarks = [];
+    // 移除所有文件夹内容
+    const withoutFolders = html.replace(/<DT><H3[^>]*>.*?<\/H3>\s*<DL[^>]*>.*?<\/DL><\/DT>/gs, '');
+    let rootMatch;
+    while ((rootMatch = bookmarkRegex.exec(withoutFolders)) !== null) {
+        const url = rootMatch[1].trim();
+        let name = rootMatch[2];
+        name = name.replace(/<[^>]+>/g, '').trim();
+        
+        if (name && url) {
+            try {
+                const domain = new URL(url).hostname;
+                const icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                rootBookmarks.push({ name, url, icon });
+            } catch (e) {
+                rootBookmarks.push({ name, url, icon: '🔗' });
+            }
+        }
+    }
+    
+    if (rootBookmarks.length > 0) {
+        categories.push({ category: '导入书签', items: rootBookmarks });
+    }
+    
+    return categories;
+}
+
+// 递归解析子文件夹
+function parseSubFolders(html) {
+    const subFolders = [];
+    const folderRegex = /<DT><H3[^>]*>(.*?)<\/H3>\s*<DL[^>]*>(.*?)<\/DL><\/DT>/gs;
+    
+    let match;
+    while ((match = folderRegex.exec(html)) !== null) {
+        const folderName = match[1].trim();
+        const folderContent = match[2];
+        
+        const items = [];
+        const bookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
+        let bookmarkMatch;
+        
+        while ((bookmarkMatch = bookmarkRegex.exec(folderContent)) !== null) {
+            const url = bookmarkMatch[1].trim();
+            const name = bookmarkMatch[2].replace(/<[^>]+>/g, '').trim();
+            
+            if (name && url) {
+                try {
+                    let icon;
+                    if (isLocalUrl(url)) {
+                        icon = '🔗';
+                    } else {
+                        const domain = new URL(url).hostname;
+                        icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                    }
+                    items.push({ name, url, icon });
+                } catch (e) {
+                    items.push({ name, url, icon: '🔗' });
+                }
+            }
+        }
+        
+        // 递归处理嵌套子文件夹
+        const nested = parseSubFolders(folderContent);
+        subFolders.push(...nested);
+        
+        if (items.length > 0) {
+            subFolders.push({ category: folderName, items });
+        }
+    }
+    
+    return subFolders;
+}
+
+// 合并书签到现有分类
+function mergeBookmarks(currentData, newData) {
+    const result = [...currentData];
+    
+    newData.forEach(newCategory => {
+        // 查找是否已存在同名分类
+        const existingIndex = result.findIndex(cat => cat.category === newCategory.category);
+        
+        if (existingIndex >= 0) {
+            // 合并到现有分类
+            const existingItems = result[existingIndex].items;
+            const existingUrls = new Set(existingItems.map(item => item.url));
+            
+            // 只添加不重复的书签
+            newCategory.items.forEach(item => {
+                if (!existingUrls.has(item.url)) {
+                    existingItems.push(item);
+                }
+            });
+        } else {
+            // 添加新分类
+            result.push(newCategory);
+        }
+    });
+    
+    return result;
+}
+
+window.restoreBookmarkStyles = restoreBookmarkStyles;
+window.renderTodos = renderTodos;
+window.updateTodosConfigCache = updateTodosConfigCache;
+
+// 书签导出功能（导出为HTML格式，包含分类信息）
+window.exportBookmarks = async function() {
+    try {
+        // 检查是否登录
+        const isLoggedIn = await dataManager.isLoggedIn();
+        if (!isLoggedIn) {
+            alert('❌ 需要登录才能导出书签。\n请先登录管理员账户。');
+            return;
+        }
+
+        // 获取书签数据
+        const bookmarks = await dataManager.getBookmarks();
+        
+        if (!bookmarks || bookmarks.length === 0) {
+            alert('暂无书签可导出。');
+            return;
+        }
+
+        // 生成HTML格式的书签文件
+        let htmlContent = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<!-- This is an automatically generated file.
+     It will be read and overwritten.
+     DO NOT EDIT! -->
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+`;
+
+        // 遍历所有分类
+        bookmarks.forEach(category => {
+            // 添加分类标题
+            htmlContent += `    <DT><H3 ADD_DATE="${Date.now()}" LAST_MODIFIED="${Date.now()}">${escapeHtml(category.category)}</H3>\n`;
+            htmlContent += `    <DL><p>\n`;
+            
+            // 添加该分类下的所有书签
+            category.items.forEach(item => {
+                const url = item.url || '#';
+                const name = item.name || 'Untitled';
+                const addDate = Date.now(); // 可以使用item的创建时间如果有的话
+                
+                htmlContent += `        <DT><A HREF="${escapeHtml(url)}" ADD_DATE="${addDate}">${escapeHtml(name)}</A></DT>\n`;
+            });
+            
+            htmlContent += `    </DL><p>\n`;
+        });
+
+        htmlContent += `</DL><p>`;
+
+        // 创建Blob对象并下载
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        
+        // 生成文件名（带时间戳）
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        link.download = `bookmarks_${timestamp}.html`;
+        
+        // 触发下载
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // 清理URL对象
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+        
+        // 显示成功消息
+        const totalBookmarks = bookmarks.reduce((sum, cat) => sum + cat.items.length, 0);
+        alert(`✅ 成功导出 ${bookmarks.length} 个分类，共 ${totalBookmarks} 个书签！\n文件名: ${link.download}`);
+        
+    } catch (error) {
+        console.error('导出书签错误:', error);
+        alert('❌ 导出失败: ' + error.message);
+    }
+};
+
+// ===== 全局搜索功能 =====
+let allBookmarksCache = []; // 缓存所有书签数据
+let clickStatsCache = {}; // 缓存点击统计数据
+let currentSearchResults = [];
+let selectedResultIndex = -1;
+
+// 功能项列表（用于搜索）
+const functionItems = [
+    {
+        id: 'new-todo',
+        name: '新建便签',
+        keywords: ['便签', '待办', 'todo', '新建', '添加便签', '创建便签'],
+        icon: '📝',
+        type: 'function',
+        action: () => {
+            if (typeof showAddTodoInput === 'function') {
+                showAddTodoInput();
+            }
+        }
+    },
+    {
+        id: 'add-category',
+        name: '添加分组',
+        keywords: ['分组', '分类', '添加分组', '新建分组', '添加分类', '新建分类', 'category'],
+        icon: '➕',
+        type: 'function',
+        action: () => {
+            // 触发控制中心菜单的添加分类事件
+            const addCategoryLink = document.querySelector('.control-menu-link[data-action="add-category"]');
+            if (addCategoryLink) {
+                addCategoryLink.click();
+            }
+        }
+    },
+    {
+        id: 'import-bookmarks',
+        name: '导入书签',
+        keywords: ['导入', 'import', '导入书签', '书签导入'],
+        icon: '📥',
+        type: 'function',
+        action: () => {
+            const importFile = document.getElementById('import-file');
+            if (importFile) {
+                importFile.click();
+            }
+        }
+    },
+    {
+        id: 'export-bookmarks',
+        name: '导出书签',
+        keywords: ['导出', 'export', '导出书签', '书签导出'],
+        icon: '📤',
+        type: 'function',
+        action: () => {
+            // 触发控制中心菜单的导出事件
+            const exportLink = document.querySelector('.control-menu-link[data-action="export"]');
+            if (exportLink) {
+                exportLink.click();
+            }
+        }
+    },
+    {
+        id: 'global-settings',
+        name: '全局设置',
+        keywords: ['设置', '全局设置', 'settings', '配置', 'config'],
+        icon: '⚙️',
+        type: 'function',
+        action: () => {
+            // 触发控制中心菜单的设置事件
+            const settingsLink = document.querySelector('.control-menu-link[data-action="settings"]');
+            if (settingsLink) {
+                settingsLink.click();
+            }
+        }
+    }
+];
+
+// 初始化全局搜索
+async function initGlobalSearch() {
+    // 加载书签缓存
+    await refreshBookmarksCache();
+    
+    // 加载搜索配置
+    await loadSearchConfig();
+    
+    // 监听来自扩展的消息（用于快捷键打开搜索浮窗）
+    window.addEventListener('message', (event) => {
+        // 验证消息来源（来自扩展的content script）
+        if (event.data && event.data.type === 'OPEN_SEARCH_MODAL') {
+            if (typeof window.openSearchModal === 'function') {
+                window.openSearchModal();
+            }
+        }
+    });
+    
+    // 绑定搜索框事件
+    const searchInput = document.getElementById('global-search-input');
+    const modalInput = document.getElementById('global-search-modal-input');
+    const searchModal = document.getElementById('global-search-modal');
+    const inlineDropdown = document.getElementById('global-search-dropdown');
+    const inlineDropdownResults = document.getElementById('global-search-dropdown-results');
+    
+    if (searchInput) {
+        // 输入事件：实时根据书签搜索，渲染网页内下拉结果（规则与浮窗搜索相同）
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            if (!query) {
+                hideInlineSearchDropdown();
+                return;
+            }
+            handleSearch(query, false);
+        });
+        
+        // 键盘事件：与浮窗搜索规则保持一致
+        searchInput.addEventListener('keydown', (e) => {
+            const query = e.target.value.trim();
+            
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (query) {
+                    if (selectedResultIndex >= 0 && currentSearchResults[selectedResultIndex]) {
+                        // 有选中的书签时，优先打开选中书签
+                        openSearchResult(currentSearchResults[selectedResultIndex]);
+                    } else {
+                        // 没有选中书签时，按规则进行网络搜索
+                        const searchEngine = window.searchConfig?.searchEngine || 'https://www.bing.com/search?q=';
+                        const searchUrl = searchEngine + encodeURIComponent(query);
+                        window.open(searchUrl, '_blank');
+                    }
+                }
+                hideInlineSearchDropdown();
+            } else if (e.key === 'ArrowDown') {
+                if (inlineDropdown && inlineDropdown.classList.contains('show') && currentSearchResults.length > 0) {
+                    e.preventDefault();
+                    navigateResults(1, false);
+                }
+            } else if (e.key === 'ArrowUp') {
+                if (inlineDropdown && inlineDropdown.classList.contains('show') && currentSearchResults.length > 0) {
+                    e.preventDefault();
+                    navigateResults(-1, false);
+                }
+            } else if (e.key === 'Escape') {
+                hideInlineSearchDropdown();
+            }
+        });
+        
+        // 失焦时稍后隐藏（避免点击结果被打断）
+        searchInput.addEventListener('blur', () => {
+            setTimeout(() => {
+                hideInlineSearchDropdown();
+            }, 200);
+        });
+    }
+    
+    if (modalInput) {
+        modalInput.addEventListener('input', (e) => handleSearch(e.target.value, true));
+        modalInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const query = e.target.value.trim();
+                if (query) {
+                    if (selectedResultIndex >= 0 && currentSearchResults[selectedResultIndex]) {
+                        // 如果选中了书签，打开选中的书签
+                        openSearchResult(currentSearchResults[selectedResultIndex]);
+                    } else {
+                        // 如果没有选中任何书签，直接使用搜索引擎搜索
+                        const searchEngine = window.searchConfig?.searchEngine || 'https://www.bing.com/search?q=';
+                        const searchUrl = searchEngine + encodeURIComponent(query);
+                        window.open(searchUrl, '_blank');
+                        closeSearchModal();
+                    }
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateResults(1, true);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateResults(-1, true);
+            } else if (e.key === 'Escape') {
+                closeSearchModal();
+            }
+        });
+    }
+    
+    // 点击浮窗外部关闭
+    if (searchModal) {
+        searchModal.addEventListener('click', (e) => {
+            if (e.target === searchModal) {
+                closeSearchModal();
+            }
+        });
+    }
+    
+    // 点击页面其它区域时，关闭网页内下拉结果
+    document.addEventListener('click', (e) => {
+        const searchWrapper = document.querySelector('.global-search-wrapper');
+        if (!searchWrapper || !inlineDropdown) return;
+        if (!searchWrapper.contains(e.target) && !inlineDropdown.contains(e.target)) {
+            hideInlineSearchDropdown();
+        }
+    });
+    
+    // 绑定快捷键
+    document.addEventListener('keydown', handleSearchShortcut);
+}
+
+// 显示网页内搜索下拉菜单（复用浮窗搜索的结果渲染规则）
+function showInlineSearchDropdown(results) {
+    const dropdown = document.getElementById('global-search-dropdown');
+    const dropdownResults = document.getElementById('global-search-dropdown-results');
+    if (!dropdown || !dropdownResults) return;
+    
+    if (!results || results.length === 0) {
+        dropdownResults.textContent = '';
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'global-search-empty';
+        emptyDiv.textContent = '暂无匹配的书签';
+        dropdownResults.appendChild(emptyDiv);
+    } else {
+        renderResultsToContainer(results, dropdownResults, 'global-search-result-item');
+    }
+    
+    dropdown.classList.add('show');
+}
+
+// 隐藏网页内搜索下拉菜单
+function hideInlineSearchDropdown() {
+    const dropdown = document.getElementById('global-search-dropdown');
+    const dropdownResults = document.getElementById('global-search-dropdown-results');
+    if (!dropdown || !dropdownResults) return;
+    
+    dropdown.classList.remove('show');
+    dropdownResults.textContent = '';
+}
+
+
+// 加载搜索配置
+async function loadSearchConfig() {
+    try {
+        const config = await dataManager.getDashboardConfig();
+        window.searchConfig = {
+            searchEngine: config.searchEngine || 'https://www.bing.com/search?q=',
+            shortcut: config.searchShortcut || 'Ctrl+Space'
+        };
+    } catch (error) {
+        console.error('[GlobalSearch] 加载配置失败:', error);
+        window.searchConfig = {
+            searchEngine: 'https://www.bing.com/search?q=',
+            shortcut: 'Ctrl+Space'
+        };
+    }
+}
+
+// 刷新书签缓存
+async function refreshBookmarksCache() {
+    try {
+        const bookmarksData = await dataManager.getBookmarks();
+        allBookmarksCache = [];
+        
+        bookmarksData.forEach((category, catIndex) => {
+            if (category.items && Array.isArray(category.items)) {
+                category.items.forEach((item, itemIndex) => {
+                    allBookmarksCache.push({
+                        name: item.name || '',
+                        url: item.url || '',
+                        icon: item.icon || '🔗',
+                        category: category.category || '未分类',
+                        catIndex,
+                        itemIndex
+                    });
+                });
+            }
+        });
+        
+        console.log('[GlobalSearch] 已缓存', allBookmarksCache.length, '个书签');
+        
+        // 同时刷新点击统计数据
+        await refreshClickStatsCache();
+    } catch (error) {
+        console.error('[GlobalSearch] 刷新书签缓存失败:', error);
+    }
+}
+
+// 刷新点击统计数据缓存
+async function refreshClickStatsCache() {
+    try {
+        // 获取点击统计数据
+        const topBookmarks = await dataManager.getTopBookmarks(1000); // 获取足够多的数据
+        clickStatsCache = {};
+        
+        topBookmarks.forEach(bookmark => {
+            if (bookmark.url && bookmark.count) {
+                clickStatsCache[bookmark.url] = bookmark.count;
+            }
+        });
+        
+        console.log('[GlobalSearch] 已缓存', Object.keys(clickStatsCache).length, '个点击统计');
+    } catch (error) {
+        console.error('[GlobalSearch] 刷新点击统计缓存失败:', error);
+        clickStatsCache = {};
+    }
+}
+
+// 处理搜索输入
+function handleSearch(query, isModal = false) {
+    if (!query || query.trim() === '') {
+        if (isModal) {
+            renderSearchResults([], isModal);
+        } else {
+            hideInlineSearchDropdown();
+        }
+        return;
+    }
+    
+    const trimmedQuery = query.trim().toLowerCase();
+    const bookmarkResults = searchBookmarks(trimmedQuery);
+    const functionResults = searchFunctions(trimmedQuery);
+    
+    // 合并结果，功能项优先显示（放在前面）
+    const results = [...functionResults, ...bookmarkResults];
+    renderSearchResults(results, isModal);
+}
+
+// 搜索功能项
+function searchFunctions(query) {
+    if (!query || query.length === 0) {
+        return [];
+    }
+    
+    const results = [];
+    const queryLower = query.toLowerCase();
+    
+    functionItems.forEach(func => {
+        let score = 0;
+        const nameLower = func.name.toLowerCase();
+        
+        // 名称完全匹配
+        if (nameLower === queryLower) {
+            score += 100;
+        }
+        // 名称开头匹配
+        else if (nameLower.startsWith(queryLower)) {
+            score += 80;
+        }
+        // 名称包含
+        else if (nameLower.includes(queryLower)) {
+            score += 60;
+        }
+        
+        // 关键词匹配
+        func.keywords.forEach(keyword => {
+            const keywordLower = keyword.toLowerCase();
+            if (keywordLower === queryLower) {
+                score += 70;
+            } else if (keywordLower.includes(queryLower)) {
+                score += 40;
+            } else if (queryLower.includes(keywordLower)) {
+                score += 30;
+            }
+        });
+        
+        // 如果匹配，添加到结果
+        if (score > 0) {
+            results.push({
+                id: func.id,
+                name: func.name,
+                icon: func.icon,
+                type: 'function',
+                score: score,
+                action: func.action
+            });
+        }
+    });
+    
+    // 按分数排序，取前3个
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, 3);
+}
+
+// 搜索书签
+function searchBookmarks(query) {
+    if (!query || query.length === 0) {
+        return [];
+    }
+    
+    const results = [];
+    const queryLower = query.toLowerCase();
+    
+    // 计算相关度分数
+    allBookmarksCache.forEach(bookmark => {
+        const nameLower = bookmark.name.toLowerCase();
+        const urlLower = bookmark.url.toLowerCase();
+        const categoryLower = bookmark.category.toLowerCase();
+        
+        let score = 0;
+        
+        // 名称完全匹配
+        if (nameLower === queryLower) {
+            score += 100;
+        }
+        // 名称开头匹配
+        else if (nameLower.startsWith(queryLower)) {
+            score += 50;
+        }
+        // 名称包含
+        else if (nameLower.includes(queryLower)) {
+            score += 30;
+        }
+        
+        // URL包含
+        if (urlLower.includes(queryLower)) {
+            score += 20;
+        }
+        
+        // 分类匹配
+        if (categoryLower.includes(queryLower)) {
+            score += 10;
+        }
+        
+        // 如果匹配，添加到结果
+        if (score > 0) {
+            // 获取点击频率权重（高频置顶）
+            const clickCount = clickStatsCache[bookmark.url] || 0;
+            // 点击次数转换为权重分数（每10次点击增加1分，最高加50分）
+            const frequencyScore = Math.min(clickCount / 10, 50);
+            
+            results.push({
+                ...bookmark,
+                score: score + frequencyScore, // 基础分数 + 频率分数
+                baseScore: score, // 保留基础分数用于调试
+                clickCount, // 保留点击次数
+                type: 'bookmark'
+            });
+        }
+    });
+    
+    // 按总分排序（基础分数 + 频率分数），取前5个
+    results.sort((a, b) => {
+        // 如果总分相同，优先显示点击次数多的
+        if (Math.abs(a.score - b.score) < 0.1) {
+            return b.clickCount - a.clickCount;
+        }
+        return b.score - a.score;
+    });
+    return results.slice(0, 5);
+}
+
+// 渲染搜索结果（浮窗 & 网页内下拉共用，规则一致）
+function renderSearchResults(results, isModal = false) {
+    currentSearchResults = results;
+    selectedResultIndex = -1;
+    
+    if (isModal) {
+        // 浮窗模式：渲染到浮窗中
+        const resultsContainer = document.getElementById('global-search-results');
+        if (resultsContainer) {
+            renderResultsToContainer(results, resultsContainer, 'global-search-result-item');
+        }
+    } else {
+        // 网页内下拉模式：渲染到搜索框下方
+        showInlineSearchDropdown(results);
+    }
+}
+
+// 渲染结果到指定容器
+function renderResultsToContainer(results, container, itemClass) {
+    if (results.length === 0) {
+        // 使用DOM API而不是innerHTML
+        container.textContent = '';
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'global-search-empty';
+        emptyDiv.textContent = '暂无匹配的书签';
+        container.appendChild(emptyDiv);
+        return;
+    }
+    
+    // 清空容器
+    container.textContent = '';
+    
+    results.forEach((result, index) => {
+        // 创建结果项元素
+        const item = document.createElement('div');
+        item.className = itemClass;
+        item.setAttribute('data-index', index);
+        item.setAttribute('data-result-index', index); // 使用索引而不是JSON字符串
+        
+        // 获取图标HTML（可能是emoji或img标签）
+        // 安全处理：如果包含HTML标签，使用textContent设置，否则直接使用
+        let iconHtml = result.icon || '🔗';
+        
+        // 创建图标容器
+        const iconContainer = document.createElement('div');
+        iconContainer.className = 'global-search-result-item-icon';
+        
+        // 安全处理图标：使用DOMParser解析HTML，然后安全地插入
+        if (iconHtml.includes('<')) {
+            // 使用DOMParser安全解析HTML
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(iconHtml, 'text/html');
+            
+            // 获取body中的所有子节点
+            const bodyNodes = Array.from(doc.body.childNodes);
+            bodyNodes.forEach(node => {
+                // 只允许img和span标签
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const tagName = node.tagName.toLowerCase();
+                    if (tagName === 'img' || tagName === 'span') {
+                        // 克隆节点并清理危险属性
+                        const clone = node.cloneNode(true);
+                        // 移除所有事件处理器属性
+                        Array.from(clone.attributes).forEach(attr => {
+                            if (attr.name.startsWith('on')) {
+                                clone.removeAttribute(attr.name);
+                            }
+                        });
+                        iconContainer.appendChild(clone);
+                    }
+                } else if (node.nodeType === Node.TEXT_NODE) {
+                    // 文本节点直接添加
+                    iconContainer.appendChild(node.cloneNode(true));
+                }
+            });
+        } else {
+            iconContainer.textContent = iconHtml;
+        }
+        
+        // 创建内容容器
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'global-search-result-item-content';
+        
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'global-search-result-item-title';
+        titleDiv.textContent = result.name || '';
+        
+        // 根据类型显示不同的内容
+        if (result.type === 'function') {
+            // 功能项：只显示名称，不显示URL
+            contentContainer.appendChild(titleDiv);
+        } else {
+            // 书签：显示名称和URL
+            const urlDiv = document.createElement('div');
+            urlDiv.className = 'global-search-result-item-url';
+            urlDiv.textContent = result.url || '';
+            contentContainer.appendChild(titleDiv);
+            contentContainer.appendChild(urlDiv);
+        }
+        
+        // 组装元素
+        item.appendChild(iconContainer);
+        item.appendChild(contentContainer);
+        
+        // 如果是模态框模式，添加类型标签
+        if (itemClass === 'global-search-result-item') {
+            const typeDiv = document.createElement('div');
+            typeDiv.className = 'global-search-result-item-type';
+            typeDiv.textContent = result.type === 'function' ? '功能' : '书签';
+            item.appendChild(typeDiv);
+        }
+        
+        // 绑定鼠标悬停事件
+        item.addEventListener('mouseenter', () => {
+            const isModal = itemClass === 'global-search-result-item';
+            selectSearchResult(index, isModal);
+        });
+        
+        // 绑定点击事件
+        item.addEventListener('click', () => {
+            openSearchResult(result);
+        });
+        
+        container.appendChild(item);
+    });
+    
+    console.log('[Search] renderResultsToContainer completed, added', results.length, 'items to container');
+    console.log('[Search] Container children count:', container.children.length);
+}
+
+// 选择搜索结果（浮窗与网页内下拉共用）
+window.selectSearchResult = function(index, isModal = false) {
+    selectedResultIndex = index;
+    
+    document.querySelectorAll('.global-search-result-item').forEach((item, i) => {
+        item.classList.toggle('selected', i === index);
+    });
+}
+
+// 导航搜索结果（浮窗与网页内下拉共用）
+function navigateResults(direction, isModal = false) {
+    if (currentSearchResults.length === 0) return;
+    
+    selectedResultIndex += direction;
+    if (selectedResultIndex < 0) {
+        selectedResultIndex = currentSearchResults.length - 1;
+    } else if (selectedResultIndex >= currentSearchResults.length) {
+        selectedResultIndex = 0;
+    }
+    
+    selectSearchResult(selectedResultIndex, isModal);
+    
+    // 滚动到选中项（不区分浮窗/下拉，统一处理）
+    const selector = `.global-search-result-item[data-index="${selectedResultIndex}"]`;
+    const selectedItem = document.querySelector(selector);
+    if (selectedItem) {
+        selectedItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+}
+
+// 打开搜索结果
+window.openSearchResult = function(result) {
+    if (!result) return;
+    
+    // 如果result是字符串，尝试解析
+    if (typeof result === 'string') {
+        try {
+            result = JSON.parse(result.replace(/&quot;/g, '"'));
+        } catch (e) {
+            console.error('[GlobalSearch] 解析结果失败:', e);
+            return;
+        }
+    }
+    
+    // 关闭搜索模态框和下拉菜单
+    closeSearchModal();
+    hideInlineSearchDropdown();
+    
+    if (result.type === 'function' && result.action) {
+        // 功能项：执行对应的操作
+        try {
+            result.action();
+            console.log('[GlobalSearch] 执行功能:', result.name);
+        } catch (error) {
+            console.error('[GlobalSearch] 执行功能失败:', error);
+        }
+    } else if (result.type === 'bookmark' && result.url) {
+        // 书签：打开链接
+        // 记录点击（用于高频置顶）
+        if (dataManager && typeof dataManager.recordBookmarkClick === 'function') {
+            dataManager.recordBookmarkClick(result.url, result.name, result.icon).catch(() => {});
+            // 更新本地缓存
+            const currentCount = clickStatsCache[result.url] || 0;
+            clickStatsCache[result.url] = currentCount + 1;
+        }
+        
+        window.open(result.url, '_blank');
+    }
+}
+
+// 执行搜索（网络搜索或打开书签）
+async function performSearch(query) {
+    if (!query || query.trim() === '') return;
+    
+    const trimmedQuery = query.trim();
+    
+    // 先检查是否有匹配的书签
+    const bookmarkResults = searchBookmarks(trimmedQuery.toLowerCase());
+    if (bookmarkResults.length > 0 && bookmarkResults[0].score >= 30) {
+        // 如果最高分书签相关度足够高，直接打开
+        openSearchResult(bookmarkResults[0]);
+        return;
+    }
+    
+    // 否则进行网络搜索
+    const searchEngine = window.searchConfig?.searchEngine || 'https://www.bing.com/search?q=';
+    const searchUrl = searchEngine + encodeURIComponent(trimmedQuery);
+    window.open(searchUrl, '_blank');
+    closeSearchModal();
+}
+
+// 打开搜索浮窗
+window.openSearchModal = function() {
+    const modal = document.getElementById('global-search-modal');
+    const modalInput = document.getElementById('global-search-modal-input');
+    
+    if (modal && modalInput) {
+        modal.style.display = 'flex';
+        modalInput.focus();
+        modalInput.value = '';
+        renderSearchResults([]);
+        selectedResultIndex = -1;
+    }
+}
+
+// 关闭搜索浮窗
+function closeSearchModal() {
+    const modal = document.getElementById('global-search-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    selectedResultIndex = -1;
+}
+
+// 处理搜索快捷键
+function handleSearchShortcut(e) {
+    // 固定使用 Ctrl+Space 作为全局搜索快捷键（忽略配置中的自定义快捷键）
+    const shortcut = 'Ctrl+Space';
+    
+    // 解析快捷键
+    const parts = shortcut.split('+').map(s => s.trim());
+    const isCtrl = parts.includes('Ctrl');
+    const isAlt = parts.includes('Alt');
+    const isShift = parts.includes('Shift');
+    const key = parts[parts.length - 1];
+    
+    // 检查是否匹配
+    if ((isCtrl && !e.ctrlKey) || (!isCtrl && e.ctrlKey && !isAlt && !isShift)) return;
+    if ((isAlt && !e.altKey) || (!isAlt && e.altKey && !isCtrl && !isShift)) return;
+    if ((isShift && !e.shiftKey) || (!isShift && e.shiftKey && !isCtrl && !isAlt)) return;
+    
+    // 检查按键匹配（支持Space、K、F等）
+    let keyMatch = false;
+    if (key === 'Space' && e.code === 'Space') {
+        keyMatch = true;
+    } else if (key.length === 1 && e.key.toLowerCase() === key.toLowerCase()) {
+        keyMatch = true;
+    } else if (e.code === `Key${key.charAt(0).toUpperCase() + key.slice(1)}`) {
+        keyMatch = true;
+    }
+    
+    if (!keyMatch) return;
+    
+    // 如果正在输入，不触发
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        // 但如果是搜索框本身，允许触发
+        if (e.target.id !== 'global-search-input' && e.target.id !== 'global-search-modal-input') {
+            return;
+        }
+    }
+    
+    e.preventDefault();
+    openSearchModal();
+}
+
+// 在initDashboard中初始化搜索功能
+const originalInitDashboard = window.initDashboard;
+if (typeof initDashboard === 'function') {
+    // 如果initDashboard已经定义，我们需要在它执行后初始化搜索
+    // 这会在后面处理
+}

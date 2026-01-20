@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>God's Bookmark 书签同步 - 高级设置</title>
+  <style>
+    body {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      color: #333;
+      background: #f9fafb;
+    }
+    h1 {
+      color: #8b5cf6;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 24px;
+      font-size: 13px;
+    }
+    .section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .section h2 {
+      font-size: 16px;
+      margin: 0 0 16px 0;
+      color: #374151;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      color: #374151;
+    }
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    input[type="text"]:focus, input[type="number"]:focus {
+      outline: none;
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .checkbox-group input[type="checkbox"] {
+      margin-right: 8px;
+    }
+    button {
+      padding: 10px 20px;
+      background: #8b5cf6;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    button:hover {
+      background: #7c3aed;
+    }
+    .help-text {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .info-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #1e40af;
+    }
+  </style>
+</head>
+<body>
+  <h1>God's Bookmark 书签同步</h1>
+  <p class="subtitle">高级设置</p>
+  
+  <div class="info-box">
+    <strong>使用说明：</strong><br>
+    1. 确保您的 God's Bookmark 服务器正在运行（默认地址：http://localhost:3000）<br>
+    2. 在浏览器中添加或更改书签时，会自动实时同步到网站<br>
+    3. 书签会根据浏览器书签栏中的文件夹自动分类<br>
+    4. 书签栏根目录的书签会保存到"书签栏"分类
+  </div>
+  
+  <div class="section">
+    <h2>基本设置</h2>
+    
+    <div class="form-group">
+      <label>
+        <div class="checkbox-group">
+          <input type="checkbox" id="enabled">
+          <span>启用自动同步</span>
+        </div>
+      </label>
+      <div class="help-text">启用后，浏览器书签会自动同步到 God's Bookmark</div>
+    </div>
+    
+    <div class="form-group">
+      <label for="serverUrl">服务器地址</label>
+      <input type="text" id="serverUrl" placeholder="http://localhost:3000">
+      <div class="help-text">God's Bookmark 服务器的地址</div>
+    </div>
+  </div>
+  
+  <div class="section">
+    <h2>同步选项</h2>
+    
+    <div class="form-group">
+      <label>
+        <div class="checkbox-group">
+          <input type="checkbox" id="syncOnCreate">
+          <span>新书签时自动同步</span>
+        </div>
+      </label>
+      <div class="help-text">当您在浏览器中添加新书签时自动同步</div>
+    </div>
+    
+    <div class="form-group">
+      <label>
+        <div class="checkbox-group">
+          <input type="checkbox" id="syncOnUpdate">
+          <span>书签更新时同步</span>
+        </div>
+      </label>
+      <div class="help-text">当您修改书签名称或URL时同步更新</div>
+    </div>
+    
+    <div class="form-group">
+      <label>
+        <div class="checkbox-group">
+          <input type="checkbox" id="syncOnRemove">
+          <span>书签删除时同步</span>
+        </div>
+      </label>
+      <div class="help-text">当您删除浏览器书签时同步删除网站书签</div>
+    </div>
+  </div>
+  
+  <div style="text-align: right;">
+    <button id="saveBtn">保存设置</button>
+  </div>
+  
+  <script src="options.js"></script>
+</body>
+</html>

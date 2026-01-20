@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员登录 - God's Bookmark</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body style="align-items: center; justify-content: center;">
+
+    <div class="glass-card" style="width: 100%; max-width: 400px; text-align: center;">
+        <div style="margin-bottom: 2rem;">
+            <p style="font-size: 2rem; margin-bottom: 0.5rem;">🔒</p>
+            <h1>用户登录</h1>
+            <p style="color: var(--text-secondary);">请输入用户名和密码</p>
+        </div>
+
+        <form id="login-form">
+            <div style="margin-bottom: 1rem;">
+                <input type="text" id="username" placeholder="用户名" autocomplete="username"
+                    style="width: 100%; padding: 0.75rem; border-radius: 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: white; outline: none;">
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                <input type="password" id="password" placeholder="密码" autocomplete="current-password"
+                    style="width: 100%; padding: 0.75rem; border-radius: 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: white; outline: none;">
+            </div>
+            <button type="submit" class="btn" style="width: 100%; padding: 0.75rem;">
+                登录
+            </button>
+            <p id="error-msg" style="color: #ef4444; margin-top: 1rem; font-size: 0.875rem; display: none;">登录失败</p>
+        </form>
+
+        <div style="margin-top: 1.5rem;">
+            <a href="index.html" style="color: var(--text-secondary); font-size: 0.875rem;">返回首页</a>
+        </div>
+    </div>
+
+    <script src="js/data-manager.js"></script>
+    <script src="js/user-manager.js"></script>
+    <script src="js/login.js"></script>
+</body>
+
+</html>
