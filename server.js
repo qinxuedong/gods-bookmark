@@ -1217,6 +1217,11 @@ app.post('/api/backup/configs', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'backupType and config required' });
         }
         
+        // 普通用户不允许创建本地/NAS 类型备份（仅管理员支持）
+        if (backupType === 'local' && (!req.user || req.user.role !== 'admin')) {
+            return res.status(403).json({ error: 'Only admin can create local/NAS backup' });
+        }
+        
         const result = await db.run(
             "INSERT INTO backup_configs (user_id, backup_type, config, enabled, schedule) VALUES (?, ?, ?, ?, ?)",
             [req.userId || 0, backupType, JSON.stringify(config), enabled ? 1 : 0, schedule || null]
@@ -1239,6 +1244,11 @@ app.put('/api/backup/configs/:id', requireAuth, async (req, res) => {
         const existing = await db.get("SELECT user_id FROM backup_configs WHERE id = ?", [configId]);
         if (!existing || existing.user_id !== (req.userId || 0)) {
             return res.status(404).json({ error: 'Backup config not found' });
+        }
+        
+        // 普通用户不允许将备份类型修改为本地/NAS（仅管理员支持）
+        if (backupType === 'local' && (!req.user || req.user.role !== 'admin')) {
+            return res.status(403).json({ error: 'Only admin can use local/NAS backup' });
         }
         
         let updateFields = [];

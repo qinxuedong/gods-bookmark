@@ -2499,8 +2499,14 @@ async function loadBookmarks() {
                         ` : `
                             <h3 class="bookmark-card-title" 
                                 data-category="${cat.category}"
-                                style="color: var(--accent-color); cursor: pointer; user-select: none;" 
-                                title="双击折叠/展开">${cat.category} ${isCollapsed ? '▼' : '▲'}</h3>
+                                style="color: var(--accent-color); user-select: none; display: flex; align-items: center; gap: 0.25rem;" 
+                                title="点击图标折叠/展开">
+                                <button class="bookmark-collapse-toggle" data-category="${cat.category}"
+                                    style="width: 20px; height: 20px; border-radius: 999px; border: 1px solid rgba(148,163,184,0.8); background: rgba(15,23,42,0.8); color: rgba(248,250,252,0.9); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; padding: 0;">
+                                    ${isCollapsed ? '▸' : '▾'}
+                                </button>
+                                <span>${cat.category}</span>
+                            </h3>
                         `}
                         
                         ${isAdmin ? `
@@ -2597,27 +2603,22 @@ async function loadBookmarks() {
         container.querySelectorAll('.add-bookmark-btn').forEach(btn => {
             const catIndex = parseInt(btn.getAttribute('data-category-index'));
             if (!isNaN(catIndex) && window.openAddBookmarkModal) {
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     window.openAddBookmarkModal(catIndex);
                 });
             }
         });
 
-        // 绑定书签卡片标题双击事件（折叠功能）
-        container.querySelectorAll('.bookmark-card-title').forEach(titleEl => {
-            let lastClickTime = 0;
-            titleEl.addEventListener('click', (e) => {
-                const now = Date.now();
-                if (now - lastClickTime < 300) {
-                    // 双击
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const categoryName = titleEl.getAttribute('data-category');
-                    if (categoryName && window.toggleBookmarkCardCollapse) {
-                        window.toggleBookmarkCardCollapse(categoryName);
-                    }
+        // 折叠图标点击（单击切换折叠）
+        container.querySelectorAll('.bookmark-collapse-toggle').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const categoryName = btn.getAttribute('data-category');
+                if (categoryName && window.toggleBookmarkCardCollapse) {
+                    window.toggleBookmarkCardCollapse(categoryName);
                 }
-                lastClickTime = now;
             });
         });
 
@@ -4920,28 +4921,36 @@ function closeSearchModal() {
 
 // 处理搜索快捷键
 function handleSearchShortcut(e) {
-    // 固定使用 Ctrl+Space 作为全局搜索快捷键（忽略配置中的自定义快捷键）
-    const shortcut = 'Ctrl+Space';
+    // 从配置中读取快捷键，默认 Ctrl+Space
+    const config = window.searchConfig || {};
+    let shortcut = (config.shortcut || 'Ctrl+Space').trim();
+    if (!shortcut) {
+        shortcut = 'Ctrl+Space';
+    }
     
-    // 解析快捷键
-    const parts = shortcut.split('+').map(s => s.trim());
-    const isCtrl = parts.includes('Ctrl');
-    const isAlt = parts.includes('Alt');
-    const isShift = parts.includes('Shift');
-    const key = parts[parts.length - 1];
+    // 解析快捷键（大小写不敏感）
+    const parts = shortcut.split('+').map(s => s.trim()).filter(Boolean);
+    const lowerParts = parts.map(p => p.toLowerCase());
     
-    // 检查是否匹配
-    if ((isCtrl && !e.ctrlKey) || (!isCtrl && e.ctrlKey && !isAlt && !isShift)) return;
-    if ((isAlt && !e.altKey) || (!isAlt && e.altKey && !isCtrl && !isShift)) return;
-    if ((isShift && !e.shiftKey) || (!isShift && e.shiftKey && !isCtrl && !isAlt)) return;
+    const isCtrl = lowerParts.includes('ctrl');
+    const isAlt = lowerParts.includes('alt');
+    const isShift = lowerParts.includes('shift');
     
-    // 检查按键匹配（支持Space、K、F等）
+    // 最后一个片段视为主键
+    let keyToken = lowerParts[lowerParts.length - 1] || 'space';
+    
+    // 检查是否匹配修饰键（需要什么就必须按下，不需要的就必须没按）
+    if (isCtrl !== !!e.ctrlKey) return;
+    if (isAlt !== !!e.altKey) return;
+    if (isShift !== !!e.shiftKey) return;
+    
+    // 检查按键匹配（支持 space / 字母键 等）
     let keyMatch = false;
-    if (key === 'Space' && e.code === 'Space') {
+    if (keyToken === 'space' && e.code === 'Space') {
         keyMatch = true;
-    } else if (key.length === 1 && e.key.toLowerCase() === key.toLowerCase()) {
+    } else if (keyToken.length === 1 && e.key.toLowerCase() === keyToken) {
         keyMatch = true;
-    } else if (e.code === `Key${key.charAt(0).toUpperCase() + key.slice(1)}`) {
+    } else if (keyToken.length === 1 && e.code === `Key${keyToken.toUpperCase()}`) {
         keyMatch = true;
     }
     

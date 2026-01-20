@@ -5,11 +5,6 @@
 
 let isLayoutEditing = false;
 let draggedItem = null;
-let currentResizeCard = null;
-let resizeStartX = 0;
-let resizeStartY = 0;
-let resizeStartWidth = 0;
-let resizeStartHeight = 0;
 
 // ===== 侧边栏控制 =====
 async function toggleSettingsSidebar() {
@@ -27,13 +22,6 @@ async function toggleSettingsSidebar() {
 
 async function openSettingsSidebar() {
     await toggleSettingsSidebar();
-    // 打开设置后，为所有书签卡片添加边界resize handles
-    setTimeout(() => {
-        const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
-        bookmarkCards.forEach(card => {
-            addResizeHandle(card);
-        });
-    }, 100);
 }
 
 function closeSettingsSidebar() {
@@ -41,12 +29,6 @@ function closeSettingsSidebar() {
     if (sidebar) {
         sidebar.classList.remove('open');
         document.body.classList.remove('sidebar-open');
-        
-        // 移除所有卡片的resize handles（退出设置模式时）
-        const allCards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
-        allCards.forEach(card => {
-            removeResizeHandle(card);
-        });
         
         // 不再需要禁用拖拽和调整大小（因为已经禁用了）
         // disableTodosDragAndResize();
@@ -76,6 +58,10 @@ async function renderCardControls() {
 
     // 获取主题设置（默认dark）
     const theme = config.theme || 'dark';
+
+    // 全局搜索配置（快捷键 & 搜索引擎）
+    const searchShortcut = config.searchShortcut || 'Ctrl+Space';
+    const searchEngine = config.searchEngine || 'https://www.bing.com/search?q=';
     
     // 检查当前用户是否是管理员 / 已登录
     let isAdmin = false;
@@ -92,14 +78,106 @@ async function renderCardControls() {
         console.error('[renderCardControls] 检查管理员权限失败:', e);
     }
     
-    // 全局设置卡片（包含主题、网站标题、便签待办、书签大小）
+    // 全局设置卡片（包含管理按钮、主题、网站标题、便签待办、书签大小）
     let html = `
         <!-- 全局设置卡片 -->
-        <div class="card-control-item" style="border-bottom: 2px solid var(--card-border); padding: 1rem; margin-bottom: 1rem; border-right: none; padding-right: 0; margin-right: 0;">
+        <div class="card-control-item" style="border-bottom: 2px solid var(--card-border); padding: 1rem; margin-bottom: 1rem;">
             <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 1rem;">
                 <h4 style="margin: 0; color: var(--accent-color); font-size: 1.35rem; font-weight: 600; text-align: center;">全局设置</h4>
             </div>
-            
+            ${
+                (isAdmin || isLoggedIn)
+                    ? `
+            <!-- 管理功能图标按钮（管理员：用户/备份管理；所有登录用户：修改密码） -->
+            <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--card-border);">
+                <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    ${
+                        isAdmin
+                            ? `
+                    <button id="user-management-btn" class="management-icon-btn" title="用户管理" style="
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 0.25rem;
+                        padding: 0.75rem 1rem;
+                        background: var(--card-bg);
+                        border: 1px solid var(--card-border);
+                        border-radius: 0.75rem;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        color: var(--text-primary);
+                        min-width: 80px;
+                    ">
+                        <span style="font-size: 1.2rem;">👥</span>
+                        <span style="font-size: 0.7rem; font-weight: 500;">用户管理</span>
+                    </button>
+                    <button id="backup-management-btn" class="management-icon-btn" title="备份管理" style="
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 0.25rem;
+                        padding: 0.75rem 1rem;
+                        background: var(--card-bg);
+                        border: 1px solid var(--card-border);
+                        border-radius: 0.75rem;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        color: var(--text-primary);
+                        min-width: 80px;
+                    ">
+                        <span style="font-size: 1.2rem;">💾</span>
+                        <span style="font-size: 0.7rem; font-weight: 500;">备份管理</span>
+                    </button>
+                            `
+                            : ''
+                    }
+                    ${
+                        isLoggedIn
+                            ? `
+                    <button id="change-password-btn" class="management-icon-btn" title="修改密码" style="
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 0.25rem;
+                        padding: 0.75rem 1rem;
+                        background: var(--card-bg);
+                        border: 1px solid var(--card-border);
+                        border-radius: 0.75rem;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        color: var(--text-primary);
+                        min-width: 80px;
+                    ">
+                        <span style="font-size: 1.2rem;">🔐</span>
+                        <span style="font-size: 0.7rem; font-weight: 500;">修改密码</span>
+                    </button>
+                            `
+                            : ''
+                    }
+                </div>
+            </div>
+                    `
+                    : ''
+            }
+            <!-- 全局搜索设置 -->
+            <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--card-border);">
+                <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: 500;">🔍 全局搜索</label>
+                <div class="control-row" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <label style="width: 70px; font-size: 0.75rem;">快捷键</label>
+                    <input type="text" id="search-shortcut-input" value="${searchShortcut}"
+                        style="flex: 1; padding: 0.4rem 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.375rem; font-size: 0.8rem;"
+                        placeholder="例如：Ctrl+Space">
+                </div>
+                <div class="control-row" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <label style="width: 70px; font-size: 0.75rem;">搜索引擎</label>
+                    <input type="text" id="search-engine-input" value="${searchEngine}"
+                        style="flex: 1; padding: 0.4rem 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.375rem; font-size: 0.8rem;"
+                        placeholder="例如：https://www.bing.com/search?q=">
+                </div>
+            </div>
             <!-- 主题设置 -->
             <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--card-border);">
                 <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: 500;">🎨 主题设置</label>
@@ -154,74 +232,6 @@ async function renderCardControls() {
             </div>
         </div>
     `;
-
-    // 在全局设置下方添加管理功能图标按钮（管理员：用户/备份管理；所有登录用户：修改密码）
-    if (isAdmin || isLoggedIn) {
-        html += `
-            <div style="border-bottom: 2px solid var(--card-border); padding-bottom: 1.5rem; margin-bottom: 1.5rem;">
-                <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-                    ${isAdmin ? `
-                        <button id="open-user-management-btn" class="management-icon-btn" title="用户管理" style="
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            justify-content: center;
-                            gap: 0.25rem;
-                            padding: 0.75rem 1rem;
-                            background: var(--card-bg);
-                            border: 1px solid var(--card-border);
-                            border-radius: 0.75rem;
-                            cursor: pointer;
-                            transition: all 0.3s ease;
-                            color: var(--text-primary);
-                            min-width: 80px;
-                        ">
-                            <span style="font-size: 1.2rem;">👥</span>
-                            <span style="font-size: 0.7rem; font-weight: 500;">用户管理</span>
-                        </button>
-                        <button id="open-backup-management-btn" class="management-icon-btn" title="备份管理" style="
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            justify-content: center;
-                            gap: 0.25rem;
-                            padding: 0.75rem 1rem;
-                            background: var(--card-bg);
-                            border: 1px solid var(--card-border);
-                            border-radius: 0.75rem;
-                            cursor: pointer;
-                            transition: all 0.3s ease;
-                            color: var(--text-primary);
-                            min-width: 80px;
-                        ">
-                            <span style="font-size: 1.2rem;">💾</span>
-                            <span style="font-size: 0.7rem; font-weight: 500;">备份管理</span>
-                        </button>
-                    ` : ''}
-                    ${isLoggedIn ? `
-                        <button id="open-user-profile-btn" class="management-icon-btn" title="修改密码" style="
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            justify-content: center;
-                            gap: 0.25rem;
-                            padding: 0.75rem 1rem;
-                            background: var(--card-bg);
-                            border: 1px solid var(--card-border);
-                            border-radius: 0.75rem;
-                            cursor: pointer;
-                            transition: all 0.3s ease;
-                            color: var(--text-primary);
-                            min-width: 80px;
-                        ">
-                            <span style="font-size: 1.2rem;">🔐</span>
-                            <span style="font-size: 0.7rem; font-weight: 500;">修改密码</span>
-                        </button>
-                    ` : ''}
-                </div>
-            </div>
-        `;
-    }
 
     const monitorCards = document.querySelectorAll('#monitor-section .glass-card');
     const bookmarkCards = document.querySelectorAll('#bookmarks-container .glass-card');
@@ -338,16 +348,23 @@ async function renderCardControls() {
         html += `
             <div class="card-control-item" data-card-index="${globalIndex}" 
                 style="border-bottom: ${globalIndex < allCards.length - 1 ? '1px solid var(--card-border)' : 'none'}; 
-                       border-right: none;
                        padding-bottom: ${globalIndex < allCards.length - 1 ? '1rem' : '0'}; 
-                       padding-right: 0;
                        margin-bottom: ${globalIndex < allCards.length - 1 ? '1rem' : '0'}; 
-                       margin-right: 0;
                        background: ${bgColorStyle};
                        border-left: 3px solid ${borderColor};
                        box-shadow: 0 0 10px ${borderColor}40;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; position: relative;">
+                    <div class="drag-handle-container" style="display:flex; align-items:center; gap:4px;">
+                        <button class="card-move-up-btn" data-card-index="${globalIndex}" title="上移"
+                            style="width:20px;height:20px;border-radius:999px;border:1px solid rgba(148,163,184,0.8);background:rgba(15,23,42,0.9);color:rgba(248,250,252,0.85);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;">
+                            ↑
+                        </button>
+                        <button class="card-move-down-btn" data-card-index="${globalIndex}" title="下移"
+                            style="width:20px;height:20px;border-radius:999px;border:1px solid rgba(148,163,184,0.8);background:rgba(15,23,42,0.9);color:rgba(248,250,252,0.85);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;">
+                            ↓
+                        </button>
                     <h4 style="margin: 0; font-size: 0.85rem; color: ${borderColor};">📦 ${cardName}</h4>
+                    </div>
                     <div style="display: flex; gap: 4px; position: absolute; top: 0; right: 0;">
                         ${isBookmarkCard && bookmarkCategoryIndex !== null ? `
                         <button class="toggle-bookmark-visibility-btn" data-category-name="${bookmarkCategoryIndex}" 
@@ -366,17 +383,13 @@ async function renderCardControls() {
                 <input type="text" class="card-name-input" data-card-index="${globalIndex}" value="${cardName}" 
                     style="width: 100%; margin-bottom: 0.35rem; padding: 0.2rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.25rem; font-size: 0.75rem;">
                 
-                <div class="control-row" style="margin-bottom: 0.3rem;">
-                    <label style="width: 45px; font-size: 0.7rem;">透明度</label>
-                    <input type="range" class="card-opacity-range" data-card-index="${globalIndex}" min="0.1" max="1" step="0.1" value="${currentOpacity}"
-                        style="flex: 1;">
-                    <span class="value-display" style="font-size: 0.7rem; width: 28px;">${currentOpacity}</span>
-                </div>
-                
                 <div class="control-row" style="margin-bottom: 0;">
-                    <label style="width: 45px; font-size: 0.7rem;">主题色</label>
+                    <label style="width: 50px; font-size: 0.7rem;">透明/色</label>
+                    <input type="range" class="card-opacity-range" data-card-index="${globalIndex}" min="0.1" max="1" step="0.1" value="${currentOpacity}"
+                        style="flex: 1; max-width: 120px;">
+                    <span class="value-display" style="font-size: 0.7rem; width: 34px; text-align: right;">${currentOpacity}</span>
                     <input type="color" class="card-color-input" data-card-index="${globalIndex}" value="${currentColor}" 
-                        style="width: 24px; height: 24px;">
+                        style="width: 24px; height: 24px; margin-left: 4px;">
                 </div>
             </div>
         `;
@@ -386,29 +399,14 @@ async function renderCardControls() {
 
     // 绑定事件监听器（避免内联事件处理器，符合CSP）
     bindDashboardLayoutEvents(container);
-    
+
     // 绑定管理功能按钮事件
     bindManagementButtons();
     
-    // 启用设置面板中的卡片拖拽排序
-    try {
-        enableCardControlsDragSort();
-    } catch (error) {
-        console.error('[renderCardControls] enableCardControlsDragSort error:', error);
-    }
+    // 不再启用设置面板中的卡片拖拽排序，改用上下移动按钮
 
-    // 布局编辑默认开启
-    enableLayoutEditing();
-    
-    // 为所有书签卡片添加边界resize handles（设置模式下）
-    if (document.body.classList.contains('sidebar-open')) {
-        setTimeout(() => {
-            const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
-            bookmarkCards.forEach(card => {
-                addResizeHandle(card);
-            });
-        }, 100);
-    }
+    // 布局编辑默认开启（仅启用可视上的联动逻辑，不再启用卡片拖拽）
+    // enableLayoutEditing();
     
     // 不再启用便签待办的拖拽和调整大小（固定位置，不可移动和调整大小）
     // if (document.body.classList.contains('sidebar-open')) {
@@ -445,6 +443,92 @@ function bindDashboardLayoutEvents(container) {
         });
     }
 
+    // 右边和下边拖动调整卡片大小（仅设置面板中的控制卡片）
+    const controlsList = document.getElementById('card-controls-list');
+    if (controlsList) {
+        controlsList.querySelectorAll('.card-control-item[data-card-index]').forEach(item => {
+            // 右边缘
+            const rightResize = document.createElement('div');
+            rightResize.style.cssText = `
+                position:absolute;
+                top:4px;
+                right:-4px;
+                width:6px;
+                height:calc(100% - 8px);
+                cursor:ew-resize;
+                z-index:5;
+            `;
+            // 底边缘
+            const bottomResize = document.createElement('div');
+            bottomResize.style.cssText = `
+                position:absolute;
+                left:4px;
+                bottom:-4px;
+                width:calc(100% - 8px);
+                height:6px;
+                cursor:ns-resize;
+                z-index:5;
+            `;
+
+            let resizing = false;
+            let startX = 0;
+            let startY = 0;
+            let startWidth = 0;
+            let startHeight = 0;
+            let direction = null;
+
+            function onMouseMove(e) {
+                if (!resizing) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                if (direction === 'right') {
+                    const newW = Math.max(220, startWidth + dx);
+                    item.style.width = newW + 'px';
+                } else if (direction === 'bottom') {
+                    const newH = Math.max(80, startHeight + dy);
+                    item.style.height = newH + 'px';
+                }
+            }
+
+            function onMouseUp() {
+                if (!resizing) return;
+                resizing = false;
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            }
+
+            rightResize.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                resizing = true;
+                direction = 'right';
+                startX = e.clientX;
+                startY = e.clientY;
+                startWidth = item.offsetWidth;
+                startHeight = item.offsetHeight;
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            bottomResize.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                resizing = true;
+                direction = 'bottom';
+                startX = e.clientX;
+                startY = e.clientY;
+                startWidth = item.offsetWidth;
+                startHeight = item.offsetHeight;
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+
+            item.style.position = 'relative';
+            item.appendChild(rightResize);
+            item.appendChild(bottomResize);
+        });
+    }
+
     // 便签待办标题输入框
     const todosTitleInput = container.querySelector('#todos-title-input');
     if (todosTitleInput) {
@@ -458,6 +542,68 @@ function bindDashboardLayoutEvents(container) {
             e.stopPropagation();
         });
         todosTitleInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.target.blur();
+            }
+        });
+    }
+
+    // 全局搜索快捷键输入框
+    const searchShortcutInput = container.querySelector('#search-shortcut-input');
+    if (searchShortcutInput) {
+        searchShortcutInput.addEventListener('change', async (e) => {
+            let value = (e.target.value || '').trim();
+            if (!value) {
+                value = 'Ctrl+Space';
+                e.target.value = value;
+            }
+            try {
+                const config = await dataManager.getDashboardConfig();
+                config.searchShortcut = value;
+                await dataManager.saveDashboardConfig(config);
+                // 同步到前端搜索配置
+                if (!window.searchConfig) window.searchConfig = {};
+                window.searchConfig.shortcut = value;
+                console.log('[GlobalSettings] 已更新搜索快捷键为:', value);
+            } catch (err) {
+                console.error('[GlobalSettings] 更新搜索快捷键失败:', err);
+            }
+        });
+        searchShortcutInput.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        searchShortcutInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.target.blur();
+            }
+        });
+    }
+
+    // 全局搜索引擎输入框
+    const searchEngineInput = container.querySelector('#search-engine-input');
+    if (searchEngineInput) {
+        searchEngineInput.addEventListener('change', async (e) => {
+            let value = (e.target.value || '').trim();
+            if (!value) {
+                value = 'https://www.bing.com/search?q=';
+                e.target.value = value;
+            }
+            try {
+                const config = await dataManager.getDashboardConfig();
+                config.searchEngine = value;
+                await dataManager.saveDashboardConfig(config);
+                // 同步到前端搜索配置
+                if (!window.searchConfig) window.searchConfig = {};
+                window.searchConfig.searchEngine = value;
+                console.log('[GlobalSettings] 已更新搜索引擎为:', value);
+            } catch (err) {
+                console.error('[GlobalSettings] 更新搜索引擎失败:', err);
+            }
+        });
+        searchEngineInput.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        searchEngineInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.target.blur();
             }
@@ -501,6 +647,45 @@ function bindDashboardLayoutEvents(container) {
             e.stopPropagation();
         });
     }
+
+    // 卡片顺序上下移动按钮
+    const controlsList = document.getElementById('card-controls-list');
+    if (controlsList) {
+        controlsList.querySelectorAll('.card-move-up-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const index = parseInt(btn.getAttribute('data-card-index'));
+                if (isNaN(index) || index <= 0) return;
+                await moveCardControl(index, -1);
+            });
+        });
+        controlsList.querySelectorAll('.card-move-down-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const index = parseInt(btn.getAttribute('data-card-index'));
+                if (isNaN(index)) return;
+                await moveCardControl(index, 1);
+            });
+        });
+    }
+
+    // 卡片顺序上下移动按钮
+    container.querySelectorAll('.card-move-up-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.getAttribute('data-card-index'));
+            if (isNaN(index) || index <= 0) return;
+            await moveCardControl(index, -1);
+        });
+    });
+    container.querySelectorAll('.card-move-down-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.getAttribute('data-card-index'));
+            if (isNaN(index)) return;
+            await moveCardControl(index, 1);
+        });
+    });
 
     // 便签待办显示/隐藏按钮
     const todosVisibilityBtn = container.querySelector('#todos-visibility-btn');
@@ -913,10 +1098,8 @@ function toggleAllDraggable() {
     cards.forEach(card => {
         if (isLayoutEditing) {
             enableCardDrag(card);
-            addResizeHandle(card);
         } else {
             disableCardDrag(card);
-            removeResizeHandle(card);
         }
     });
 
@@ -1132,449 +1315,6 @@ async function handleDrop(e) {
     }
 }
 
-// ===== 自由调整大小 =====
-function addResizeHandle(card) {
-    // 移除旧的handles
-    card.querySelectorAll('.resize-handle, .resize-handle-edge, .resize-handle-corner').forEach(h => h.remove());
-    
-    // 只在设置模式下添加resize handles
-    if (!document.body.classList.contains('sidebar-open')) {
-        card.classList.remove('resizable');
-        return; // 不在设置模式下，不添加任何handles
-    }
-    
-    card.classList.add('resizable');
-
-    // 右下角resize handle（保留原有功能）
-    const handle = document.createElement('div');
-    handle.className = 'resize-handle';
-    handle.title = '拖动调整大小';
-    handle.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        startResize(e, card, 'se');
-    });
-    card.appendChild(handle);
-
-    // 只在设置模式下添加边界handles（已检查sidebar-open，这里再检查一次确保安全）
-    if (document.body.classList.contains('sidebar-open')) {
-        // 上边界
-        const topHandle = createEdgeHandle('top', 'ns-resize');
-        topHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startResize(e, card, 'n');
-        });
-        card.appendChild(topHandle);
-
-        // 下边界
-        const bottomHandle = createEdgeHandle('bottom', 'ns-resize');
-        bottomHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startResize(e, card, 's');
-        });
-        card.appendChild(bottomHandle);
-
-        // 左边界
-        const leftHandle = createEdgeHandle('left', 'ew-resize');
-        leftHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startResize(e, card, 'w');
-        });
-        card.appendChild(leftHandle);
-
-        // 右边界
-        const rightHandle = createEdgeHandle('right', 'ew-resize');
-        rightHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startResize(e, card, 'e');
-        });
-        card.appendChild(rightHandle);
-
-        // 四个角
-        const topLeftHandle = createCornerHandle('top-left', 'nwse-resize');
-        topLeftHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startResize(e, card, 'nw');
-        });
-        card.appendChild(topLeftHandle);
-
-        const topRightHandle = createCornerHandle('top-right', 'nesw-resize');
-        topRightHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startResize(e, card, 'ne');
-        });
-        card.appendChild(topRightHandle);
-
-        const bottomLeftHandle = createCornerHandle('bottom-left', 'nesw-resize');
-        bottomLeftHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startResize(e, card, 'sw');
-        });
-        card.appendChild(bottomLeftHandle);
-
-        const bottomRightHandle = createCornerHandle('bottom-right', 'nwse-resize');
-        bottomRightHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            startResize(e, card, 'se');
-        });
-        card.appendChild(bottomRightHandle);
-        
-        // 添加左下角快捷调整按钮
-        const quickResizeContainer = document.createElement('div');
-        quickResizeContainer.className = 'quick-resize-buttons';
-        quickResizeContainer.style.cssText = `
-            position: absolute;
-            bottom: 8px;
-            left: 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            opacity: 0;
-            transition: opacity 0.2s;
-            z-index: 101;
-            pointer-events: none;
-        `;
-        
-        // 添加鼠标移动检测区域（左下角60x60px区域）
-        const hoverArea = document.createElement('div');
-        hoverArea.className = 'quick-resize-hover-area';
-        hoverArea.style.cssText = `
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 60px;
-            height: 60px;
-            z-index: 100;
-            pointer-events: auto;
-            cursor: default;
-        `;
-        
-        // 当鼠标进入左下角区域时显示按钮
-        hoverArea.addEventListener('mouseenter', () => {
-            quickResizeContainer.style.opacity = '1';
-            quickResizeContainer.style.pointerEvents = 'auto';
-        });
-        
-        // 当鼠标离开左下角区域时隐藏按钮
-        hoverArea.addEventListener('mouseleave', (e) => {
-            // 检查鼠标是否移动到按钮上
-            setTimeout(() => {
-                const rect = quickResizeContainer.getBoundingClientRect();
-                const mouseX = e.clientX;
-                const mouseY = e.clientY;
-                if (!(mouseX >= rect.left && mouseX <= rect.right && mouseY >= rect.top && mouseY <= rect.bottom)) {
-                    quickResizeContainer.style.opacity = '0';
-                    quickResizeContainer.style.pointerEvents = 'none';
-                }
-            }, 10);
-        });
-        
-        // 当鼠标在按钮上时保持显示
-        quickResizeContainer.addEventListener('mouseenter', () => {
-            quickResizeContainer.style.opacity = '1';
-            quickResizeContainer.style.pointerEvents = 'auto';
-        });
-        
-        quickResizeContainer.addEventListener('mouseleave', (e) => {
-            // 检查鼠标是否移动到hoverArea上
-            setTimeout(() => {
-                const hoverRect = hoverArea.getBoundingClientRect();
-                const mouseX = e.clientX;
-                const mouseY = e.clientY;
-                if (!(mouseX >= hoverRect.left && mouseX <= hoverRect.right && mouseY >= hoverRect.top && mouseY <= hoverRect.bottom)) {
-                    quickResizeContainer.style.opacity = '0';
-                    quickResizeContainer.style.pointerEvents = 'none';
-                }
-            }, 10);
-        });
-        
-        card.appendChild(hoverArea);
-        
-        // 创建快捷调整按钮
-        const buttonConfigs = [
-            { text: '↑', title: '拉高', action: () => quickResize(card, 'h', -50) },
-            { text: '↓', title: '拉低', action: () => quickResize(card, 'h', 50) },
-            { text: '←', title: '拉窄', action: () => quickResize(card, 'w', -50) },
-            { text: '→', title: '拉宽', action: () => quickResize(card, 'w', 50) }
-        ];
-        
-        buttonConfigs.forEach(btnConfig => {
-            const button = document.createElement('button');
-            button.textContent = btnConfig.text;
-            button.title = btnConfig.title;
-            button.style.cssText = `
-                width: 24px;
-                height: 24px;
-                background: rgba(139, 92, 246, 0.6);
-                border: 1px solid var(--accent-color);
-                border-radius: 4px;
-                color: var(--accent-color);
-                cursor: pointer;
-                font-size: 12px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 0;
-                pointer-events: auto;
-                transition: all 0.2s;
-            `;
-            button.addEventListener('mouseenter', () => {
-                button.style.background = 'rgba(139, 92, 246, 0.9)';
-                button.style.transform = 'scale(1.1)';
-            });
-            button.addEventListener('mouseleave', () => {
-                button.style.background = 'rgba(139, 92, 246, 0.6)';
-                button.style.transform = 'scale(1)';
-            });
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                btnConfig.action();
-            });
-            quickResizeContainer.appendChild(button);
-        });
-        
-        card.appendChild(quickResizeContainer);
-        
-        // 检查卡片是否折叠
-        const isCollapsed = card.classList.contains('collapsed');
-        
-        // 添加中心移动手柄
-        const moveHandle = document.createElement('div');
-        moveHandle.className = 'move-handle';
-        moveHandle.innerHTML = '⋮⋮';
-        moveHandle.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 40px;
-            height: 40px;
-            background: rgba(139, 92, 246, 0.3);
-            border: 2px solid var(--accent-color);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: move;
-            opacity: 0;
-            transition: opacity 0.2s;
-            z-index: 100;
-            font-size: 1.2rem;
-            color: var(--accent-color);
-            user-select: none;
-            pointer-events: auto;
-        `;
-        
-        // 悬停时显示移动手柄（快捷按钮由hoverArea控制，不在这里显示）
-        card.addEventListener('mouseenter', () => {
-            if (moveHandle) moveHandle.style.opacity = '1';
-            // 快捷按钮不再在卡片悬停时显示，只在hoverArea悬停时显示
-        });
-        card.addEventListener('mouseleave', () => {
-            if (moveHandle) moveHandle.style.opacity = '0';
-            // 快捷按钮由hoverArea和按钮自身的mouseleave事件控制
-        });
-        
-        card.appendChild(moveHandle);
-        
-        // 启用拖拽功能
-        enableCardDrag(card);
-    }
-}
-
-// 创建边界handle
-function createEdgeHandle(position, cursor) {
-    const handle = document.createElement('div');
-    handle.className = `resize-handle-edge resize-handle-${position}`;
-    handle.style.cursor = cursor;
-    handle.title = '拖动调整大小';
-    return handle;
-}
-
-// 创建角落handle
-function createCornerHandle(position, cursor) {
-    const handle = document.createElement('div');
-    handle.className = `resize-handle-corner resize-handle-${position}`;
-    handle.style.cursor = cursor;
-    handle.title = '拖动调整大小';
-    return handle;
-}
-
-function removeResizeHandle(card) {
-    // 移除所有resize handles
-    card.querySelectorAll('.resize-handle, .resize-handle-edge, .resize-handle-corner, .move-handle, .quick-resize-buttons, .quick-resize-hover-area').forEach(h => h.remove());
-    card.classList.remove('resizable');
-}
-
-// 快捷调整大小函数
-function quickResize(card, direction, amount) {
-    const currentWidth = card.offsetWidth;
-    const currentHeight = card.offsetHeight;
-    
-    if (direction === 'w') {
-        // 宽度调整
-        const newWidth = Math.max(200, currentWidth + amount);
-        card.style.width = newWidth + 'px';
-    } else if (direction === 'h') {
-        // 高度调整
-        const newHeight = Math.max(100, currentHeight + amount);
-        card.style.height = newHeight + 'px';
-        card.style.minHeight = 'unset';
-    }
-    
-    // 保存尺寸
-    const cardId = card.id;
-    if (cardId) {
-        saveCardSizeToConfig(cardId, card.style.width, card.style.height);
-    }
-    
-    // 如果是书签卡片，保存到bookmarkLayout
-    if (card.classList.contains('bookmark-card')) {
-        const categoryName = card.dataset.category;
-        if (categoryName) {
-            saveBookmarkCardSize(categoryName, card.style.width, card.style.height);
-        }
-    }
-    
-    autoSave();
-}
-
-// 保存书签卡片尺寸
-async function saveBookmarkCardSize(categoryName, width, height) {
-    try {
-        const config = await dataManager.getDashboardConfig();
-        if (!config.bookmarkLayout) {
-            config.bookmarkLayout = [];
-        }
-        
-        let layoutItem = config.bookmarkLayout.find(item => item.category === categoryName);
-        if (layoutItem) {
-            layoutItem.width = width;
-            layoutItem.height = height;
-        } else {
-            config.bookmarkLayout.push({
-                category: categoryName,
-                width: width,
-                height: height,
-                index: 999,
-                hidden: false,
-                collapsed: false
-            });
-        }
-        
-        await dataManager.saveDashboardConfig(config);
-    } catch (error) {
-        console.error('[保存书签卡片尺寸] 失败:', error);
-    }
-}
-
-// 当前resize方向
-let currentResizeDirection = 'se';
-
-function startResize(e, card, direction = 'se') {
-    currentResizeCard = card;
-    currentResizeDirection = direction;
-    resizeStartX = e.clientX;
-    resizeStartY = e.clientY;
-    resizeStartWidth = card.offsetWidth;
-    resizeStartHeight = card.offsetHeight;
-    
-    // 获取卡片的位置（用于左边界和上边界调整）
-    const rect = card.getBoundingClientRect();
-    resizeStartLeft = rect.left;
-    resizeStartTop = rect.top;
-
-    document.addEventListener('mousemove', doResize);
-    document.addEventListener('mouseup', stopResize);
-}
-
-function doResize(e) {
-    if (!currentResizeCard) return;
-
-    const dx = e.clientX - resizeStartX;
-    const dy = e.clientY - resizeStartY;
-
-    let newWidth = resizeStartWidth;
-    let newHeight = resizeStartHeight;
-    let newLeft = resizeStartLeft;
-    let newTop = resizeStartTop;
-
-    // 根据方向调整大小和位置
-    if (currentResizeDirection.includes('e')) {
-        // 右边界
-        newWidth = resizeStartWidth + dx;
-    } else if (currentResizeDirection.includes('w')) {
-        // 左边界
-        newWidth = resizeStartWidth - dx;
-        newLeft = resizeStartLeft + dx;
-    }
-
-    if (currentResizeDirection.includes('s')) {
-        // 下边界
-        newHeight = resizeStartHeight + dy;
-    } else if (currentResizeDirection.includes('n')) {
-        // 上边界
-        newHeight = resizeStartHeight - dy;
-        newTop = resizeStartTop + dy;
-    }
-
-    // 最小尺寸限制
-    newWidth = Math.max(200, newWidth);
-    newHeight = Math.max(100, newHeight);
-
-    // 应用新尺寸
-    currentResizeCard.style.width = newWidth + 'px';
-    currentResizeCard.style.height = newHeight + 'px';
-    currentResizeCard.style.minHeight = 'unset';
-
-    // 如果是左边界或上边界，需要调整位置
-    if (currentResizeDirection.includes('w')) {
-        currentResizeCard.style.left = newLeft + 'px';
-        currentResizeCard.style.position = 'absolute';
-    }
-    if (currentResizeDirection.includes('n')) {
-        currentResizeCard.style.top = newTop + 'px';
-        currentResizeCard.style.position = 'absolute';
-    }
-}
-
-function stopResize() {
-    if (currentResizeCard) {
-        // 保存尺寸
-        const cardId = currentResizeCard.id;
-        if (cardId) {
-            saveCardSizeToConfig(cardId,
-                currentResizeCard.style.width,
-                currentResizeCard.style.height
-            );
-        }
-        // 对于书签卡片，也需要保存布局状态（包括尺寸）
-        if (currentResizeCard.classList.contains('bookmark-card')) {
-            autoSave();
-        }
-    }
-    currentResizeCard = null;
-    document.removeEventListener('mousemove', doResize);
-    document.removeEventListener('mouseup', stopResize);
-}
-
-async function saveCardSizeToConfig(cardId, width, height) {
-    const config = await dataManager.getDashboardConfig();
-    if (!config.cardSizes) config.cardSizes = {};
-    config.cardSizes[cardId] = { width, height };
-    await dataManager.saveDashboardConfig(config);
-    // 自动保存
-    autoSave();
-}
 
 // ===== 便签待办拖拽和调整大小 =====
 function enableTodosDragAndResize() {
@@ -2362,9 +2102,6 @@ function enableLayoutEditing() {
     const cards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
     cards.forEach(card => {
         enableCardDrag(card);
-        // addResizeHandle(card); // 调整大小可能仍需限制在“设置模式”下？用户未明确说，假设拖拽是主要需求。如果包括大小调整，则保留。
-        // 根据“多卡片自动缩放”需求，大小调整也是必要的。
-        addResizeHandle(card);
     });
     isLayoutEditing = true;
 }
@@ -2624,7 +2361,6 @@ window.updateCardColor = updateCardColor;
 window.setCardSpan = setCardSpan;
 window.applyCardGradient = applyCardGradient;
 window.highlightCardControl = highlightCardControl;
-window.addResizeHandle = addResizeHandle;
 window.toggleBookmarkCardVisibility = toggleBookmarkCardVisibility;
 window.applyBookmarkScale = applyBookmarkScale;
 window.restoreBookmarkScale = restoreBookmarkScale;
@@ -3114,7 +2850,7 @@ async function updateBookmarkCardOrder() {
 // ===== 管理功能按钮绑定 =====
 function bindManagementButtons() {
     // 用户管理按钮
-    const userManagementBtn = document.getElementById('open-user-management-btn');
+    const userManagementBtn = document.getElementById('user-management-btn');
     if (userManagementBtn) {
         const newBtn = userManagementBtn.cloneNode(true);
         userManagementBtn.parentNode.replaceChild(newBtn, userManagementBtn);
@@ -3128,7 +2864,7 @@ function bindManagementButtons() {
     }
     
     // 备份管理按钮
-    const backupManagementBtn = document.getElementById('open-backup-management-btn');
+    const backupManagementBtn = document.getElementById('backup-management-btn');
     if (backupManagementBtn) {
         const newBtn = backupManagementBtn.cloneNode(true);
         backupManagementBtn.parentNode.replaceChild(newBtn, backupManagementBtn);
@@ -3142,7 +2878,7 @@ function bindManagementButtons() {
     }
     
     // 修改密码按钮
-    const changePasswordBtn = document.getElementById('open-user-profile-btn');
+    const changePasswordBtn = document.getElementById('change-password-btn');
     if (changePasswordBtn) {
         const newBtn = changePasswordBtn.cloneNode(true);
         changePasswordBtn.parentNode.replaceChild(newBtn, changePasswordBtn);
@@ -3222,8 +2958,13 @@ async function loadUsersList() {
             return;
         }
         
-        const users = await window.userManager.listUsers();
-        renderUsersList(users);
+        const resp = await window.userManager.listUsers();
+        if (!resp || !resp.success) {
+            console.error('[loadUsersList] listUsers failed:', resp && resp.error);
+            renderUsersList([]);
+            return;
+        }
+        renderUsersList(resp.users || []);
     } catch (error) {
         console.error('[loadUsersList] 加载用户列表失败:', error);
     }
@@ -3256,6 +2997,8 @@ function renderUsersList(users) {
     bindUserAndBackupEvents();
 }
 
+let lastBackupConfigs = [];
+
 // ===== 加载备份配置列表 =====
 async function loadBackupConfigs() {
     try {
@@ -3264,8 +3007,15 @@ async function loadBackupConfigs() {
             return;
         }
         
-        const configs = await window.backupManager.getBackupConfigs();
-        renderBackupConfigs(configs);
+        const resp = await window.backupManager.getBackupConfigs();
+        if (!resp || !resp.success) {
+            console.error('[loadBackupConfigs] getBackupConfigs failed:', resp && resp.error);
+            lastBackupConfigs = [];
+            renderBackupConfigs([]);
+            return;
+        }
+        lastBackupConfigs = resp.configs || [];
+        renderBackupConfigs(lastBackupConfigs);
     } catch (error) {
         console.error('[loadBackupConfigs] 加载备份配置失败:', error);
     }
@@ -3283,12 +3033,13 @@ function renderBackupConfigs(configs) {
     
     let html = '';
     configs.forEach(config => {
-        const configData = typeof config.config === 'string' ? JSON.parse(config.config) : config.config;
+        const configData = typeof config.config === 'string' ? JSON.parse(config.config) : (config.config || {});
+        const type = config.backup_type || config.backupType || config.backup_type;
         html += `
             <div style="padding: 1rem; margin-bottom: 0.75rem; background: rgba(139, 92, 246, 0.05); border-radius: 0.5rem; border: 1px solid var(--card-border);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                     <div>
-                        <div style="font-weight: 500; color: var(--text-primary);">${config.backup_type === 'local' ? '本地/NAS' : config.backup_type === 'aliyun' ? '阿里云OSS' : config.backup_type === 'baidu' ? '百度云' : config.backup_type}</div>
+                        <div style="font-weight: 500; color: var(--text-primary);">${type === 'local' ? '本地/NAS' : type === 'aliyun' ? '阿里云OSS' : type === 'baidu' ? '百度云' : (type || '')}</div>
                         <div style="font-size: 0.75rem; color: var(--text-secondary);">${config.enabled ? '已启用' : '已禁用'} | ${config.schedule || '手动'}</div>
                     </div>
                     <button class="edit-backup-config-btn" data-config-id="${config.id}" style="padding: 0.4rem 0.8rem; background: var(--accent-color); color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">编辑</button>
@@ -3335,6 +3086,12 @@ function bindUserAndBackupEvents() {
                 document.getElementById('user-edit-password').value = '';
                 document.getElementById('user-edit-role').value = 'user';
                 delete editModal.dataset.userId;
+                
+                // 添加模式下隐藏删除按钮
+                const deleteBtn = document.getElementById('user-edit-delete');
+                if (deleteBtn) {
+                    deleteBtn.style.display = 'none';
+                }
             }
         };
     }
@@ -3350,7 +3107,8 @@ function bindUserAndBackupEvents() {
         btn.onclick = async () => {
             const userId = parseInt(btn.getAttribute('data-user-id'));
             if (!isNaN(userId) && window.userManager) {
-                const users = await window.userManager.getUsers();
+                const resp = await window.userManager.listUsers();
+                const users = resp && resp.success ? (resp.users || []) : [];
                 const user = users.find(u => u.id === userId);
                 if (user) {
                     const editModal = document.getElementById('user-edit-modal');
@@ -3362,25 +3120,203 @@ function bindUserAndBackupEvents() {
                         document.getElementById('user-edit-password').value = '';
                         document.getElementById('user-edit-role').value = user.role;
                         editModal.dataset.userId = userId;
+                        
+                        // 编辑模式下显示删除按钮
+                        const deleteBtn = document.getElementById('user-edit-delete');
+                        if (deleteBtn) {
+                            deleteBtn.style.display = 'inline-flex';
+                        }
                     }
                 }
             }
         };
     });
     
+    // 辅助函数：根据类型构建备份配置表单
+    function buildBackupConfigOptions(type, configData = {}) {
+        const container = document.getElementById('backup-config-options');
+        if (!container) return;
+        let html = '';
+        if (type === 'local') {
+            html = `
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">本地/NAS 路径</label>
+                <input type="text" id="backup-config-local-path" class="input-field"
+                    placeholder="例如：D:\\\\Backups 或 \\\\NAS\\\\share\\\\backups"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;"
+                    value="${configData.path || ''}">
+            `;
+        } else if (type === 'aliyun') {
+            html = `
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">区域 Region</label>
+                <input type="text" id="backup-config-aliyun-region" class="input-field"
+                    placeholder="例如：oss-cn-hangzhou"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.region || ''}">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">AccessKey ID</label>
+                <input type="text" id="backup-config-aliyun-ak" class="input-field"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.accessKeyId || ''}">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">AccessKey Secret</label>
+                <input type="password" id="backup-config-aliyun-sk" class="input-field"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.accessKeySecret || ''}">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">Bucket</label>
+                <input type="text" id="backup-config-aliyun-bucket" class="input-field"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.bucket || ''}">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">路径前缀（可选）</label>
+                <input type="text" id="backup-config-aliyun-prefix" class="input-field"
+                    placeholder="例如：gods-bookmark/backups"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.prefix || ''}">
+            `;
+        } else if (type === 'baidu') {
+            html = `
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">区域 Region</label>
+                <input type="text" id="backup-config-baidu-region" class="input-field"
+                    placeholder="例如：bj"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.region || ''}">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">AccessKey ID</label>
+                <input type="text" id="backup-config-baidu-ak" class="input-field"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.accessKeyId || ''}">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">Secret Key</label>
+                <input type="password" id="backup-config-baidu-sk" class="input-field"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.secretKey || ''}">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">Bucket</label>
+                <input type="text" id="backup-config-baidu-bucket" class="input-field"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.bucket || ''}">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">路径前缀（可选）</label>
+                <input type="text" id="backup-config-baidu-prefix" class="input-field"
+                    placeholder="例如：gods-bookmark/backups"
+                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
+                    value="${configData.prefix || ''}">
+            `;
+        }
+        container.innerHTML = html;
+    }
+
+    function getBackupConfigFormValues(type) {
+        const cfg = {};
+        if (type === 'local') {
+            const pathInput = document.getElementById('backup-config-local-path');
+            cfg.path = pathInput ? pathInput.value.trim() : '';
+        } else if (type === 'aliyun') {
+            cfg.region = (document.getElementById('backup-config-aliyun-region')?.value || '').trim();
+            cfg.accessKeyId = (document.getElementById('backup-config-aliyun-ak')?.value || '').trim();
+            cfg.accessKeySecret = (document.getElementById('backup-config-aliyun-sk')?.value || '').trim();
+            cfg.bucket = (document.getElementById('backup-config-aliyun-bucket')?.value || '').trim();
+            cfg.prefix = (document.getElementById('backup-config-aliyun-prefix')?.value || '').trim();
+        } else if (type === 'baidu') {
+            cfg.region = (document.getElementById('backup-config-baidu-region')?.value || '').trim();
+            cfg.accessKeyId = (document.getElementById('backup-config-baidu-ak')?.value || '').trim();
+            cfg.secretKey = (document.getElementById('backup-config-baidu-sk')?.value || '').trim();
+            cfg.bucket = (document.getElementById('backup-config-baidu-bucket')?.value || '').trim();
+            cfg.prefix = (document.getElementById('backup-config-baidu-prefix')?.value || '').trim();
+        }
+        return cfg;
+    }
+
+    function presetToCron(preset) {
+        switch (preset) {
+            case 'daily':
+                return '0 2 * * *';       // 每天凌晨2点
+            case 'weekly':
+                return '0 2 * * 0';       // 每周日凌晨2点
+            case 'monthly':
+                return '0 2 1 * *';       // 每月1日凌晨2点
+            case 'quarterly':
+                return '0 2 1 */3 *';     // 每3个月的1日凌晨2点
+            default:
+                return '';
+        }
+    }
+
+    function cronToPreset(cron) {
+        cron = (cron || '').trim();
+        if (!cron) return '';
+        if (cron === '0 2 * * *') return 'daily';
+        if (cron === '0 2 * * 0') return 'weekly';
+        if (cron === '0 2 1 * *') return 'monthly';
+        if (cron === '0 2 1 */3 *') return 'quarterly';
+        return '';
+    }
+
+    function openBackupConfigEditModal(config) {
+        const modal = document.getElementById('backup-config-edit-modal');
+        if (!modal) return;
+
+        const title = document.getElementById('backup-config-edit-title');
+        const typeSelect = document.getElementById('backup-config-type');
+        const enabledCheckbox = document.getElementById('backup-config-enabled');
+        const scheduleInput = document.getElementById('backup-config-schedule');
+        const schedulePreset = document.getElementById('backup-config-schedule-preset');
+
+        const isAdmin = window.userManager && window.userManager.isAdmin && window.userManager.isAdmin();
+
+        if (config) {
+            // 编辑模式
+            const type = config.backup_type || config.backupType || config.backup_type || 'aliyun';
+            const cfgData = typeof config.config === 'string' ? JSON.parse(config.config) : (config.config || {});
+
+            if (title) title.textContent = '编辑备份配置';
+            modal.dataset.configId = config.id;
+
+            if (typeSelect) {
+                typeSelect.value = type;
+                // 应用管理员权限（本地/NAS 仅管理员）
+                Array.from(typeSelect.options).forEach(opt => {
+                    if (opt.value === 'local') {
+                        opt.disabled = !isAdmin;
+                    }
+                });
+            }
+
+            buildBackupConfigOptions(type, cfgData);
+
+            if (enabledCheckbox) {
+                enabledCheckbox.checked = !!config.enabled;
+            }
+
+            if (scheduleInput) {
+                scheduleInput.value = config.schedule || '';
+            }
+
+            if (schedulePreset && scheduleInput) {
+                schedulePreset.value = cronToPreset(scheduleInput.value);
+            }
+        } else {
+            // 添加模式
+            if (title) title.textContent = '添加备份配置';
+            delete modal.dataset.configId;
+
+            if (typeSelect) {
+                Array.from(typeSelect.options).forEach(opt => {
+                    if (opt.value === 'local') {
+                        opt.disabled = !isAdmin;
+                    }
+                });
+                typeSelect.value = isAdmin ? 'local' : 'aliyun';
+                buildBackupConfigOptions(typeSelect.value, {});
+            }
+
+            if (enabledCheckbox) enabledCheckbox.checked = true;
+            if (scheduleInput) scheduleInput.value = '';
+            if (schedulePreset) schedulePreset.value = '';
+        }
+
+        modal.style.display = 'flex';
+    }
+
     // 添加备份配置按钮
     const addBackupConfigBtn = document.getElementById('add-backup-config-btn');
     if (addBackupConfigBtn) {
         addBackupConfigBtn.onclick = () => {
             // 打开备份配置编辑模态框（添加模式）
-            const editModal = document.getElementById('backup-config-edit-modal');
-            if (editModal) {
-                editModal.style.display = 'flex';
-                // 清空表单
-                const typeSelect = editModal.querySelector('#backup-config-type');
-                if (typeSelect) typeSelect.value = 'local';
-                delete editModal.dataset.configId;
-            }
+            openBackupConfigEditModal(null);
         };
     }
     
@@ -3389,10 +3325,24 @@ function bindUserAndBackupEvents() {
     if (refreshBackupsBtn) {
         refreshBackupsBtn.onclick = loadBackupConfigs;
     }
+
+    // 编辑备份配置按钮
+    document.querySelectorAll('.edit-backup-config-btn').forEach(btn => {
+        btn.onclick = () => {
+            const id = parseInt(btn.getAttribute('data-config-id'));
+            if (!isNaN(id)) {
+                const cfg = lastBackupConfigs.find(c => c.id === id);
+                if (cfg) {
+                    openBackupConfigEditModal(cfg);
+                }
+            }
+        };
+    });
     
     // 用户编辑模态框保存和取消按钮
     const userEditSave = document.getElementById('user-edit-save');
     const userEditCancel = document.getElementById('user-edit-cancel');
+    const userEditDelete = document.getElementById('user-edit-delete');
     if (userEditSave) {
         userEditSave.onclick = async () => {
             const editModal = document.getElementById('user-edit-modal');
@@ -3423,6 +3373,34 @@ function bindUserAndBackupEvents() {
             } catch (error) {
                 console.error('[保存用户] 失败:', error);
                 alert('保存失败: ' + (error.message || '未知错误'));
+            }
+        };
+    }
+    if (userEditDelete) {
+        userEditDelete.onclick = async () => {
+            const editModal = document.getElementById('user-edit-modal');
+            const userId = editModal.dataset.userId;
+            if (!userId) {
+                return;
+            }
+            if (!window.userManager || !window.userManager.isAdmin || !window.userManager.isAdmin()) {
+                alert('只有管理员可以删除用户');
+                return;
+            }
+            if (!confirm('确定要删除该用户吗？此操作不可恢复。')) {
+                return;
+            }
+            try {
+                const resp = await window.userManager.deleteUser(userId);
+                if (!resp || !resp.success) {
+                    alert('删除失败: ' + (resp && resp.error ? resp.error : '未知错误'));
+                    return;
+                }
+                editModal.style.display = 'none';
+                loadUsersList();
+            } catch (error) {
+                console.error('[删除用户] 失败:', error);
+                alert('删除失败: ' + (error.message || '未知错误'));
             }
         };
     }
@@ -3465,5 +3443,82 @@ function bindUserAndBackupEvents() {
     }
     if (userProfileCancel) {
         userProfileCancel.onclick = hideUserProfileModal;
+    }
+
+    // 备份配置类型切换
+    const backupTypeSelect = document.getElementById('backup-config-type');
+    if (backupTypeSelect) {
+        backupTypeSelect.onchange = () => {
+            const type = backupTypeSelect.value;
+            buildBackupConfigOptions(type, {});
+        };
+    }
+
+    // 备份配置定时计划快捷选择
+    const schedulePreset = document.getElementById('backup-config-schedule-preset');
+    const scheduleInput = document.getElementById('backup-config-schedule');
+    if (schedulePreset && scheduleInput) {
+        schedulePreset.onchange = () => {
+            const preset = schedulePreset.value;
+            scheduleInput.value = presetToCron(preset);
+        };
+    }
+
+    // 备份配置保存 & 取消按钮
+    const backupEditSave = document.getElementById('backup-config-edit-save');
+    const backupEditCancel = document.getElementById('backup-config-edit-cancel');
+    if (backupEditSave) {
+        backupEditSave.onclick = async () => {
+            const modal = document.getElementById('backup-config-edit-modal');
+            if (!modal) return;
+            const configId = modal.dataset.configId;
+            const typeSelectEl = document.getElementById('backup-config-type');
+            const enabledEl = document.getElementById('backup-config-enabled');
+            const scheduleEl = document.getElementById('backup-config-schedule');
+
+            const backupType = typeSelectEl ? typeSelectEl.value : 'aliyun';
+            const enabled = !!(enabledEl && enabledEl.checked);
+            const schedule = (scheduleEl && scheduleEl.value.trim()) || null;
+            const configData = getBackupConfigFormValues(backupType);
+
+            if (backupType === 'local' && !configData.path) {
+                alert('请填写本地/NAS 路径');
+                return;
+            }
+
+            try {
+                let resp;
+                if (configId) {
+                    resp = await window.backupManager.updateBackupConfig(configId, {
+                        backupType,
+                        config: configData,
+                        enabled,
+                        schedule
+                    });
+                } else {
+                    resp = await window.backupManager.saveBackupConfig({
+                        backupType,
+                        config: configData,
+                        enabled,
+                        schedule
+                    });
+                }
+                if (!resp || !resp.success) {
+                    alert('保存备份配置失败: ' + (resp && resp.error ? resp.error : '未知错误'));
+                    return;
+                }
+                modal.style.display = 'none';
+                loadBackupConfigs();
+            } catch (error) {
+                console.error('[保存备份配置] 失败:', error);
+                alert('保存备份配置失败: ' + (error.message || '未知错误'));
+            }
+        };
+    }
+    if (backupEditCancel) {
+        backupEditCancel.onclick = () => {
+            const modal = document.getElementById('backup-config-edit-modal');
+            if (modal) modal.style.display = 'none';
+        };
     }
 }

@@ -112,8 +112,8 @@
                 <h3>🔥 上帝的指引</h3>
                 <div class="global-search-container">
                     <div class="global-search-wrapper">
-                    <input type="text" id="global-search-input" class="global-search-input" 
-                            placeholder="admin" 
+                        <input type="text" id="global-search-input" class="global-search-input" 
+                            placeholder="" 
                             autocomplete="off">
                         <!-- 网页内搜索下拉结果 -->
                         <div id="global-search-dropdown" class="global-search-dropdown">
@@ -236,9 +236,12 @@
                     <option value="admin">管理员</option>
                 </select>
             </div>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" id="user-edit-cancel">取消</button>
-                <button class="btn" id="user-edit-save" style="background: var(--accent-color); color: white; border: none;">保存</button>
+            <div class="modal-actions" style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+                <button class="btn btn-secondary" id="user-edit-delete" style="background: #ef4444; border: none; display: none;">删除用户</button>
+                <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+                    <button class="btn btn-secondary" id="user-edit-cancel">取消</button>
+                    <button class="btn" id="user-edit-save" style="background: var(--accent-color); color: white; border: none;">保存</button>
+                </div>
             </div>
         </div>
     </div>
@@ -303,9 +306,16 @@
                     <input type="checkbox" id="backup-config-enabled" checked style="margin-right: 0.5rem;">
                     <span>启用此备份配置</span>
                 </label>
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">定时计划（Cron表达式，留空则仅手动备份）</label>
-                <input type="text" id="backup-config-schedule" class="input-field" placeholder="例如: 0 2 * * * (每天凌晨2点)" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
-                <small style="color: var(--text-secondary);">格式: 分钟 小时 日 月 星期。示例: 0 2 * * * 表示每天凌晨2点</small>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">定时计划</label>
+                <select id="backup-config-schedule-preset" class="input-field" style="width: 100%; padding: 0.5rem; margin-bottom: 0.5rem;">
+                    <option value="">不自动备份（仅手动）</option>
+                    <option value="daily">每天（凌晨2点）</option>
+                    <option value="weekly">每周（周日凌晨2点）</option>
+                    <option value="monthly">每月（1号凌晨2点）</option>
+                    <option value="quarterly">每3个月（1号凌晨2点）</option>
+                </select>
+                <input type="text" id="backup-config-schedule" class="input-field" placeholder="Cron 表达式，例如: 0 2 * * * (每天凌晨2点)" style="width: 100%; padding: 0.5rem; margin-bottom: 0.25rem;">
+                <small style="color: var(--text-secondary);">格式: 分钟 小时 日 月 星期。可以使用上面的快捷选择自动生成。</small>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="backup-config-edit-cancel">取消</button>
