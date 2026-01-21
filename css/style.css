@@ -39,16 +39,16 @@
     border-bottom: 1px solid rgba(226, 232, 240, 0.3) !important;
 }
 
-/* 亮色主题下时间区域默认背景（默认透明，不遮挡） */
+/* 亮色主题下时间区域默认背景（从左到右渐变：#FBF0FF → #F2F4FF） */
 :root[data-theme="light"] #datetime-section {
-    background: transparent !important;
+    background: linear-gradient(to right, #FBF0FF, #F2F4FF) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
 }
 
-/* 亮色模式下，当有滚动内容经过时添加背景遮挡 */
+/* 亮色模式下，当有滚动内容经过时保持渐变背景 */
 :root[data-theme="light"] #datetime-section.has-content-behind {
-    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.9)) !important;
+    background: linear-gradient(to right, #FBF0FF, #F2F4FF) !important;
     backdrop-filter: blur(12px) saturate(180%) !important;
     -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
 }
@@ -378,18 +378,18 @@ body.sidebar-open .add-bookmark-btn {
     box-sizing: border-box !important; /* 包含padding在高度内 */
 }
 
-/* 跟随系统主题为亮色时，默认透明，滚动时添加背景遮挡 */
+/* 跟随系统主题为亮色时，应用渐变背景（从左到右：#FBF0FF → #F2F4FF） */
 @media (prefers-color-scheme: light) {
     :root[data-theme="auto"] #datetime-section {
-        background: transparent !important;
+        background: linear-gradient(to right, #FBF0FF, #F2F4FF) !important;
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
     }
     
     :root[data-theme="auto"] #datetime-section.has-content-behind {
-        background: rgba(241, 245, 249, 0.9) !important; /* 使用更新后的全局背景色，稍微不透明以遮挡内容 */
-        backdrop-filter: blur(10px) !important;
-        -webkit-backdrop-filter: blur(10px) !important;
+        background: linear-gradient(to right, #FBF0FF, #F2F4FF) !important;
+        backdrop-filter: blur(12px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
     }
 }
 

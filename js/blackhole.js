@@ -233,12 +233,15 @@
         // 清除画布（亮色模式使用浅色背景，与页面背景色一致）
         if (lightMode) {
             ctx.fillStyle = '#f1f5f9'; // 亮色模式背景色
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // 亮色模式下不绘制任何效果
+            return;
         } else {
             ctx.fillStyle = 'rgba(15, 23, 42, 1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // 绘制线条（亮色模式和暗色模式都显示，颜色不变）
+        // 绘制线条（仅暗色模式显示）
         ctx.strokeStyle = CONFIG.lineColor;
         ctx.lineWidth = 1;
         lines.forEach(l => {
@@ -251,7 +254,7 @@
             ctx.stroke();
         });
 
-        // 绘制粒子（亮色模式和暗色模式都显示，颜色不变）
+        // 绘制粒子（仅暗色模式显示）
         particles.forEach(p => {
             const dx = centerX - p.x;
             const dy = centerY - p.y;
@@ -265,7 +268,7 @@
             ctx.fill();
         });
 
-        // 绘制黑洞核心
+        // 绘制黑洞核心（仅暗色模式显示）
         drawBlackHole(lightMode);
     }
 
@@ -280,11 +283,10 @@
         );
         
         if (lightMode) {
-            // 亮色模式：白色光晕
-            gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
-            gradient.addColorStop(0.3, 'rgba(0, 0, 0, 0.8)');
-            gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)'); // 白色光晕
-            gradient.addColorStop(1, 'transparent');
+            // 亮色模式：外层光晕使用 #C788FF
+            gradient.addColorStop(0, 'rgba(199, 136, 255, 0.6)'); // 中心 #C788FF
+            gradient.addColorStop(0.5, 'rgba(199, 136, 255, 0.4)'); // 中层 #C788FF
+            gradient.addColorStop(1, 'rgba(199, 136, 255, 0.1)'); // 边缘 #C788FF
         } else {
             // 暗色模式：保持原有样式
             gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
@@ -298,9 +300,14 @@
         ctx.arc(holeX, holeY, CONFIG.centerRadius * 3, 0, Math.PI * 2);
         ctx.fill();
 
-        // 核心（亮色模式使用灰色，暗色模式保持黑色）
+        // 核心（亮色模式使用单色 #8B61B1，暗色模式保持黑色）
         ctx.beginPath();
-        ctx.fillStyle = lightMode ? '#B5B5B5' : '#000';
+        if (lightMode) {
+            // 亮色模式：核心使用单色 #8B61B1
+            ctx.fillStyle = '#8B61B1';
+        } else {
+            ctx.fillStyle = '#000';
+        }
         ctx.arc(holeX, holeY, CONFIG.centerRadius, 0, Math.PI * 2);
         ctx.fill();
 

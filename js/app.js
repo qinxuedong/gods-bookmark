@@ -3805,7 +3805,7 @@ async function restoreBookmarkStyles() {
         }
     });
 
-    // 首先强制重置所有卡片的大小（防止配置中还有大小数据）
+    // 首先强制重置所有卡片的大小（然后根据配置重新应用）
     cards.forEach(card => {
         card.style.width = '';
         card.style.height = '';
@@ -3846,21 +3846,15 @@ async function restoreBookmarkStyles() {
                     title.textContent = categoryName + ' ▼';
                 }
             }
-            
-            // 再次确保刷新后不恢复之前的大小（重置为默认大小）
-            card.style.width = '';
-            card.style.height = '';
-            
-            // 同时清除配置中保存的大小数据，确保下次不会恢复
-            const hadWidth = item.width !== undefined;
-            const hadHeight = item.height !== undefined;
-            if (hadWidth) {
-                delete item.width;
-                needSaveConfig = true;
+
+            // 恢复自定义宽高（如果有保存）
+            if (item.width !== undefined && item.width !== null) {
+                const w = typeof item.width === 'number' ? item.width + 'px' : String(item.width);
+                card.style.width = w;
             }
-            if (hadHeight) {
-                delete item.height;
-                needSaveConfig = true;
+            if (item.height !== undefined && item.height !== null) {
+                const h = typeof item.height === 'number' ? item.height + 'px' : String(item.height);
+                card.style.height = h;
             }
 
             // 恢复颜色和透明度
@@ -3883,21 +3877,7 @@ async function restoreBookmarkStyles() {
         }
     });
 
-    // 如果清除了大小数据，保存配置以确保下次不会恢复
-    if (needSaveConfig) {
-        try {
-            await dataManager.saveDashboardConfig(config);
-            console.log('[恢复样式] 已清除卡片大小配置并保存');
-        } catch (err) {
-            console.error('[恢复样式] 保存配置失败:', err);
-        }
-    }
-    
-    // 额外确保：再次遍历所有卡片，强制重置大小（防止其他地方恢复）
-    cards.forEach(card => {
-        card.style.width = '';
-        card.style.height = '';
-    });
+    // 不再清除宽高配置，而是完全依赖配置中保存的 width / height 来恢复
 
     // 第二步：按保存的 index 重新排序
     sortedCards.sort((a, b) => a.index - b.index);
@@ -5251,6 +5231,14 @@ window.addBookmarkCardResizeHandles = function(card) {
         // 立即保存，确保数据被持久化
         saveBookmarkCardSize(categoryName, finalWidth, finalHeight).then(() => {
             console.log('[调整大小] 已保存:', categoryName, finalWidth, finalHeight);
+            // 同步触发布局自动保存，确保与其他布局信息一并持久化
+            if (window.autoSaveLayout && typeof window.autoSaveLayout === 'function') {
+                try {
+                    window.autoSaveLayout();
+                } catch (err) {
+                    console.error('[调整大小] 调用自动保存失败:', err);
+                }
+            }
         }).catch(err => {
             console.error('[调整大小] 保存失败:', err);
         });
@@ -5305,12 +5293,38 @@ window.addBookmarkCardResizeHandles = function(card) {
     card.appendChild(bottomHandle);
 };
 
-// 保存书签卡片大小（已禁用：不保存大小，确保刷新后不恢复）
+// 保存书签卡片大小（保存到 dashboardConfig.bookmarkLayout，确保刷新后不会丢失）
 async function saveBookmarkCardSize(categoryName, width, height) {
-    // 不再保存大小到配置，确保刷新后不会恢复
-    // 调整后的大小只在当前会话有效，刷新后恢复默认大小
-    console.log('[调整大小] 已调整:', categoryName, width, height, '(不保存到配置)');
-    return;
+    try {
+        const config = await dataManager.getDashboardConfig();
+        if (!config) {
+            console.warn('[调整大小] 获取配置失败，无法保存:', categoryName);
+            return;
+        }
+
+        if (!Array.isArray(config.bookmarkLayout)) {
+            config.bookmarkLayout = [];
+        }
+
+        let item = config.bookmarkLayout.find(it => it.category === categoryName);
+        if (!item) {
+            item = {
+                category: categoryName,
+                index: 999,
+                hidden: false,
+                collapsed: false
+            };
+            config.bookmarkLayout.push(item);
+        }
+
+        item.width = Math.round(width);
+        item.height = Math.round(height);
+
+        await dataManager.saveDashboardConfig(config);
+        console.log('[调整大小] 已保存到配置:', categoryName, item.width, item.height);
+    } catch (err) {
+        console.error('[调整大小] 保存到配置失败:', categoryName, err);
+    }
 }
 
 // 在initDashboard中初始化搜索功能

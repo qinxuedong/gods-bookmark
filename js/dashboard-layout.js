@@ -313,7 +313,7 @@ async function renderCardControls() {
         let isLightTheme = false;
         
         if (currentTheme === 'light') {
-                isLightTheme = true;
+            isLightTheme = true;
         }
         
         // 使用与书签卡片相同的渐变逻辑（与 applyCardGradient 函数保持一致）
@@ -344,7 +344,18 @@ async function renderCardControls() {
             return false;
         });
         const isHidden = bookmarkLayoutItem?.hidden === true;
-        
+
+        // 不同主题下，上移/下移及删除按钮的样式（保证亮色 / 暗色下都清晰可读）
+        const upBtnStyle = isLightTheme
+            ? 'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.6);background:rgba(255,255,255,0.4);color:var(--accent-color);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;box-shadow:0 1px 2px rgba(15,23,42,0.05);'
+            : 'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.9);background:rgba(15,23,42,0.85);color:#F9FAFB;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;box-shadow:0 1px 3px rgba(15,23,42,0.35);';
+
+        const downBtnStyle = upBtnStyle;
+
+        const deleteBtnStyle = isLightTheme
+            ? 'width: 20px; height: 20px; padding: 0; background: rgba(255,255,255,0.5); color: var(--text-secondary); border: 1px solid rgba(226,232,240,0.8); border-radius: 4px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 2px rgba(15,23,42,0.05);'
+            : 'width: 20px; height: 20px; padding: 0; background: rgba(30,41,59,0.9); color: rgba(248,113,113,0.95); border: 1px solid rgba(248,113,113,0.8); border-radius: 4px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 3px rgba(15,23,42,0.35);';
+
         html += `
             <div class="card-control-item" data-card-index="${globalIndex}" 
                 style="border-bottom: ${globalIndex < allCards.length - 1 ? '1px solid var(--card-border)' : 'none'}; 
@@ -356,14 +367,14 @@ async function renderCardControls() {
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; position: relative;">
                     <div class="drag-handle-container" style="display:flex; align-items:center; gap:4px;">
                         <button class="card-move-up-btn" data-card-index="${globalIndex}" title="上移"
-                            style="width:20px;height:20px;border-radius:999px;border:1px solid rgba(148,163,184,0.8);background:rgba(15,23,42,0.9);color:rgba(248,250,252,0.85);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;">
-                            ↑
+                            style="${upBtnStyle}">
+                            ▲
                         </button>
                         <button class="card-move-down-btn" data-card-index="${globalIndex}" title="下移"
-                            style="width:20px;height:20px;border-radius:999px;border:1px solid rgba(148,163,184,0.8);background:rgba(15,23,42,0.9);color:rgba(248,250,252,0.85);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;">
-                            ↓
+                            style="${downBtnStyle}">
+                            ▼
                         </button>
-                    <h4 style="margin: 0; font-size: 0.85rem; color: ${borderColor};">📦 ${cardName}</h4>
+                    <h4 style="margin: 0; font-size: 0.85rem; color: ${borderColor};">${cardName}</h4>
                     </div>
                     <div style="display: flex; gap: 4px; position: absolute; top: 0; right: 0;">
                         ${isBookmarkCard && bookmarkCategoryIndex !== null ? `
@@ -373,7 +384,7 @@ async function renderCardControls() {
                             ${isHidden ? '○' : '●'}
                         </button>
                         <button class="delete-category-btn" data-category-name="${bookmarkCategoryIndex}" 
-                            style="width: 18px; height: 18px; padding: 0; background: transparent; color: var(--text-secondary); border: 1px solid transparent; border-radius: 50%; cursor: pointer; transition: all 0.2s; font-size: 0.5rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 300;"
+                            style="${deleteBtnStyle}"
                             title="删除此分类">
                             ❌
                         </button>
@@ -938,8 +949,17 @@ function updateRightNavCardColor(card, color) {
 
 // 应用渐变背景到卡片（支持独立的透明度和颜色）
 function applyCardGradient(card, color, opacity = '0.7') {
+    // 确保颜色格式正确（如果没有 #，添加它）
+    if (!color.startsWith('#')) {
+        color = '#' + color;
+    }
+    
     // 将颜色转换为 rgba 以便创建渐变
     const hexToRgba = (hex, alpha) => {
+        // 确保 hex 格式正确
+        if (!hex.startsWith('#')) {
+            hex = '#' + hex;
+        }
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
@@ -948,6 +968,9 @@ function applyCardGradient(card, color, opacity = '0.7') {
 
     // 计算同色系深色（将RGB值降低一定比例）
     const hexToDarkColor = (hex) => {
+        if (!hex.startsWith('#')) {
+            hex = '#' + hex;
+        }
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
@@ -960,13 +983,18 @@ function applyCardGradient(card, color, opacity = '0.7') {
 
     const op = parseFloat(opacity);
     
-    // 检查当前主题（更可靠的检测方式）
+    // 检查当前主题（更可靠的检测方式，包括 auto 模式下的系统主题）
     const root = document.documentElement;
     const currentTheme = root.getAttribute('data-theme') || 'dark';
     let isLightTheme = false;
     
     if (currentTheme === 'light') {
+        isLightTheme = true;
+    } else if (currentTheme === 'auto') {
+        // 检查系统主题
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
             isLightTheme = true;
+        }
     }
     
     if (isLightTheme) {
@@ -975,24 +1003,32 @@ function applyCardGradient(card, color, opacity = '0.7') {
         const gradientMid = hexToRgba(color, 0.1 * op);
         // 结束颜色使用白色，根据透明度调整
         const gradientEnd = `rgba(255, 255, 255, ${0.95 * op})`;
-        card.style.background = `linear-gradient(135deg, ${gradientStart} 0%, ${gradientMid} 40%, ${gradientEnd} 100%)`;
+        const gradientValue = `linear-gradient(135deg, ${gradientStart} 0%, ${gradientMid} 40%, ${gradientEnd} 100%)`;
+        // 使用 setProperty 并添加 !important 确保覆盖 CSS 规则
+        card.style.setProperty('background', gradientValue, 'important');
+        card.style.setProperty('background-image', gradientValue, 'important');
         
         // 边框使用较浅的同色系颜色
         const borderColor = hexToRgba(color, 0.25);
-        card.style.border = `1px solid ${borderColor}`;
+        card.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+        card.style.setProperty('border-color', borderColor, 'important');
     } else {
         // 暗色主题：原有逻辑
         const gradientStart = hexToRgba(color, 0.3 * op);
         const gradientMid = hexToRgba(color, 0.1 * op);
         const gradientEnd = `rgba(30, 41, 59, ${0.7 * op})`;
-        card.style.background = `linear-gradient(135deg, ${gradientStart} 0%, ${gradientMid} 40%, ${gradientEnd} 100%)`;
+        const gradientValue = `linear-gradient(135deg, ${gradientStart} 0%, ${gradientMid} 40%, ${gradientEnd} 100%)`;
+        card.style.setProperty('background', gradientValue, 'important');
+        card.style.setProperty('background-image', gradientValue, 'important');
         
         // 边框使用纯色渐变起始色（保持圆角）
         const borderColor = hexToRgba(color, 0.4);
-        card.style.border = `1px solid ${borderColor}`;
+        card.style.setProperty('border', `1px solid ${borderColor}`, 'important');
+        card.style.setProperty('border-color', borderColor, 'important');
     }
     
     card.style.borderRadius = '1rem';  // 确保圆角
+    console.log('[应用渐变] 卡片:', card.dataset.category || card.id, '颜色:', color, '透明度:', opacity, '亮色模式:', isLightTheme);
 }
 
 // ===== 卡片尺寸 =====
@@ -1977,7 +2013,7 @@ async function restoreBookmarkLayout(config) {
         }
     });
 
-    // 首先强制重置所有卡片的大小（防止配置中还有大小数据）
+    // 首先强制重置所有卡片的大小（然后根据配置重新应用）
     cards.forEach(card => {
         card.style.width = '';
         card.style.height = '';
@@ -1997,16 +2033,14 @@ async function restoreBookmarkLayout(config) {
             if (item.span === 4) card.classList.add('span-4');
 
             // 不恢复自定义尺寸（宽度和高度），确保调整后的大小在刷新后不恢复
-            // 重置为默认大小，并清除配置中的大小数据
-            card.style.width = '';
-            card.style.height = '';
-            
-            // 清除配置中的大小数据
-            if (item.width !== undefined) {
-                delete item.width;
+            // 根据配置恢复自定义尺寸（宽度和高度）
+            if (item.width !== undefined && item.width !== null) {
+                const w = typeof item.width === 'number' ? item.width + 'px' : String(item.width);
+                card.style.width = w;
             }
-            if (item.height !== undefined) {
-                delete item.height;
+            if (item.height !== undefined && item.height !== null) {
+                const h = typeof item.height === 'number' ? item.height + 'px' : String(item.height);
+                card.style.height = h;
             }
 
             // 恢复渐变色和透明度
@@ -2024,31 +2058,6 @@ async function restoreBookmarkLayout(config) {
         }
     });
     
-    // 再次确保所有卡片的大小都被重置（在清除配置数据后）
-    cards.forEach(card => {
-        card.style.width = '';
-        card.style.height = '';
-    });
-    
-    // 清除配置中的大小数据后，保存配置
-    let needSaveConfig = false;
-    config.bookmarkLayout.forEach(item => {
-        if (item.width !== undefined || item.height !== undefined) {
-            if (item.width !== undefined) delete item.width;
-            if (item.height !== undefined) delete item.height;
-            needSaveConfig = true;
-        }
-    });
-    
-    if (needSaveConfig) {
-        try {
-            await dataManager.saveDashboardConfig(config);
-            console.log('[恢复布局] 已清除卡片大小配置并保存');
-        } catch (err) {
-            console.error('[恢复布局] 保存配置失败:', err);
-        }
-    }
-
     // 第二步：按保存的 index 重新排序
     sortedCards.sort((a, b) => a.index - b.index);
     sortedCards.forEach(({ card }) => {
@@ -2374,6 +2383,8 @@ window.previewCardOpacity = previewCardOpacity;
 window.updateCardOpacity = updateCardOpacity;
 window.updateCardColor = updateCardColor;
 window.setCardSpan = setCardSpan;
+// 暴露自动保存函数，供其他模块在调整卡片大小后调用
+window.autoSaveLayout = autoSave;
 window.applyCardGradient = applyCardGradient;
 window.highlightCardControl = highlightCardControl;
 window.toggleBookmarkCardVisibility = toggleBookmarkCardVisibility;
@@ -2417,6 +2428,46 @@ function updateAllCardGradients() {
             // 同时更新设置面板中对应控制项的颜色
             updateCardControlItemColor(index, color, opacity);
         });
+
+        // 同步更新全局设置中卡片控制里的「上移 / 下移 / 删除」按钮样式，保证主题切换时实时生效
+        const root = document.documentElement;
+        const currentTheme = root.getAttribute('data-theme') || 'dark';
+        const isLightTheme = currentTheme === 'light';
+
+        const controlsList = document.getElementById('card-controls-list');
+        if (controlsList) {
+            const upDownLightStyle =
+                'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.6);' +
+                'background:rgba(255,255,255,0.4);color:var(--accent-color);cursor:pointer;' +
+                'display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;' +
+                'box-shadow:0 1px 2px rgba(15,23,42,0.05);';
+            const upDownDarkStyle =
+                'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.9);' +
+                'background:rgba(15,23,42,0.85);color:#F9FAFB;cursor:pointer;' +
+                'display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;' +
+                'box-shadow:0 1px 3px rgba(15,23,42,0.35);';
+
+            const deleteLightStyle =
+                'width: 20px; height: 20px; padding: 0; background: rgba(255,255,255,0.5);' +
+                'color: var(--text-secondary); border: 1px solid rgba(226,232,240,0.8); border-radius: 4px;' +
+                'cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center;' +
+                'justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 2px rgba(15,23,42,0.05);';
+            const deleteDarkStyle =
+                'width: 20px; height: 20px; padding: 0; background: rgba(30,41,59,0.9);' +
+                'color: rgba(248,113,113,0.95); border: 1px solid rgba(248,113,113,0.8); border-radius: 4px;' +
+                'cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center;' +
+                'justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 3px rgba(15,23,42,0.35);';
+
+            const upDownStyle = isLightTheme ? upDownLightStyle : upDownDarkStyle;
+            const delStyle = isLightTheme ? deleteLightStyle : deleteDarkStyle;
+
+            controlsList.querySelectorAll('.card-move-up-btn, .card-move-down-btn').forEach(btn => {
+                btn.setAttribute('style', upDownStyle);
+            });
+            controlsList.querySelectorAll('.delete-category-btn').forEach(btn => {
+                btn.setAttribute('style', delStyle);
+            });
+        }
     }, 50);
 }
 
