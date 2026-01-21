@@ -1905,16 +1905,68 @@ body.sidebar-open header .container {
     row-gap: 0.75rem;
     padding-right: 4px;
     /* 防止滚动条遮挡 */
-    /* 隐藏滚动条 */
+    /* 默认隐藏滚动条 */
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* IE and Edge */
 }
 
-/* 隐藏 WebKit 浏览器的滚动条 */
+/* 隐藏 WebKit 浏览器的滚动条（默认） */
 .bookmark-grid::-webkit-scrollbar {
     display: none;
     width: 0;
     height: 0;
+}
+
+/* 当书签数量超过卡片显示范围时，显示滚动条 */
+.bookmark-grid.show-scrollbar {
+    scrollbar-width: thin; /* Firefox - 显示细滚动条 */
+    -ms-overflow-style: auto; /* IE and Edge */
+    padding-right: 8px; /* 为滚动条留出空间 */
+}
+
+/* Firefox 滚动条颜色（暗色主题 - 紫色） */
+.bookmark-grid.show-scrollbar {
+    scrollbar-color: rgba(139, 92, 246, 0.6) rgba(139, 92, 246, 0.1);
+}
+
+/* WebKit 浏览器显示滚动条 */
+.bookmark-grid.show-scrollbar::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+}
+
+/* 暗色主题下的滚动条轨道（紫色） */
+.bookmark-grid.show-scrollbar::-webkit-scrollbar-track {
+    background: rgba(139, 92, 246, 0.1);
+    border-radius: 4px;
+}
+
+/* 暗色主题下的滚动条滑块（紫色） */
+.bookmark-grid.show-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.6);
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.bookmark-grid.show-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.8);
+}
+
+/* 亮色主题下的滚动条样式（保持原有样式） */
+:root[data-theme="light"] .bookmark-grid.show-scrollbar {
+    scrollbar-color: rgba(148, 163, 184, 0.4) rgba(148, 163, 184, 0.1);
+}
+
+:root[data-theme="light"] .bookmark-grid.show-scrollbar::-webkit-scrollbar-track {
+    background: rgba(148, 163, 184, 0.1);
+}
+
+:root[data-theme="light"] .bookmark-grid.show-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+}
+
+:root[data-theme="light"] .bookmark-grid.show-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.6);
 }
 
 /* 选中高亮卡片 */

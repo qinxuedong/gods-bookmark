@@ -263,8 +263,10 @@
                 <h3 style="margin: 0; color: var(--accent-color);">💾 备份管理</h3>
                 <button id="backup-management-close" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.5rem; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">&times;</button>
             </div>
-            <div style="margin-bottom: 1rem; display: flex; justify-content: center;">
+            <div style="margin-bottom: 1rem; display: flex; justify-content: center; gap: 0.5rem;">
                 <button id="add-backup-config-btn" class="btn" style="background: var(--accent-color); color: white; border: none; padding: 0.5rem 1rem;">+ 添加备份配置</button>
+                <button id="import-backup-btn" class="btn" style="background: rgba(139, 92, 246, 0.8); color: white; border: none; padding: 0.5rem 1rem;">📥 导入备份</button>
+                <input type="file" id="import-backup-file" accept=".json" style="display: none;">
             </div>
             <div id="backup-configs-list" style="max-height: 60vh; overflow-y: auto;">
                 <!-- 备份配置列表会由JS动态生成 -->
@@ -280,8 +282,6 @@
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">备份类型</label>
                 <select id="backup-config-type" class="input-field" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
                     <option value="local">本地/NAS</option>
-                    <option value="aliyun">阿里云OSS</option>
-                    <option value="baidu">百度云</option>
                 </select>
                 <div id="backup-config-options" style="margin-top: 1rem;">
                     <!-- 配置选项会根据备份类型动态生成 -->
@@ -300,7 +300,11 @@
                     <option value="quarterly">每3个月（1号凌晨2点）</option>
                 </select>
                 <input type="text" id="backup-config-schedule" class="input-field" placeholder="Cron 表达式，例如: 0 2 * * * (每天凌晨2点)" style="width: 100%; padding: 0.5rem; margin-bottom: 0.25rem;">
-                <small style="color: var(--text-secondary);">格式: 分钟 小时 日 月 星期。可以使用上面的快捷选择自动生成。</small>
+                <small style="color: var(--text-secondary);">
+                    格式: 分钟 小时 日 月 星期。可以使用上面的快捷选择自动生成。
+                    <br>
+                    <a href="BACKUP_CRON_GUIDE.md" target="_blank" style="color: var(--accent-color); text-decoration: underline;">📖 查看详细的 Cron 表达式说明文档</a>
+                </small>
             </div>
             <div class="modal-actions">
                 <button class="btn" id="backup-config-edit-delete" style="background: #ef4444; color: white; border: none; display: none;">删除</button>

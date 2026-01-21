@@ -1312,6 +1312,41 @@ app.delete('/api/backup/configs/:id', requireAuth, async (req, res) => {
     }
 });
 
+// 导入备份（从文件）- 必须在 /api/backup/run/:id 之前，避免路由冲突
+app.post('/api/backup/import', requireAuth, async (req, res) => {
+    console.log('[BACKUP IMPORT] Request received');
+    try {
+        const { backupData } = req.body;
+        
+        if (!backupData || typeof backupData !== 'object') {
+            console.log('[BACKUP IMPORT] Invalid backup data:', typeof backupData);
+            return res.status(400).json({ error: 'Invalid backup data' });
+        }
+        
+        console.log('[BACKUP IMPORT] Starting import for user:', req.userId || 0);
+        
+        // 删除现有用户数据
+        await db.run("DELETE FROM user_data WHERE user_id = ?", [req.userId || 0]);
+        
+        // 恢复备份数据
+        const entries = Object.entries(backupData);
+        console.log('[BACKUP IMPORT] Restoring', entries.length, 'data entries');
+        
+        for (const [key, value] of entries) {
+            await db.run(
+                "INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                [req.userId || 0, key, typeof value === 'string' ? value : JSON.stringify(value)]
+            );
+        }
+        
+        console.log('[BACKUP IMPORT] Imported backup successfully for user:', req.userId || 0);
+        res.json({ success: true, message: 'Backup imported successfully' });
+    } catch (err) {
+        console.error('[BACKUP IMPORT] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // 执行手动备份
 app.post('/api/backup/run/:id', requireAuth, async (req, res) => {
     try {
@@ -1359,6 +1394,39 @@ app.get('/api/backup/history', requireAuth, async (req, res) => {
         if (err.message.includes('no such table')) {
             return res.json({ success: true, history: [] });
         }
+        res.status(500).json({ error: err.message });
+    }
+});
+app.post('/api/backup/import', requireAuth, async (req, res) => {
+    console.log('[BACKUP IMPORT] Request received');
+    try {
+        const { backupData } = req.body;
+        
+        if (!backupData || typeof backupData !== 'object') {
+            console.log('[BACKUP IMPORT] Invalid backup data:', typeof backupData);
+            return res.status(400).json({ error: 'Invalid backup data' });
+        }
+        
+        console.log('[BACKUP IMPORT] Starting import for user:', req.userId || 0);
+        
+        // 删除现有用户数据
+        await db.run("DELETE FROM user_data WHERE user_id = ?", [req.userId || 0]);
+        
+        // 恢复备份数据
+        const entries = Object.entries(backupData);
+        console.log('[BACKUP IMPORT] Restoring', entries.length, 'data entries');
+        
+        for (const [key, value] of entries) {
+            await db.run(
+                "INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                [req.userId || 0, key, typeof value === 'string' ? value : JSON.stringify(value)]
+            );
+        }
+        
+        console.log('[BACKUP IMPORT] Imported backup successfully for user:', req.userId || 0);
+        res.json({ success: true, message: 'Backup imported successfully' });
+    } catch (err) {
+        console.error('[BACKUP IMPORT] Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1667,9 +1735,10 @@ function initBackupScheduler() {
             );
             
             for (const config of backupConfigs) {
-                // 简单的cron解析（可以改进）
-                // schedule格式: "0 2 * * *" (每天凌晨2点)
-                if (shouldRunBackup(config.schedule, config.last_backup)) {
+                // 解析并检查 Cron 表达式
+                const shouldRun = shouldRunBackup(config.schedule, config.last_backup);
+                if (shouldRun) {
+                    console.log(`[SCHEDULED BACKUP] Triggering backup for config ${config.id}, schedule: ${config.schedule}`);
                     executeBackup(config, config.user_id).catch(err => {
                         console.error('[SCHEDULED BACKUP] Error:', err);
                     });
@@ -1686,15 +1755,106 @@ function initBackupScheduler() {
 
 // 检查是否应该运行备份
 function shouldRunBackup(schedule, lastBackup) {
-    // 简单的实现：如果距离上次备份超过24小时，则运行
-    if (!lastBackup) return true;
+    if (!schedule || !schedule.trim()) {
+        return false;
+    }
     
-    const lastBackupTime = new Date(lastBackup).getTime();
-    const now = Date.now();
-    const hoursSinceLastBackup = (now - lastBackupTime) / (1000 * 60 * 60);
+    // 验证 Cron 表达式格式
+    if (!cron.validate(schedule)) {
+        console.error('[BACKUP SCHEDULER] Invalid cron expression:', schedule);
+        return false;
+    }
     
-    // 默认每天备份一次
-    return hoursSinceLastBackup >= 24;
+    const now = new Date();
+    const currentMinute = now.getMinutes();
+    const currentHour = now.getHours();
+    const currentDay = now.getDate();
+    const currentMonth = now.getMonth() + 1; // JavaScript月份从0开始
+    const currentWeekday = now.getDay(); // 0=Sunday, 1=Monday, etc.
+    
+    // 解析 Cron 表达式
+    const parts = schedule.trim().split(/\s+/);
+    if (parts.length !== 5) {
+        console.error('[BACKUP SCHEDULER] Invalid cron format:', schedule);
+        return false;
+    }
+    
+    const [minuteExpr, hourExpr, dayExpr, monthExpr, weekdayExpr] = parts;
+    
+    // 检查分钟是否匹配
+    if (!matchesCronField(minuteExpr, currentMinute, 0, 59)) {
+        return false;
+    }
+    
+    // 检查小时是否匹配
+    if (!matchesCronField(hourExpr, currentHour, 0, 23)) {
+        return false;
+    }
+    
+    // 检查日期是否匹配
+    if (!matchesCronField(dayExpr, currentDay, 1, 31)) {
+        return false;
+    }
+    
+    // 检查月份是否匹配
+    if (!matchesCronField(monthExpr, currentMonth, 1, 12)) {
+        return false;
+    }
+    
+    // 检查星期是否匹配
+    if (!matchesCronField(weekdayExpr, currentWeekday, 0, 6)) {
+        return false;
+    }
+    
+    // 如果所有字段都匹配，检查是否距离上次备份至少1分钟（避免重复执行）
+    if (lastBackup) {
+        const lastBackupTime = new Date(lastBackup).getTime();
+        const minutesSinceLastBackup = (now.getTime() - lastBackupTime) / (1000 * 60);
+        // 至少间隔1分钟，避免同一分钟内重复执行
+        if (minutesSinceLastBackup < 1) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// 辅助函数：检查值是否匹配 Cron 字段表达式
+function matchesCronField(expr, value, min, max) {
+    // 通配符：匹配所有值
+    if (expr === '*') {
+        return true;
+    }
+    
+    // 列表：用逗号分隔的多个值
+    if (expr.includes(',')) {
+        const values = expr.split(',').map(v => parseInt(v.trim()));
+        return values.includes(value);
+    }
+    
+    // 范围：用连字符分隔的范围
+    if (expr.includes('-')) {
+        const [start, end] = expr.split('-').map(v => parseInt(v.trim()));
+        return value >= start && value <= end;
+    }
+    
+    // 步长：*/n 或 n/n
+    if (expr.includes('/')) {
+        const [base, step] = expr.split('/').map(v => v.trim());
+        const stepValue = parseInt(step);
+        
+        if (base === '*') {
+            // */n 表示每n个单位
+            return value % stepValue === 0;
+        } else {
+            // n/n 表示从n开始，每step个单位
+            const baseValue = parseInt(base);
+            return value >= baseValue && (value - baseValue) % stepValue === 0;
+        }
+    }
+    
+    // 精确匹配
+    return parseInt(expr) === value;
 }
 
 // 启动备份调度器

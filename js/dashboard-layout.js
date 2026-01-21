@@ -367,7 +367,7 @@ async function renderCardControls() {
         // 不同主题下，上移/下移及删除按钮的样式（保证亮色 / 暗色下都清晰可读）
         const upBtnStyle = isLightTheme
             ? 'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.6);background:rgba(255,255,255,0.4);color:var(--accent-color);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;box-shadow:0 1px 2px rgba(15,23,42,0.05);'
-            : 'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.9);background:rgba(15,23,42,0.85);color:#F9FAFB;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;box-shadow:0 1px 3px rgba(15,23,42,0.35);';
+            : 'width:18px;height:18px;border-radius:999px;border:1px solid rgba(139,92,246,0.6);background:rgba(139,92,246,0.85);color:#F9FAFB;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;box-shadow:0 1px 3px rgba(139,92,246,0.35);';
 
         const downBtnStyle = upBtnStyle;
 
@@ -796,7 +796,7 @@ function bindDashboardLayoutEvents(container) {
             // 固定吸附点
             const snapPoints = [
                 496,   // 吸附点1
-                755,   // 吸附点2
+                752,   // 吸附点2
                 1016   // 吸附点3
             ];
 
@@ -833,6 +833,13 @@ function bindDashboardLayoutEvents(container) {
             if (save && window.updateBookmarkCardSize) {
                 window.updateBookmarkCardSize(category, snappedWidth, null);
             }
+            
+            // 更新滚动条状态
+            setTimeout(() => {
+                if (window.updateBookmarkScrollbars) {
+                    window.updateBookmarkScrollbars();
+                }
+            }, 50);
         }
 
         range.addEventListener('input', (e) => {
@@ -911,6 +918,13 @@ function bindDashboardLayoutEvents(container) {
             if (save && window.updateBookmarkCardSize) {
                 window.updateBookmarkCardSize(category, null, snappedHeight);
             }
+            
+            // 更新滚动条状态
+            setTimeout(() => {
+                if (window.updateBookmarkScrollbars) {
+                    window.updateBookmarkScrollbars();
+                }
+            }, 50);
         }
 
         range.addEventListener('input', (e) => {
@@ -2732,10 +2746,10 @@ function updateAllCardGradients() {
                 'display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;' +
                 'box-shadow:0 1px 2px rgba(15,23,42,0.05);';
             const upDownDarkStyle =
-                'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.9);' +
-                'background:rgba(15,23,42,0.85);color:#F9FAFB;cursor:pointer;' +
+                'width:18px;height:18px;border-radius:999px;border:1px solid rgba(139,92,246,0.6);' +
+                'background:rgba(139,92,246,0.85);color:#F9FAFB;cursor:pointer;' +
                 'display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;' +
-                'box-shadow:0 1px 3px rgba(15,23,42,0.35);';
+                'box-shadow:0 1px 3px rgba(139,92,246,0.35);';
 
             const deleteLightStyle =
                 'width: 20px; height: 20px; padding: 0; background: rgba(255,255,255,0.5);' +
@@ -3428,15 +3442,28 @@ function renderBackupConfigs(configs) {
     configs.forEach(config => {
         const configData = typeof config.config === 'string' ? JSON.parse(config.config) : (config.config || {});
         const type = config.backup_type || config.backupType || config.backup_type;
+        const schedule = config.schedule || '';
+        const isManualBackup = !schedule || schedule.trim() === '' || schedule === '手动';
+        const isEnabled = config.enabled;
+        
         html += `
             <div style="padding: 1rem; margin-bottom: 0.75rem; background: rgba(139, 92, 246, 0.05); border-radius: 0.5rem; border: 1px solid var(--card-border);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                     <div>
-                        <div style="font-weight: 500; color: var(--text-primary);">${type === 'local' ? '本地/NAS' : type === 'aliyun' ? '阿里云OSS' : type === 'baidu' ? '百度云' : (type || '')}</div>
-                        <div style="font-size: 0.75rem; color: var(--text-secondary);">${config.enabled ? '已启用' : '已禁用'} | ${config.schedule || '手动'}</div>
+                        <div style="font-weight: 500; color: var(--text-primary);">${type === 'local' ? '本地/NAS' : (type || '')}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">${isEnabled ? '已启用' : '已禁用'} | ${schedule || '手动'}</div>
                     </div>
-                    <button class="edit-backup-config-btn" data-config-id="${config.id}" style="padding: 0.4rem 0.8rem; background: var(--accent-color); color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">编辑</button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        ${isManualBackup && isEnabled ? `
+                            <button class="manual-backup-btn" data-config-id="${config.id}" 
+                                style="padding: 0.4rem 0.8rem; background: rgba(139, 92, 246, 0.9); color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem; transition: all 0.2s;">
+                                立即备份
+                            </button>
+                        ` : ''}
+                        <button class="edit-backup-config-btn" data-config-id="${config.id}" style="padding: 0.4rem 0.8rem; background: var(--accent-color); color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">编辑</button>
+                    </div>
                 </div>
+                <div id="backup-status-${config.id}" style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.5rem; min-height: 1.2rem;"></div>
             </div>
         `;
     });
@@ -3457,6 +3484,95 @@ function bindUserAndBackupEvents() {
     const backupManagementClose = document.getElementById('backup-management-close');
     if (backupManagementClose) {
         backupManagementClose.onclick = hideBackupManagementModal;
+    }
+    
+    // 导入备份按钮
+    const importBackupBtn = document.getElementById('import-backup-btn');
+    const importBackupFile = document.getElementById('import-backup-file');
+    if (importBackupBtn && importBackupFile) {
+        importBackupBtn.onclick = () => {
+            importBackupFile.click();
+        };
+        
+        importBackupFile.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.endsWith('.json')) {
+                alert('请选择JSON格式的备份文件');
+                e.target.value = '';
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const backupData = JSON.parse(event.target.result);
+                    
+                    // 验证备份文件格式
+                    if (!backupData || typeof backupData !== 'object') {
+                        throw new Error('无效的备份文件格式');
+                    }
+                    
+                    // 确认导入
+                    const confirmed = await window.showCustomConfirm(
+                        '确定要导入此备份吗？导入将覆盖当前所有数据，此操作不可恢复！',
+                        '导入备份'
+                    );
+                    
+                    if (!confirmed) {
+                        e.target.value = '';
+                        return;
+                    }
+                    
+                    // 使用fetch直接发送备份数据到服务器
+                    const response = await fetch('/api/backup/import', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'include',
+                        body: JSON.stringify({ backupData })
+                    });
+                    
+                    // 检查响应状态
+                    if (!response.ok) {
+                        if (response.status === 404) {
+                            throw new Error('API端点未找到，请确保服务器已重启并包含最新的代码');
+                        } else if (response.status === 401) {
+                            throw new Error('未授权，请重新登录');
+                        } else if (response.status === 500) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.error || '服务器内部错误');
+                        } else {
+                            throw new Error(`HTTP错误 ${response.status}: ${response.statusText}`);
+                        }
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        alert('✓ 备份导入成功！页面将刷新以显示最新数据。');
+                        // 刷新页面
+                        window.location.reload();
+                    } else {
+                        throw new Error(result.error || '导入失败');
+                    }
+                } catch (error) {
+                    console.error('[导入备份] 失败:', error);
+                    alert('导入备份失败: ' + (error.message || '未知错误'));
+                } finally {
+                    e.target.value = '';
+                }
+            };
+            
+            reader.onerror = () => {
+                alert('文件读取失败，请重试。');
+                e.target.value = '';
+            };
+            
+            reader.readAsText(file);
+        };
     }
     
     // 用户资料模态框关闭按钮
@@ -3533,56 +3649,6 @@ function bindUserAndBackupEvents() {
                     style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;"
                     value="${configData.path || ''}">
             `;
-        } else if (type === 'aliyun') {
-            html = `
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">区域 Region</label>
-                <input type="text" id="backup-config-aliyun-region" class="input-field"
-                    placeholder="例如：oss-cn-hangzhou"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.region || ''}">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">AccessKey ID</label>
-                <input type="text" id="backup-config-aliyun-ak" class="input-field"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.accessKeyId || ''}">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">AccessKey Secret</label>
-                <input type="password" id="backup-config-aliyun-sk" class="input-field"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.accessKeySecret || ''}">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">Bucket</label>
-                <input type="text" id="backup-config-aliyun-bucket" class="input-field"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.bucket || ''}">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">路径前缀（可选）</label>
-                <input type="text" id="backup-config-aliyun-prefix" class="input-field"
-                    placeholder="例如：gods-bookmark/backups"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.prefix || ''}">
-            `;
-        } else if (type === 'baidu') {
-            html = `
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">区域 Region</label>
-                <input type="text" id="backup-config-baidu-region" class="input-field"
-                    placeholder="例如：bj"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.region || ''}">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">AccessKey ID</label>
-                <input type="text" id="backup-config-baidu-ak" class="input-field"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.accessKeyId || ''}">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">Secret Key</label>
-                <input type="password" id="backup-config-baidu-sk" class="input-field"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.secretKey || ''}">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">Bucket</label>
-                <input type="text" id="backup-config-baidu-bucket" class="input-field"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.bucket || ''}">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">路径前缀（可选）</label>
-                <input type="text" id="backup-config-baidu-prefix" class="input-field"
-                    placeholder="例如：gods-bookmark/backups"
-                    style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;"
-                    value="${configData.prefix || ''}">
-            `;
         }
         container.innerHTML = html;
     }
@@ -3592,18 +3658,6 @@ function bindUserAndBackupEvents() {
         if (type === 'local') {
             const pathInput = document.getElementById('backup-config-local-path');
             cfg.path = pathInput ? pathInput.value.trim() : '';
-        } else if (type === 'aliyun') {
-            cfg.region = (document.getElementById('backup-config-aliyun-region')?.value || '').trim();
-            cfg.accessKeyId = (document.getElementById('backup-config-aliyun-ak')?.value || '').trim();
-            cfg.accessKeySecret = (document.getElementById('backup-config-aliyun-sk')?.value || '').trim();
-            cfg.bucket = (document.getElementById('backup-config-aliyun-bucket')?.value || '').trim();
-            cfg.prefix = (document.getElementById('backup-config-aliyun-prefix')?.value || '').trim();
-        } else if (type === 'baidu') {
-            cfg.region = (document.getElementById('backup-config-baidu-region')?.value || '').trim();
-            cfg.accessKeyId = (document.getElementById('backup-config-baidu-ak')?.value || '').trim();
-            cfg.secretKey = (document.getElementById('backup-config-baidu-sk')?.value || '').trim();
-            cfg.bucket = (document.getElementById('backup-config-baidu-bucket')?.value || '').trim();
-            cfg.prefix = (document.getElementById('backup-config-baidu-prefix')?.value || '').trim();
         }
         return cfg;
     }
@@ -3649,7 +3703,7 @@ function bindUserAndBackupEvents() {
         
         if (config) {
             // 编辑模式
-            const type = config.backup_type || config.backupType || config.backup_type || 'aliyun';
+            const type = config.backup_type || config.backupType || config.backup_type || 'local';
             const cfgData = typeof config.config === 'string' ? JSON.parse(config.config) : (config.config || {});
 
             if (title) title.textContent = '编辑备份配置';
@@ -3699,7 +3753,7 @@ function bindUserAndBackupEvents() {
                         opt.disabled = !isAdmin;
                     }
                 });
-                typeSelect.value = isAdmin ? 'local' : 'aliyun';
+                typeSelect.value = 'local';
                 buildBackupConfigOptions(typeSelect.value, {});
             }
 
@@ -3729,6 +3783,177 @@ function bindUserAndBackupEvents() {
                 const cfg = lastBackupConfigs.find(c => c.id === id);
                 if (cfg) {
                     openBackupConfigEditModal(cfg);
+                }
+            }
+        };
+    });
+    
+    // 手动备份按钮
+    document.querySelectorAll('.manual-backup-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const configId = parseInt(btn.getAttribute('data-config-id'));
+            if (isNaN(configId)) return;
+            
+            const statusEl = document.getElementById(`backup-status-${configId}`);
+            const btnText = btn.textContent.trim();
+            
+            // 防止重复点击
+            if (btn.disabled) return;
+            
+            // 更新按钮状态
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.style.cursor = 'not-allowed';
+            btn.textContent = '备份中...';
+            
+            // 显示状态
+            if (statusEl) {
+                statusEl.textContent = '正在执行备份，请稍候...';
+                statusEl.style.color = 'var(--accent-color)';
+            }
+            
+            try {
+                if (!window.backupManager) {
+                    throw new Error('备份管理器不可用');
+                }
+                
+                const resp = await window.backupManager.runBackup(configId);
+                
+                if (resp && resp.success) {
+                    // 备份已启动（异步执行）
+                    if (statusEl) {
+                        statusEl.textContent = '✓ 备份任务已启动，正在后台执行...';
+                        statusEl.style.color = 'var(--accent-color)';
+                    }
+                    
+                    // 轮询检查备份状态
+                    let checkCount = 0;
+                    const maxChecks = 20; // 最多检查20次（约20秒）
+                    const checkInterval = setInterval(async () => {
+                        checkCount++;
+                        try {
+                            const historyResp = await window.backupManager.getBackupHistory(5);
+                            if (historyResp && historyResp.success && historyResp.history) {
+                                // 查找最新的备份记录（匹配当前配置ID）
+                                const latestBackup = historyResp.history.find(h => 
+                                    h.backup_config_id === configId && 
+                                    h.status === 'success'
+                                );
+                                
+                                if (latestBackup) {
+                                    // 检查备份时间是否在启动备份之后（简单判断：时间戳较新）
+                                    const backupTime = new Date(latestBackup.created_at || latestBackup.createdAt);
+                                    const now = new Date();
+                                    const timeDiff = now - backupTime; // 毫秒
+                                    
+                                    // 如果备份时间在最近30秒内，认为是本次备份
+                                    if (timeDiff < 30000) {
+                                        clearInterval(checkInterval);
+                                        if (statusEl) {
+                                            statusEl.textContent = '✓ 备份成功！';
+                                            statusEl.style.color = 'rgba(34, 197, 94, 0.9)';
+                                        }
+                                        
+                                        // 恢复按钮
+                                        btn.disabled = false;
+                                        btn.style.opacity = '1';
+                                        btn.style.cursor = 'pointer';
+                                        btn.textContent = btnText;
+                                        
+                                        // 5秒后清除状态消息
+                                        setTimeout(() => {
+                                            if (statusEl) {
+                                                statusEl.textContent = '';
+                                            }
+                                        }, 5000);
+                                        return;
+                                    }
+                                }
+                            }
+                            
+                            // 检查失败记录
+                            const failedBackup = historyResp.history.find(h => 
+                                h.backup_config_id === configId && 
+                                h.status === 'failed' &&
+                                new Date() - new Date(h.created_at || h.createdAt) < 30000
+                            );
+                            
+                            if (failedBackup) {
+                                clearInterval(checkInterval);
+                                if (statusEl) {
+                                    statusEl.textContent = '✗ 备份失败: ' + (failedBackup.error_message || '未知错误');
+                                    statusEl.style.color = 'rgba(239, 68, 68, 0.9)';
+                                }
+                                
+                                // 恢复按钮
+                                btn.disabled = false;
+                                btn.style.opacity = '1';
+                                btn.style.cursor = 'pointer';
+                                btn.textContent = btnText;
+                                
+                                setTimeout(() => {
+                                    if (statusEl) {
+                                        statusEl.textContent = '';
+                                    }
+                                }, 5000);
+                                return;
+                            }
+                        } catch (err) {
+                            console.error('[检查备份状态] 错误:', err);
+                        }
+                        
+                        // 达到最大检查次数，停止检查
+                        if (checkCount >= maxChecks) {
+                            clearInterval(checkInterval);
+                            if (statusEl) {
+                                statusEl.textContent = '备份任务已启动，请稍后查看备份历史';
+                                statusEl.style.color = 'var(--text-secondary)';
+                            }
+                            
+                            // 恢复按钮
+                            btn.disabled = false;
+                            btn.style.opacity = '1';
+                            btn.style.cursor = 'pointer';
+                            btn.textContent = btnText;
+                            
+                            setTimeout(() => {
+                                if (statusEl) {
+                                    statusEl.textContent = '';
+                                }
+                            }, 5000);
+                        }
+                    }, 1000); // 每秒检查一次
+                    
+                    // 3秒后先恢复按钮（允许用户继续操作）
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                        btn.textContent = btnText;
+                    }, 3000);
+                } else {
+                    throw new Error(resp && resp.error ? resp.error : '备份启动失败');
+                }
+            } catch (error) {
+                console.error('[手动备份] 失败:', error);
+                
+                // 恢复按钮状态
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+                btn.textContent = btnText;
+                
+                // 显示错误信息
+                if (statusEl) {
+                    statusEl.textContent = '✗ 备份启动失败: ' + (error.message || '未知错误');
+                    statusEl.style.color = 'rgba(239, 68, 68, 0.9)';
+                    
+                    // 5秒后清除错误消息
+                    setTimeout(() => {
+                        statusEl.textContent = '';
+                    }, 5000);
+                } else {
+                    alert('备份启动失败: ' + (error.message || '未知错误'));
                 }
             }
         };
@@ -3926,7 +4151,7 @@ function bindUserAndBackupEvents() {
             const enabledEl = document.getElementById('backup-config-enabled');
             const scheduleEl = document.getElementById('backup-config-schedule');
 
-            const backupType = typeSelectEl ? typeSelectEl.value : 'aliyun';
+            const backupType = typeSelectEl ? typeSelectEl.value : 'local';
             const enabled = !!(enabledEl && enabledEl.checked);
             const schedule = (scheduleEl && scheduleEl.value.trim()) || null;
             const configData = getBackupConfigFormValues(backupType);

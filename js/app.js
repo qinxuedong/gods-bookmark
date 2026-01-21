@@ -2836,6 +2836,9 @@ async function loadBookmarks() {
                     window.addBookmarkCardResizeHandles(card);
                 });
             }
+            
+            // 检查并显示/隐藏滚动条
+            updateBookmarkScrollbars();
         }, 100);
     } catch (error) {
         console.error('loadBookmarks error:', error);
@@ -3957,6 +3960,11 @@ async function restoreBookmarkStyles() {
     
     // 上帝的指引标题颜色固定为紫色渐变，不再跟随卡片主题色
     // updateFrequentHeaderColor(); // 已禁用
+    
+    // 恢复样式后更新滚动条状态
+    setTimeout(() => {
+        updateBookmarkScrollbars();
+    }, 150);
 }
 
 // 书签导入功能（完整版 - 按原始分类导入并合并到现有分类）
@@ -5270,6 +5278,11 @@ async function saveBookmarkCardSize(categoryName, width, height) {
         await dataManager.saveDashboardConfig(config);
         console.log('[调整大小] 已保存到配置:', categoryName, 'width:', item.width, 'height:', item.height);
         console.log('[调整大小] 配置项详情:', JSON.stringify(item));
+        
+        // 保存后更新滚动条状态
+        setTimeout(() => {
+            updateBookmarkScrollbars();
+        }, 100);
     } catch (err) {
         console.error('[调整大小] 保存到配置失败:', categoryName, err);
     }
@@ -5279,6 +5292,31 @@ async function saveBookmarkCardSize(categoryName, width, height) {
 window.updateBookmarkCardSize = function (categoryName, width, height) {
     return saveBookmarkCardSize(categoryName, width, height);
 };
+
+// 更新书签卡片的滚动条显示/隐藏状态
+// 如果书签数量超过卡片显示范围，显示滚动条；否则隐藏
+function updateBookmarkScrollbars() {
+    const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
+    
+    bookmarkCards.forEach(card => {
+        const bookmarkGrid = card.querySelector('.bookmark-grid');
+        if (!bookmarkGrid) return;
+        
+        // 检查内容高度是否超过容器高度
+        // scrollHeight: 内容的总高度（包括被滚动隐藏的部分）
+        // clientHeight: 可见区域的高度
+        const needsScrollbar = bookmarkGrid.scrollHeight > bookmarkGrid.clientHeight;
+        
+        if (needsScrollbar) {
+            bookmarkGrid.classList.add('show-scrollbar');
+        } else {
+            bookmarkGrid.classList.remove('show-scrollbar');
+        }
+    });
+}
+
+// 将函数暴露到全局，供其他模块调用
+window.updateBookmarkScrollbars = updateBookmarkScrollbars;
 
 // 在initDashboard中初始化搜索功能
 const originalInitDashboard = window.initDashboard;
