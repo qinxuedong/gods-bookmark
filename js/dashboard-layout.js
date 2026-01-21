@@ -245,9 +245,8 @@ async function renderCardControls() {
     const bookmarkCards = document.querySelectorAll('#bookmarks-container .glass-card');
     const allCards = [...monitorCards, ...bookmarkCards];
 
-    // 计算书签卡片允许的最大宽度：参考“上帝的指引”区域的可见宽度
-    const frequentBar = document.getElementById('frequent-bookmarks-bar');
-    const maxCardWidth = frequentBar ? Math.round(frequentBar.clientWidth) : 1200;
+    // 书签卡片允许的最大宽度：固定为 1536px
+    const maxCardWidth = 1536;
 
     allCards.forEach((card, globalIndex) => {
         const cardId = card.id || `card-${globalIndex}`;
@@ -325,7 +324,7 @@ async function renderCardControls() {
         let isLightTheme = false;
         
         if (currentTheme === 'light') {
-            isLightTheme = true;
+                isLightTheme = true;
         }
         
         // 使用与书签卡片相同的渐变逻辑（与 applyCardGradient 函数保持一致）
@@ -356,7 +355,7 @@ async function renderCardControls() {
             return false;
         });
         const isHidden = bookmarkLayoutItem?.hidden === true;
-
+        
         // 读取已保存的宽高（如果有），否则使用当前卡片实际尺寸
         const baseWidth = card.offsetWidth || 260;
         const baseHeight = card.offsetHeight || 220;
@@ -375,7 +374,7 @@ async function renderCardControls() {
         const deleteBtnStyle = isLightTheme
             ? 'width: 20px; height: 20px; padding: 0; background: rgba(255,255,255,0.5); color: var(--text-secondary); border: 1px solid rgba(226,232,240,0.8); border-radius: 4px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 2px rgba(15,23,42,0.05);'
             : 'width: 20px; height: 20px; padding: 0; background: rgba(30,41,59,0.9); color: rgba(248,113,113,0.95); border: 1px solid rgba(248,113,113,0.8); border-radius: 4px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 3px rgba(15,23,42,0.35);';
-
+        
         html += `
             <div class="card-control-item" data-card-index="${globalIndex}" 
                 style="border-bottom: ${globalIndex < allCards.length - 1 ? '1px solid var(--card-border)' : 'none'}; 
@@ -427,13 +426,13 @@ async function renderCardControls() {
                         ? `
                 <div class="control-row" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem;">
                     <label style="width: 50px; font-size: 0.7rem;">宽度</label>
-                    <input type="range" class="card-width-range" data-category="${bookmarkCategoryIndex}" min="220" max="${maxCardWidth}" step="10" value="${currentWidthPx}"
+                    <input type="range" class="card-width-range" data-category="${bookmarkCategoryIndex}" min="100" max="${maxCardWidth}" step="10" value="${currentWidthPx}"
                         style="flex: 1;">
                     <span class="card-width-value" style="font-size: 0.7rem; width: 60px; text-align: right;">${currentWidthPx}px</span>
                 </div>
                 <div class="control-row" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.15rem;">
                     <label style="width: 50px; font-size: 0.7rem;">高度</label>
-                    <input type="range" class="card-height-range" data-category="${bookmarkCategoryIndex}" min="180" max="2000" step="10" value="${currentHeightPx}"
+                    <input type="range" class="card-height-range" data-category="${bookmarkCategoryIndex}" min="70" max="2000" step="10" value="${currentHeightPx}"
                         style="flex: 1;">
                     <span class="card-height-value" style="font-size: 0.7rem; width: 60px; text-align: right;">${currentHeightPx}px</span>
                 </div>
@@ -466,7 +465,7 @@ async function renderCardControls() {
     bindCardClickEvents();
 
     // 已禁用左侧书签卡片的拖动调整大小功能，这里不再为卡片添加 resize handle
-
+    
     // 更新常用网站标题颜色（布局设置面板打开后）
     if (typeof window.updateFrequentHeaderColor === 'function') {
         window.updateFrequentHeaderColor();
@@ -788,18 +787,51 @@ function bindDashboardLayoutEvents(container) {
         const valueSpan = range.parentElement.querySelector('.card-width-value');
         if (!category) return;
 
+        // 宽度吸附函数：在固定位置增加“磁性”效果
+        // 固定吸附点：496px，752px，1016px
+        function snapWidth(rawVal) {
+            const width = parseInt(rawVal, 10);
+            if (Number.isNaN(width)) return width;
+
+            // 固定吸附点
+            const snapPoints = [
+                496,   // 吸附点1
+                755,   // 吸附点2
+                1016   // 吸附点3
+            ];
+
+            // 吸附容差：30px
+            const tolerance = 30;
+
+            let snapped = width;
+            let minDiff = Infinity;
+            snapPoints.forEach(p => {
+                const diff = Math.abs(width - p);
+                if (diff <= tolerance && diff < minDiff) {
+                    minDiff = diff;
+                    snapped = p;
+                }
+            });
+
+            return snapped;
+        }
+
         function applyWidth(val, save) {
-            const width = parseInt(val, 10);
-            if (Number.isNaN(width)) return;
+            const snappedWidth = snapWidth(val);
+            if (snappedWidth == null) return;
+
+            // 更新滑杆位置为吸附后的值
+            range.value = snappedWidth;
+
             const card = document.querySelector(`.bookmark-card[data-category="${CSS.escape(category)}"]`);
             if (card) {
-                card.style.width = width + 'px';
+                card.style.width = snappedWidth + 'px';
             }
             if (valueSpan) {
-                valueSpan.textContent = `${width}px`;
+                valueSpan.textContent = `${snappedWidth}px`;
             }
             if (save && window.updateBookmarkCardSize) {
-                window.updateBookmarkCardSize(category, width, null);
+                window.updateBookmarkCardSize(category, snappedWidth, null);
             }
         }
 
@@ -818,18 +850,66 @@ function bindDashboardLayoutEvents(container) {
         const valueSpan = range.parentElement.querySelector('.card-height-value');
         if (!category) return;
 
+        // 高度吸附函数：基于可以完整展示1行、2行、3行...书签的高度
+        // 计算规则：
+        // - 卡片顶部padding: 24px (1.5rem)
+        // - 标题区域高度: 约40px (标题高度 + margin-bottom)
+        // - 书签项高度: 30px
+        // - 行间距: 12px (0.75rem)
+        // - 卡片底部padding: 24px (1.5rem)
+        // - 额外底部空间: 10px (避免拥挤)
+        // 总高度 = 24 + 40 + n×30 + (n-1)×12 + 24 + 10 = 98 + n×30 + (n-1)×12 = 86 + 42n
+        function snapHeight(rawVal) {
+            const height = parseInt(rawVal, 10);
+            if (Number.isNaN(height)) return height;
+
+            // 基础高度：顶部padding + 标题区域 + 底部padding + 额外底部空间 = 24 + 40 + 24 + 10 = 98px
+            const baseHeight = 98;
+            // 每行书签高度：书签项高度 + 行间距 = 30 + 12 = 42px
+            const rowHeight = 42;
+            // 第一行书签高度：只有书签项高度，没有行间距 = 30px
+            const firstRowHeight = 30;
+
+            // 计算可以完整展示的行数对应的吸附点（最多计算到20行）
+            const snapPoints = [];
+            for (let n = 1; n <= 20; n++) {
+                // n行书签的总高度 = 基础高度 + 第一行 + (n-1)行 × 每行高度
+                const snapHeight = baseHeight + firstRowHeight + (n - 1) * rowHeight;
+                snapPoints.push(snapHeight);
+            }
+
+            // 吸附容差：30px（约半行的高度）
+            const tolerance = 30;
+
+            let snapped = height;
+            let minDiff = Infinity;
+            snapPoints.forEach(p => {
+                const diff = Math.abs(height - p);
+                if (diff <= tolerance && diff < minDiff) {
+                    minDiff = diff;
+                    snapped = p;
+                }
+            });
+
+            return snapped;
+        }
+
         function applyHeight(val, save) {
-            const height = parseInt(val, 10);
-            if (Number.isNaN(height)) return;
+            const snappedHeight = snapHeight(val);
+            if (snappedHeight == null) return;
+
+            // 更新滑杆位置为吸附后的值
+            range.value = snappedHeight;
+
             const card = document.querySelector(`.bookmark-card[data-category="${CSS.escape(category)}"]`);
             if (card) {
-                card.style.height = height + 'px';
+                card.style.height = snappedHeight + 'px';
             }
             if (valueSpan) {
-                valueSpan.textContent = `${height}px`;
+                valueSpan.textContent = `${snappedHeight}px`;
             }
             if (save && window.updateBookmarkCardSize) {
-                window.updateBookmarkCardSize(category, null, height);
+                window.updateBookmarkCardSize(category, null, snappedHeight);
             }
         }
 
@@ -1928,15 +2008,49 @@ window.toggleBookmarkCardCollapse = async function(categoryName) {
         const isCollapsed = card.classList.contains('bookmark-card-collapsed');
 
         if (isCollapsed) {
-            // 展开
+            // 展开：恢复内容显示，并还原原始宽高
             card.classList.remove('bookmark-card-collapsed');
             grid.classList.remove('bookmark-grid-collapsed');
             grid.style.display = 'grid';
+            
+            // 恢复原始宽高（从 data 属性中读取）
+            const originalWidth = card.dataset.originalWidth;
+            const originalHeight = card.dataset.originalHeight;
+            
+            if (originalWidth) {
+                card.style.width = originalWidth;
         } else {
-            // 折叠
+                card.style.width = '';
+            }
+            
+            if (originalHeight) {
+                card.style.height = originalHeight;
+            } else {
+                card.style.height = '';
+            }
+            
+            // 清除保存的原始尺寸数据
+            delete card.dataset.originalWidth;
+            delete card.dataset.originalHeight;
+        } else {
+            // 折叠：隐藏内容，同时将卡片收缩到最小 100px × 70px
+            // 先保存当前的宽高（如果存在）
+            const currentWidth = card.style.width;
+            const currentHeight = card.style.height;
+            
+            if (currentWidth && currentWidth !== '100px') {
+                card.dataset.originalWidth = currentWidth;
+            }
+            if (currentHeight && currentHeight !== '70px') {
+                card.dataset.originalHeight = currentHeight;
+            }
+            
+            // 设置折叠后的固定尺寸
             card.classList.add('bookmark-card-collapsed');
             grid.classList.add('bookmark-grid-collapsed');
             grid.style.display = 'none';
+            card.style.width = '100px';
+            card.style.height = '70px';
         }
 
         // 更新配置
@@ -2023,12 +2137,74 @@ async function saveLayoutState() {
             const isHidden = child.style.display === 'none';
             const isCollapsed = child.classList.contains('bookmark-card-collapsed');
             
+            // 优先使用配置中已保存的宽高值，如果没有则使用当前DOM中的值
+            let widthToSave = null;
+            let heightToSave = null;
+            
+            // 先检查配置中是否已有保存的值（优先保留用户设置的值）
+            const existingItem = config.bookmarkLayout?.find(item => item.category === categoryName);
+            if (existingItem) {
+                // 如果配置中已有值，优先使用配置中的值（避免被DOM中的临时值覆盖）
+                if (existingItem.width !== undefined && existingItem.width !== null && existingItem.width !== '') {
+                    widthToSave = typeof existingItem.width === 'number' ? existingItem.width : parseInt(String(existingItem.width).replace(/px/g, ''), 10);
+                }
+                if (existingItem.height !== undefined && existingItem.height !== null && existingItem.height !== '') {
+                    heightToSave = typeof existingItem.height === 'number' ? existingItem.height : parseInt(String(existingItem.height).replace(/px/g, ''), 10);
+                }
+            }
+            
+            // 如果配置中没有值，则使用当前DOM中的值
+            if (widthToSave === null) {
+                const currentWidth = child.style.width || '';
+                if (currentWidth) {
+                    const widthMatch = currentWidth.match(/(\d+)/);
+                    if (widthMatch) {
+                        widthToSave = parseInt(widthMatch[1], 10);
+                    }
+                }
+            }
+            
+            if (heightToSave === null) {
+                const currentHeight = child.style.height || '';
+                if (currentHeight) {
+                    const heightMatch = currentHeight.match(/(\d+)/);
+                    if (heightMatch) {
+                        heightToSave = parseInt(heightMatch[1], 10);
+                    }
+                }
+            }
+            
+            // 如果卡片是折叠的，保存原始宽高（如果存在）
+            if (isCollapsed) {
+                if (child.dataset.originalWidth) {
+                    const origWidthMatch = child.dataset.originalWidth.match(/(\d+)/);
+                    if (origWidthMatch) {
+                        widthToSave = parseInt(origWidthMatch[1], 10);
+                    }
+                }
+                if (child.dataset.originalHeight) {
+                    const origHeightMatch = child.dataset.originalHeight.match(/(\d+)/);
+                    if (origHeightMatch) {
+                        heightToSave = parseInt(origHeightMatch[1], 10);
+                    }
+                }
+            }
+            
+            // 确定最终保存的宽高值
+            // 优先级：1. 当前计算出的值（widthToSave/heightToSave） 2. 配置中已有的值 3. 空字符串
+            let finalWidth = widthToSave !== null ? widthToSave : 
+                            (existingItem?.width !== undefined && existingItem.width !== null && existingItem.width !== '' ? existingItem.width : '');
+            let finalHeight = heightToSave !== null ? heightToSave : 
+                             (existingItem?.height !== undefined && existingItem.height !== null && existingItem.height !== '' ? existingItem.height : '');
+            
             bookmarkCards.push({
                 category: categoryName,
                 index: index,
                 span,
-                width: child.style.width || '',
-                height: child.style.height || '',
+                // 如果配置中已有值，即使当前DOM中没有值，也保留配置中的值
+                // 只有当配置中也没有值，且当前DOM中也没有值时，才保存为空字符串
+                width: finalWidth,
+                height: finalHeight,
                 color: child.dataset.customColor || '',
                 opacity: child.dataset.customOpacity || '0.7', // 保存透明度
                 hidden: isHidden || false, // 保存隐藏状态
@@ -2150,7 +2326,7 @@ async function restoreBookmarkLayout(config) {
             sortedCards.push({ card, index: item.index !== undefined ? item.index : 999 });
         }
     });
-    
+
     // 第二步：按保存的 index 重新排序
     sortedCards.sort((a, b) => a.index - b.index);
     sortedCards.forEach(({ card }) => {
@@ -2313,6 +2489,27 @@ function bindCardClickEvents() {
             }
         });
     });
+
+    // 在全局编辑模式下，点击左侧空白区域时清除所有高亮
+    document.addEventListener('click', (e) => {
+        // 仅在设置侧边栏打开时生效
+        const sidebar = document.getElementById('admin-sidebar');
+        if (!sidebar || !sidebar.classList.contains('open')) return;
+
+        // 如果点击发生在书签卡片内部或右侧设置面板内部，则不处理
+        if (e.target.closest('#bookmarks-container .bookmark-card') ||
+            e.target.closest('#admin-sidebar')) {
+            return;
+        }
+
+        // 清除左侧卡片和右侧控制项的高亮状态
+        document.querySelectorAll('.highlighted-card').forEach(card => {
+            card.classList.remove('highlighted-card');
+        });
+        document.querySelectorAll('.card-control-item').forEach(item => {
+            item.classList.remove('highlighted');
+        });
+    }, true);
 }
 
 function highlightCardControl(index, shouldScroll = true, scrollLeftCard = true) {

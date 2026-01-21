@@ -2585,7 +2585,7 @@ async function loadBookmarks() {
                             </button>
                         ` : ''}
                     </div>
-                    <div class="bookmark-grid ${isCollapsed ? 'bookmark-grid-collapsed' : ''}" style="display: ${isCollapsed ? 'none' : 'grid'}; grid-template-columns: repeat(auto-fill, minmax(120px, 120px)); gap: 0.75rem; transition: all 0.3s ease;">
+                    <div class="bookmark-grid ${isCollapsed ? 'bookmark-grid-collapsed' : ''}" style="display: ${isCollapsed ? 'none' : 'grid'}; justify-content: center; gap: 0.75rem; transition: all 0.3s ease;">
                         ${cat.items.map((item, itemIndex) => {
                             // 限制名称显示为10个字符
                             const displayName = item.name.length > 10 ? item.name.substring(0, 10) : item.name;
@@ -3840,6 +3840,8 @@ async function restoreBookmarkStyles() {
     config.bookmarkLayout.forEach(item => {
         const categoryName = item.category.trim();
         const card = cardMap.get(categoryName);
+        
+        console.log('[恢复样式] 处理配置项:', categoryName, 'width:', item.width, 'height:', item.height, 'card存在:', !!card);
 
         if (card) {
             // 恢复尺寸类
@@ -3859,24 +3861,65 @@ async function restoreBookmarkStyles() {
             if (item.collapsed === true) {
                 card.classList.add('bookmark-card-collapsed');
                 const grid = card.querySelector('.bookmark-grid');
-                const title = card.querySelector('.bookmark-card-title');
                 if (grid) {
                     grid.classList.add('bookmark-grid-collapsed');
                     grid.style.display = 'none';
                 }
-                if (title) {
-                    title.textContent = categoryName + ' ▼';
+                
+                // 如果卡片是折叠状态，保存原始宽高（如果配置中有），然后设置折叠尺寸
+                if (item.width !== undefined && item.width !== null) {
+                    const w = typeof item.width === 'number' ? item.width + 'px' : String(item.width);
+                    card.dataset.originalWidth = w;
                 }
-            }
-
-            // 恢复自定义宽高（如果配置中存在）
-            if (item.width !== undefined && item.width !== null) {
-                const w = typeof item.width === 'number' ? item.width + 'px' : String(item.width);
-                card.style.width = w;
-            }
-            if (item.height !== undefined && item.height !== null) {
-                const h = typeof item.height === 'number' ? item.height + 'px' : String(item.height);
-                card.style.height = h;
+                if (item.height !== undefined && item.height !== null) {
+                    const h = typeof item.height === 'number' ? item.height + 'px' : String(item.height);
+                    card.dataset.originalHeight = h;
+                }
+                
+                // 设置折叠后的固定尺寸
+                card.style.width = '100px';
+                card.style.height = '70px';
+            } else {
+                // 恢复自定义宽高（如果配置中存在，且不是折叠状态）
+                // 确保正确处理数字格式和字符串格式
+                if (item.width !== undefined && item.width !== null && item.width !== '') {
+                    let w = '';
+                    if (typeof item.width === 'number') {
+                        w = item.width + 'px';
+                    } else {
+                        // 如果是字符串，检查是否包含数字
+                        const widthStr = String(item.width);
+                        const widthMatch = widthStr.match(/(\d+)/);
+                        if (widthMatch) {
+                            w = widthMatch[1] + 'px';
+                        } else {
+                            w = widthStr;
+                        }
+                    }
+                    if (w) {
+                        card.style.setProperty('width', w, 'important');
+                        console.log('[恢复样式] 已设置宽度:', categoryName, w);
+                    }
+                }
+                if (item.height !== undefined && item.height !== null && item.height !== '') {
+                    let h = '';
+                    if (typeof item.height === 'number') {
+                        h = item.height + 'px';
+                    } else {
+                        // 如果是字符串，检查是否包含数字
+                        const heightStr = String(item.height);
+                        const heightMatch = heightStr.match(/(\d+)/);
+                        if (heightMatch) {
+                            h = heightMatch[1] + 'px';
+                        } else {
+                            h = heightStr;
+                        }
+                    }
+                    if (h) {
+                        card.style.setProperty('height', h, 'important');
+                        console.log('[恢复样式] 已设置高度:', categoryName, h);
+                    }
+                }
             }
 
             // 恢复颜色和透明度
@@ -5200,15 +5243,33 @@ async function saveBookmarkCardSize(categoryName, width, height) {
             config.bookmarkLayout.push(item);
         }
 
-        if (typeof width === 'number') {
-            item.width = Math.round(width);
+        // 保存宽高值，确保保存为数字格式
+        if (width !== null && width !== undefined) {
+            if (typeof width === 'number') {
+                item.width = Math.round(width);
+            } else if (typeof width === 'string' && width.trim() !== '') {
+                // 如果是字符串，提取数字部分
+                const widthMatch = width.match(/(\d+)/);
+                if (widthMatch) {
+                    item.width = parseInt(widthMatch[1], 10);
+                }
+            }
         }
-        if (typeof height === 'number') {
-            item.height = Math.round(height);
+        if (height !== null && height !== undefined) {
+            if (typeof height === 'number') {
+                item.height = Math.round(height);
+            } else if (typeof height === 'string' && height.trim() !== '') {
+                // 如果是字符串，提取数字部分
+                const heightMatch = height.match(/(\d+)/);
+                if (heightMatch) {
+                    item.height = parseInt(heightMatch[1], 10);
+                }
+            }
         }
 
         await dataManager.saveDashboardConfig(config);
-        console.log('[调整大小] 已保存到配置:', categoryName, item.width, item.height);
+        console.log('[调整大小] 已保存到配置:', categoryName, 'width:', item.width, 'height:', item.height);
+        console.log('[调整大小] 配置项详情:', JSON.stringify(item));
     } catch (err) {
         console.error('[调整大小] 保存到配置失败:', categoryName, err);
     }

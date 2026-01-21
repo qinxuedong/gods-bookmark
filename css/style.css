@@ -1898,9 +1898,11 @@ body.sidebar-open header .container {
     flex: 1;
     /* 移除固定高度，让分类卡片自适应 */
     overflow-y: auto;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 150px));
-    /* 固定书签项宽度为150px */
-    gap: 0.75rem;
+    /* 默认每行显示 11 个书签（每个基础尺寸 120px），整体居中 */
+    grid-template-columns: repeat(11, 120px);
+    justify-content: center;
+    column-gap: 0.75rem;
+    row-gap: 0.75rem;
     padding-right: 4px;
     /* 防止滚动条遮挡 */
     /* 隐藏滚动条 */
