@@ -2354,11 +2354,19 @@ async function loadFrequentBookmarks() {
         topBookmarks.forEach((bookmark) => {
             // 严格限制为10个字符，超出截断
             const displayName = bookmark.name.length > 10 ? bookmark.name.substring(0, 10) : bookmark.name;
+            
             // 使用保存的logo或默认图标（不使用内联事件处理器）
-            const iconHtml = bookmark.logo ? 
-                `<img src="${escapeHtml(bookmark.logo)}" width="16" height="16" style="vertical-align: middle;">` : 
-                '';
-            const fallbackIcon = bookmark.logo ? '' : (bookmark.icon || '🔗');
+            // 兼容旧数据：如果logo来自 gstatic/faviconV2，改用当前的 getFaviconUrl 或回退到emoji
+            let logoUrl = bookmark.logo || '';
+            if (logoUrl && (logoUrl.includes('gstatic.com') || logoUrl.includes('faviconV2'))) {
+                const fixedUrl = getFaviconUrl(bookmark.url);
+                logoUrl = fixedUrl || '';
+            }
+            
+            const iconHtml = logoUrl
+                ? `<img src="${escapeHtml(logoUrl)}" width="16" height="16" style="vertical-align: middle;">`
+                : '';
+            const fallbackIcon = logoUrl ? '' : (bookmark.icon || '🔗');
             html += `
                 <a href="${escapeHtml(bookmark.url)}" target="_blank" class="frequent-bookmark-item" title="${escapeHtml(bookmark.name)} (点击 ${bookmark.count} 次)">
                     <span class="frequent-bookmark-icon">${iconHtml}<span style="display: ${bookmark.logo ? 'none' : 'inline'}">${fallbackIcon}</span></span>
@@ -2583,13 +2591,28 @@ async function loadBookmarks() {
                             const displayName = item.name.length > 10 ? item.name.substring(0, 10) : item.name;
                             // 优先使用保存的logo，如果没有则使用icon
                             let iconDisplay = '';
-                            if (item.logo) {
-                                // 如果有保存的logo，使用img标签，emoji作为fallback（不使用内联事件处理器）
+                            
+                            // 兼容旧数据：如果logo来自 gstatic/faviconV2，改用当前的 getFaviconUrl 或回退到emoji
+                            let logoUrl = item.logo || '';
+                            if (logoUrl && (logoUrl.includes('gstatic.com') || logoUrl.includes('faviconV2'))) {
+                                const fixedUrl = getFaviconUrl(item.url);
+                                logoUrl = fixedUrl || '';
+                            }
+                            
+                            if (logoUrl) {
+                                // 如果有有效的logo，使用img标签，emoji作为fallback（不使用内联事件处理器）
                                 const fallbackIcon = item.icon && !item.icon.includes('<img') ? item.icon : '🔗';
-                                iconDisplay = `<img src="${item.logo}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${fallbackIcon}</span>`;
+                                iconDisplay = `<img src="${logoUrl}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${fallbackIcon}</span>`;
                             } else if (item.icon && item.icon.includes('<img')) {
-                                // 如果icon已经是img标签，移除内联事件处理器
-                                iconDisplay = item.icon.replace(/onerror="[^"]*"/g, '').replace(/onload="[^"]*"/g, '');
+                                // 如果icon已经是img标签，移除内联事件处理器；若仍包含 gstatic/faviconV2，则直接使用默认图标
+                                let cleanedIcon = item.icon
+                                    .replace(/onerror="[^"]*"/g, '')
+                                    .replace(/onload="[^"]*"/g, '');
+                                if (cleanedIcon.includes('gstatic.com') || cleanedIcon.includes('faviconV2')) {
+                                    iconDisplay = '🔗';
+                                } else {
+                                    iconDisplay = cleanedIcon;
+                                }
                             } else {
                                 // 使用emoji图标
                                 iconDisplay = item.icon || '🔗';
@@ -3805,15 +3828,14 @@ async function restoreBookmarkStyles() {
         }
     });
 
-    // 首先强制重置所有卡片的大小（然后根据配置重新应用）
+    // 首先重置所有卡片的大小，后续根据配置恢复自定义尺寸
     cards.forEach(card => {
         card.style.width = '';
         card.style.height = '';
     });
     
-    // 第一步：恢复所有卡片的样式
+    // 第一步：根据配置恢复所有卡片的样式和尺寸
     const sortedCards = [];
-    let needSaveConfig = false;
     
     config.bookmarkLayout.forEach(item => {
         const categoryName = item.category.trim();
@@ -3847,7 +3869,7 @@ async function restoreBookmarkStyles() {
                 }
             }
 
-            // 恢复自定义宽高（如果有保存）
+            // 恢复自定义宽高（如果配置中存在）
             if (item.width !== undefined && item.width !== null) {
                 const w = typeof item.width === 'number' ? item.width + 'px' : String(item.width);
                 card.style.width = w;
@@ -3876,8 +3898,6 @@ async function restoreBookmarkStyles() {
             sortedCards.push({ card, index: item.index !== undefined ? item.index : 999 });
         }
     });
-
-    // 不再清除宽高配置，而是完全依赖配置中保存的 width / height 来恢复
 
     // 第二步：按保存的 index 重新排序
     sortedCards.sort((a, b) => a.index - b.index);
@@ -5146,154 +5166,17 @@ function handleSearchShortcut(e) {
     openSearchModal();
 }
 
-// 为书签卡片添加右边和下边的调整大小功能（仅设置模式）
+// 为书签卡片添加右边和下边的调整大小功能（已删除：不再提供手动调整左侧书签分类卡片大小）
 window.addBookmarkCardResizeHandles = function(card) {
-    // 如果已经有resize handles，先移除
+    // 清理旧的 resize 手柄，避免影响显示
     const existingRightHandle = card.querySelector('.bookmark-resize-handle-right');
     const existingBottomHandle = card.querySelector('.bookmark-resize-handle-bottom');
     if (existingRightHandle) existingRightHandle.remove();
     if (existingBottomHandle) existingBottomHandle.remove();
-
-    // 获取卡片配置
-    const categoryName = card.getAttribute('data-category');
-    if (!categoryName) return;
-
-    // 创建右边调整大小手柄
-    const rightHandle = document.createElement('div');
-    rightHandle.className = 'bookmark-resize-handle-right';
-    rightHandle.style.cssText = `
-        position: absolute;
-        top: 4px;
-        right: -4px;
-        width: 6px;
-        height: calc(100% - 8px);
-        cursor: ew-resize;
-        background: rgba(139, 92, 246, 0.3);
-        opacity: 0;
-        transition: opacity 0.2s;
-        z-index: 5;
-        border-radius: 3px;
-    `;
-
-    // 创建下边调整大小手柄
-    const bottomHandle = document.createElement('div');
-    bottomHandle.className = 'bookmark-resize-handle-bottom';
-    bottomHandle.style.cssText = `
-        position: absolute;
-        bottom: -4px;
-        left: 4px;
-        width: calc(100% - 8px);
-        height: 6px;
-        cursor: ns-resize;
-        background: rgba(139, 92, 246, 0.3);
-        opacity: 0;
-        transition: opacity 0.2s;
-        z-index: 5;
-        border-radius: 3px;
-    `;
-
-    // 悬停时显示
-    card.addEventListener('mouseenter', () => {
-        rightHandle.style.opacity = '1';
-        bottomHandle.style.opacity = '1';
-    });
-    card.addEventListener('mouseleave', () => {
-        rightHandle.style.opacity = '0';
-        bottomHandle.style.opacity = '0';
-    });
-
-    // 调整大小逻辑
-    let resizing = false;
-    let direction = null;
-    let startX, startY, startWidth, startHeight;
-
-    function onMouseMove(e) {
-        if (!resizing) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        
-        if (direction === 'right') {
-            const newWidth = Math.max(200, startWidth + dx);
-            card.style.width = newWidth + 'px';
-        } else if (direction === 'bottom') {
-            const newHeight = Math.max(100, startHeight + dy);
-            card.style.height = newHeight + 'px';
-        }
-    }
-
-    function onMouseUp() {
-        if (!resizing) return;
-        
-        // 在鼠标松开时保存最终的大小
-        const finalWidth = card.offsetWidth;
-        const finalHeight = card.offsetHeight;
-        
-        // 立即保存，确保数据被持久化
-        saveBookmarkCardSize(categoryName, finalWidth, finalHeight).then(() => {
-            console.log('[调整大小] 已保存:', categoryName, finalWidth, finalHeight);
-            // 同步触发布局自动保存，确保与其他布局信息一并持久化
-            if (window.autoSaveLayout && typeof window.autoSaveLayout === 'function') {
-                try {
-                    window.autoSaveLayout();
-                } catch (err) {
-                    console.error('[调整大小] 调用自动保存失败:', err);
-                }
-            }
-        }).catch(err => {
-            console.error('[调整大小] 保存失败:', err);
-        });
-        
-        resizing = false;
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-    }
-
-    rightHandle.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        resizing = true;
-        direction = 'right';
-        startX = e.clientX;
-        startY = e.clientY;
-        startWidth = card.offsetWidth;
-        startHeight = card.offsetHeight;
-        card.style.transition = 'none';
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-    });
-
-    bottomHandle.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        resizing = true;
-        direction = 'bottom';
-        startX = e.clientX;
-        startY = e.clientY;
-        startWidth = card.offsetWidth;
-        startHeight = card.offsetHeight;
-        card.style.transition = 'none';
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-    });
-
-    function onMouseUpFinal() {
-        if (resizing) {
-            card.style.transition = '';
-            resizing = false;
-        }
-    }
-    document.addEventListener('mouseup', onMouseUpFinal);
-
-    // 确保卡片有定位
-    if (getComputedStyle(card).position === 'static') {
-        card.style.position = 'relative';
-    }
-
-    card.appendChild(rightHandle);
-    card.appendChild(bottomHandle);
+    // 不再添加新的拖动手柄和事件
 };
 
-// 保存书签卡片大小（保存到 dashboardConfig.bookmarkLayout，确保刷新后不会丢失）
+// 保存书签卡片大小（供右侧设置面板调用，持久化宽高）
 async function saveBookmarkCardSize(categoryName, width, height) {
     try {
         const config = await dataManager.getDashboardConfig();
@@ -5302,9 +5185,9 @@ async function saveBookmarkCardSize(categoryName, width, height) {
             return;
         }
 
-        if (!Array.isArray(config.bookmarkLayout)) {
-            config.bookmarkLayout = [];
-        }
+    if (!Array.isArray(config.bookmarkLayout)) {
+        config.bookmarkLayout = [];
+    }
 
         let item = config.bookmarkLayout.find(it => it.category === categoryName);
         if (!item) {
@@ -5317,8 +5200,12 @@ async function saveBookmarkCardSize(categoryName, width, height) {
             config.bookmarkLayout.push(item);
         }
 
-        item.width = Math.round(width);
-        item.height = Math.round(height);
+        if (typeof width === 'number') {
+            item.width = Math.round(width);
+        }
+        if (typeof height === 'number') {
+            item.height = Math.round(height);
+        }
 
         await dataManager.saveDashboardConfig(config);
         console.log('[调整大小] 已保存到配置:', categoryName, item.width, item.height);
@@ -5326,6 +5213,11 @@ async function saveBookmarkCardSize(categoryName, width, height) {
         console.error('[调整大小] 保存到配置失败:', categoryName, err);
     }
 }
+
+// 向全局暴露用于右侧面板调用的尺寸更新函数
+window.updateBookmarkCardSize = function (categoryName, width, height) {
+    return saveBookmarkCardSize(categoryName, width, height);
+};
 
 // 在initDashboard中初始化搜索功能
 const originalInitDashboard = window.initDashboard;
