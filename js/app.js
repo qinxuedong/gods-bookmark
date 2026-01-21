@@ -192,12 +192,22 @@ function bindInlineEventHandlers() {
     const addTodoImageRemove = document.getElementById('add-todo-image-remove');
     if (addTodoImageRemove) {
         addTodoImageRemove.addEventListener('click', () => {
-            const container = document.getElementById('add-todo-input-container');
+            const modal = document.getElementById('add-todo-modal');
             const imagePreview = document.getElementById('add-todo-image-preview');
             const imageDisplay = document.getElementById('add-todo-image-display');
             if (imagePreview) imagePreview.style.display = 'none';
             if (imageDisplay) imageDisplay.src = '';
-            if (container) container.dataset.todoImage = '';
+            if (modal) modal.dataset.todoImage = '';
+        });
+    }
+    
+    // 添加待办模态框关闭按钮
+    const addTodoModalClose = document.getElementById('add-todo-modal-close');
+    if (addTodoModalClose) {
+        addTodoModalClose.addEventListener('click', () => {
+            if (typeof hideAddTodoInput === 'function') {
+                hideAddTodoInput();
+            }
         });
     }
     
@@ -1250,7 +1260,6 @@ function updateTodosPinTooltip() {
 // 应用便签待办面板的折叠状态
 function applyTodosCollapse() {
     const todosListContainer = document.getElementById('todos-list');
-    const addInputContainer = document.getElementById('add-todo-input-container');
     const toggleButton = document.getElementById('todos-toggle-button');
     const todosTitleElement = document.getElementById('todos-title');
     const btnAddTodo = document.getElementById('btn-add-todo');
@@ -1259,9 +1268,6 @@ function applyTodosCollapse() {
         // 折叠：隐藏所有内容，只显示标题
         if (todosListContainer) {
             todosListContainer.style.display = 'none';
-        }
-        if (addInputContainer) {
-            addInputContainer.style.display = 'none';
         }
         if (toggleButton) {
             toggleButton.style.display = 'none';
@@ -1506,40 +1512,76 @@ async function renderTodos() {
 }
 
 // 绑定待办事项事件监听器（符合CSP）
+// 使用单一事件委托，避免重复绑定
+let todoEventHandlersBound = false;
+
 function bindTodoEvents(container) {
-    // 使用事件委托处理复选框和删除按钮
+    // 只绑定一次事件监听器，使用事件委托处理所有待办项
+    if (todoEventHandlersBound) {
+        return; // 已经绑定过，不再重复绑定
+    }
+    
+    // 使用事件委托处理复选框变化
     container.addEventListener('change', (e) => {
         if (e.target.classList.contains('todo-checkbox')) {
-            const index = parseInt(e.target.getAttribute('data-todo-index'));
-            if (!isNaN(index) && window.toggleTodo) {
-                window.toggleTodo(index);
+            e.stopPropagation();
+            e.preventDefault();
+            const checkbox = e.target;
+            const todoItem = checkbox.closest('.todo-item');
+            if (todoItem) {
+                const index = parseInt(todoItem.getAttribute('data-todo-index'));
+                if (!isNaN(index) && index >= 0 && index < todosList.length && window.toggleTodo) {
+                    // 防止快速点击导致多次触发
+                    if (checkbox.dataset.processing === 'true') {
+                        return;
+                    }
+                    checkbox.dataset.processing = 'true';
+                    window.toggleTodo(index).finally(() => {
+                        checkbox.dataset.processing = 'false';
+                    });
+                }
             }
         }
-    });
+    }, true); // 使用捕获阶段，确保先处理
     
+    // 使用事件委托处理删除按钮点击
     container.addEventListener('click', (e) => {
-        // 阻止事件冒泡（避免触发其他点击事件）
+        // 阻止复选框的点击事件冒泡
         if (e.target.classList.contains('todo-checkbox')) {
             e.stopPropagation();
+            return;
         }
         
         // 处理删除按钮
         if (e.target.classList.contains('todo-delete-btn')) {
             e.stopPropagation();
-            const index = parseInt(e.target.getAttribute('data-todo-index'));
-            if (!isNaN(index) && window.deleteTodo) {
-                window.deleteTodo(index);
+            e.preventDefault();
+            const btn = e.target;
+            const todoItem = btn.closest('.todo-item');
+            if (todoItem) {
+                const index = parseInt(todoItem.getAttribute('data-todo-index'));
+                if (!isNaN(index) && index >= 0 && index < todosList.length && window.deleteTodo) {
+                    // 防止快速点击导致多次触发
+                    if (btn.dataset.processing === 'true') {
+                        return;
+                    }
+                    btn.dataset.processing = 'true';
+                    window.deleteTodo(index).finally(() => {
+                        btn.dataset.processing = 'false';
+                    });
+                }
             }
         }
-    });
+    }, true); // 使用捕获阶段
     
     // 处理图片图标双击（仅双击，不响应单击）
     container.addEventListener('dblclick', (e) => {
         if (e.target.classList.contains('todo-image-icon')) {
             e.stopPropagation();
             e.preventDefault();
-            const index = parseInt(e.target.getAttribute('data-todo-index'));
-            if (!isNaN(index) && window.showTodoImageModal) {
+            const icon = e.target;
+            const index = parseInt(icon.getAttribute('data-todo-index'));
+            if (!isNaN(index) && index >= 0 && index < todosList.length && window.showTodoImageModal) {
                 window.showTodoImageModal(index);
             }
         }
@@ -1548,22 +1590,24 @@ function bindTodoEvents(container) {
     // 处理右键菜单（编辑）
     container.addEventListener('contextmenu', (e) => {
         const todoItem = e.target.closest('.todo-item');
-        if (todoItem) {
+        if (todoItem && !e.target.classList.contains('todo-checkbox') && !e.target.classList.contains('todo-delete-btn')) {
             e.preventDefault();
             e.stopPropagation();
             const index = parseInt(todoItem.getAttribute('data-todo-index'));
-            if (!isNaN(index) && window.editTodo) {
+            if (!isNaN(index) && index >= 0 && index < todosList.length && window.editTodo) {
                 window.editTodo(index);
             }
         }
     });
     
+    // 阻止复选框和删除按钮的 mousedown 事件冒泡
     container.addEventListener('mousedown', (e) => {
-        // 阻止复选框和删除按钮的事件冒泡
         if (e.target.classList.contains('todo-checkbox') || e.target.classList.contains('todo-delete-btn')) {
             e.stopPropagation();
         }
-    });
+    }, true); // 使用捕获阶段
+    
+    todoEventHandlersBound = true;
 }
 
 // 切换待办事项展开/收起状态
@@ -1618,44 +1662,51 @@ function initRightNavScroll() {
     rightNavScrollHandler();
 }
 
-// 显示添加待办输入框
+// 显示添加待办输入框（中心弹窗）
 window.showAddTodoInput = function() {
-    const container = document.getElementById('add-todo-input-container');
+    const modal = document.getElementById('add-todo-modal');
     const input = document.getElementById('new-todo-input');
     const imagePreview = document.getElementById('add-todo-image-preview');
     const imageDisplay = document.getElementById('add-todo-image-display');
     
-    if (container && input) {
-        container.style.display = 'block';
+    if (modal && input) {
+        modal.style.display = 'flex';
         input.focus();
         
         // 清除之前的图片预览
         if (imagePreview) imagePreview.style.display = 'none';
         if (imageDisplay) imageDisplay.src = '';
-        container.dataset.todoImage = '';
+        if (modal.dataset) modal.dataset.todoImage = '';
         
         // 绑定图片粘贴事件
         if (input) {
             input.addEventListener('paste', handleAddTodoImagePaste, { once: false });
         }
+        
+        // 点击背景关闭弹窗
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                hideAddTodoInput();
+            }
+        }, { once: true });
     }
 };
 
-// 隐藏添加待办输入框
+// 隐藏添加待办输入框（中心弹窗）
 window.hideAddTodoInput = function() {
-    const container = document.getElementById('add-todo-input-container');
+    const modal = document.getElementById('add-todo-modal');
     const input = document.getElementById('new-todo-input');
     const imagePreview = document.getElementById('add-todo-image-preview');
     const imageDisplay = document.getElementById('add-todo-image-display');
     
-    if (container && input) {
-        container.style.display = 'none';
+    if (modal && input) {
+        modal.style.display = 'none';
         input.value = '';
         
         // 清除图片预览
         if (imagePreview) imagePreview.style.display = 'none';
         if (imageDisplay) imageDisplay.src = '';
-        container.dataset.todoImage = '';
+        if (modal.dataset) modal.dataset.todoImage = '';
         
         // 移除粘贴事件监听器
         if (input) {
@@ -1683,12 +1734,12 @@ function handleAddTodoImagePaste(e) {
             const reader = new FileReader();
             reader.onload = (event) => {
                 const imageData = event.target.result;
-                const container = document.getElementById('add-todo-input-container');
+                const modal = document.getElementById('add-todo-modal');
                 const imagePreview = document.getElementById('add-todo-image-preview');
                 const imageDisplay = document.getElementById('add-todo-image-display');
                 
-                if (container) {
-                    container.dataset.todoImage = imageData;
+                if (modal) {
+                    modal.dataset.todoImage = imageData;
                 }
                 if (imageDisplay) {
                     imageDisplay.src = imageData;
@@ -1706,11 +1757,11 @@ function handleAddTodoImagePaste(e) {
 // 添加待办事项
 window.addTodo = async function() {
     const input = document.getElementById('new-todo-input');
-    const container = document.getElementById('add-todo-input-container');
-    if (!input || !container) return;
+    const modal = document.getElementById('add-todo-modal');
+    if (!input || !modal) return;
 
     const text = input.value.trim();
-    const imageData = container.dataset.todoImage || '';
+    const imageData = modal.dataset?.todoImage || '';
     
     // 允许只有文字或只有图片
     if (!text && !imageData) {
@@ -1752,46 +1803,55 @@ window.addTodo = async function() {
 
 // 切换待办事项完成状态
 window.toggleTodo = async function(index) {
-    if (index >= 0 && index < todosList.length) {
-        const todo = todosList[index];
-        const wasCompleted = todo.completed;
-        
-        // 切换完成状态
-        todo.completed = !todo.completed;
-        
-        // 分离未完成和已完成的待办项（不包括当前待办项）
-        const incompleteTodos = todosList.filter((t, i) => i !== index && !t.completed);
-        const completedTodos = todosList.filter((t, i) => i !== index && t.completed);
-        
-        if (todo.completed) {
-            // 如果完成，移动到已完成部分的末尾
-            completedTodos.push(todo);
-            todosList.length = 0;
-            todosList.push(...incompleteTodos, ...completedTodos);
+    // 验证索引有效性
+    if (index < 0 || index >= todosList.length) {
+        console.error('[toggleTodo] Invalid index:', index, 'todosList length:', todosList.length);
+        return;
+    }
+    
+    const todo = todosList[index];
+    if (!todo) {
+        console.error('[toggleTodo] Todo not found at index:', index);
+        return;
+    }
+    
+    const wasCompleted = todo.completed;
+    
+    // 切换完成状态
+    todo.completed = !todo.completed;
+    
+    // 分离未完成和已完成的待办项（不包括当前待办项）
+    const incompleteTodos = todosList.filter((t, i) => i !== index && !t.completed);
+    const completedTodos = todosList.filter((t, i) => i !== index && t.completed);
+    
+    if (todo.completed) {
+        // 如果完成，移动到已完成部分的末尾
+        completedTodos.push(todo);
+        todosList.length = 0;
+        todosList.push(...incompleteTodos, ...completedTodos);
+    } else {
+        // 如果取消完成，恢复到原始位置（在未完成部分）
+        // 如果原始索引有效且在范围内，恢复到原始位置
+        if (todo.originalIndex !== undefined && todo.originalIndex < incompleteTodos.length) {
+            incompleteTodos.splice(todo.originalIndex, 0, todo);
         } else {
-            // 如果取消完成，恢复到原始位置（在未完成部分）
-            // 如果原始索引有效且在范围内，恢复到原始位置
-            if (todo.originalIndex !== undefined && todo.originalIndex < incompleteTodos.length) {
-                incompleteTodos.splice(todo.originalIndex, 0, todo);
-            } else {
-                // 如果原始索引无效或超出范围，添加到未完成部分的末尾
-                incompleteTodos.push(todo);
-            }
-            
-            todosList.length = 0;
-            todosList.push(...incompleteTodos, ...completedTodos);
-            
-            // 更新未完成待办项的原始索引
-            todosList.forEach((t, i) => {
-                if (!t.completed) {
-                    t.originalIndex = i;
-                }
-            });
+            // 如果原始索引无效或超出范围，添加到未完成部分的末尾
+            incompleteTodos.push(todo);
         }
         
-        await saveTodos();
-        await renderTodos();
+        todosList.length = 0;
+        todosList.push(...incompleteTodos, ...completedTodos);
+        
+        // 更新未完成待办项的原始索引
+        todosList.forEach((t, i) => {
+            if (!t.completed) {
+                t.originalIndex = i;
+            }
+        });
     }
+    
+    await saveTodos();
+    await renderTodos();
 };
 
 // 删除待办事项
@@ -2493,19 +2553,19 @@ async function loadBookmarks() {
                      style="${isHidden ? 'display: none !important;' : ''}">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 10px;">
                         ${isAdmin && isSettingsMode ? `
-                            <input type="text" value="${cat.category}" 
-                                class="category-name-input" data-category-index="${catIndex}"
-                                style="background: rgba(255,255,255,0.1); border: 1px solid transparent; color: var(--accent-color); font-size: 1.1rem; font-weight: bold; width: 100%; border-radius: 4px; padding: 2px 5px;">
+                            <h3 class="bookmark-card-title-editable" 
+                                data-category="${cat.category}"
+                                data-category-index="${catIndex}"
+                                style="color: var(--accent-color); user-select: none; cursor: pointer; flex: 1; min-width: 0;" 
+                                title="点击编辑名称">
+                                ${cat.category}
+                            </h3>
                         ` : `
                             <h3 class="bookmark-card-title" 
                                 data-category="${cat.category}"
-                                style="color: var(--accent-color); user-select: none; display: flex; align-items: center; gap: 0.25rem;" 
-                                title="点击图标折叠/展开">
-                                <button class="bookmark-collapse-toggle" data-category="${cat.category}"
-                                    style="width: 20px; height: 20px; border-radius: 999px; border: 1px solid rgba(148,163,184,0.8); background: rgba(15,23,42,0.8); color: rgba(248,250,252,0.9); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; padding: 0;">
-                                    ${isCollapsed ? '▸' : '▾'}
-                                </button>
-                                <span>${cat.category}</span>
+                                style="color: var(--accent-color); user-select: none; cursor: pointer;" 
+                                title="双击折叠/展开">
+                                ${cat.category}
                             </h3>
                         `}
                         
@@ -2610,17 +2670,112 @@ async function loadBookmarks() {
             }
         });
 
-        // 折叠图标点击（单击切换折叠）
-        container.querySelectorAll('.bookmark-collapse-toggle').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const categoryName = btn.getAttribute('data-category');
-                if (categoryName && window.toggleBookmarkCardCollapse) {
-                    window.toggleBookmarkCardCollapse(categoryName);
-                }
+        // 双击标题折叠/展开（仅非设置模式）
+        if (!isSettingsMode) {
+            container.querySelectorAll('.bookmark-card-title').forEach(title => {
+                let lastClickTime = 0;
+                title.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const currentTime = Date.now();
+                    if (currentTime - lastClickTime < 300) {
+                        // 双击
+                        const categoryName = title.getAttribute('data-category');
+                        if (categoryName && window.toggleBookmarkCardCollapse) {
+                            window.toggleBookmarkCardCollapse(categoryName);
+                        }
+                        lastClickTime = 0;
+                    } else {
+                        lastClickTime = currentTime;
+                    }
+                });
             });
-        });
+        }
+
+        // 设置模式下，点击标题可编辑
+        if (isSettingsMode && isAdmin) {
+            // 定义标题编辑处理函数
+            function makeTitleEditable(titleElement) {
+                titleElement.addEventListener('click', function handleTitleClick(e) {
+                    e.stopPropagation();
+                    const categoryName = titleElement.textContent.trim();
+                    const catIndex = parseInt(titleElement.getAttribute('data-category-index'));
+                    const parent = titleElement.parentElement;
+                    
+                    // 创建输入框
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = categoryName;
+                    input.className = 'category-name-input';
+                    input.setAttribute('data-category-index', catIndex.toString());
+                    input.style.cssText = 'background: rgba(255,255,255,0.1); border: 1px solid var(--accent-color); color: var(--accent-color); font-size: 1.1rem; font-weight: bold; width: 100%; border-radius: 4px; padding: 2px 5px; flex: 1; min-width: 0;';
+                    
+                    // 替换标题为输入框
+                    parent.replaceChild(input, titleElement);
+                    
+                    // 聚焦并选中文本
+                    input.focus();
+                    input.select();
+                    
+                    // 保存修改
+                    const saveEdit = async () => {
+                        const newValue = input.value.trim();
+                        const finalValue = newValue || categoryName;
+                        
+                        if (newValue && newValue !== categoryName) {
+                            if (window.renameCategory) {
+                                await window.renameCategory(catIndex, finalValue);
+                            }
+                        }
+                        
+                        // 恢复为标题
+                        const newTitle = document.createElement('h3');
+                        newTitle.className = 'bookmark-card-title-editable';
+                        newTitle.setAttribute('data-category', finalValue);
+                        newTitle.setAttribute('data-category-index', catIndex.toString());
+                        newTitle.textContent = finalValue;
+                        newTitle.style.cssText = 'color: var(--accent-color); user-select: none; cursor: pointer; flex: 1; min-width: 0;';
+                        newTitle.title = '点击编辑名称';
+                        parent.replaceChild(newTitle, input);
+                        
+                        // 重新绑定事件
+                        makeTitleEditable(newTitle);
+                    };
+                    
+                    // 取消编辑
+                    const cancelEdit = () => {
+                        const newTitle = document.createElement('h3');
+                        newTitle.className = 'bookmark-card-title-editable';
+                        newTitle.setAttribute('data-category', categoryName);
+                        newTitle.setAttribute('data-category-index', catIndex.toString());
+                        newTitle.textContent = categoryName;
+                        newTitle.style.cssText = 'color: var(--accent-color); user-select: none; cursor: pointer; flex: 1; min-width: 0;';
+                        newTitle.title = '点击编辑名称';
+                        parent.replaceChild(newTitle, input);
+                        
+                        // 重新绑定事件
+                        makeTitleEditable(newTitle);
+                    };
+                    
+                    input.addEventListener('blur', saveEdit);
+                    
+                    // 回车保存，ESC取消
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            input.blur();
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            cancelEdit();
+                        }
+                    });
+                });
+            }
+            
+            // 为所有可编辑标题绑定事件
+            container.querySelectorAll('.bookmark-card-title-editable').forEach(title => {
+                makeTitleEditable(title);
+            });
+        }
 
         // Hover effects
         document.querySelectorAll('.bookmark-item').forEach(item => {
@@ -2651,13 +2806,11 @@ async function loadBookmarks() {
                 enableBookmarkDragAndDrop();
             }
             
-            // 如果设置已打开，为书签卡片添加边界resize handles
+            // 如果设置已打开，为书签卡片添加右边和下边的resize handles
             if (document.body.classList.contains('sidebar-open')) {
                 const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
                 bookmarkCards.forEach(card => {
-                    if (typeof window.addResizeHandle === 'function') {
-                        window.addResizeHandle(card);
-                    }
+                    window.addBookmarkCardResizeHandles(card);
                 });
             }
         }, 100);
@@ -2993,8 +3146,20 @@ function renderRightNavInternal() {
         wrapper.setAttribute('data-category', catName); // 添加data-category属性，方便匹配
         wrapper.style.setProperty('--card-color', cardColor); // 设置CSS变量
         wrapper.onclick = () => {
-            // 跳转到对应书签分类的顶部
-            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // 找到卡片在所有卡片中的索引
+            const allCards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
+            const cardIndex = Array.from(allCards).indexOf(card);
+            
+            if (cardIndex >= 0) {
+                // 使用 highlightCardControl 函数，右侧设置卡片高亮不居中，左侧对应的书签卡片居中高亮，只有左侧卡片滚动
+                if (window.highlightCardControl && typeof window.highlightCardControl === 'function') {
+                    window.highlightCardControl(cardIndex, false, true);
+                }
+            } else {
+                // 如果找不到索引，使用原来的滚动方式
+                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+            
             // Update active state
             document.querySelectorAll('.nav-dot-wrapper').forEach(d => d.classList.remove('active'));
             wrapper.classList.add('active');
@@ -3458,9 +3623,9 @@ window.handleBookmarkClick = async function (event, catIndex, itemIndex) {
             if (cardIndex >= 0) {
                 event.preventDefault();
                 event.stopPropagation();
-                // 高亮对应的布局设置项
+                // 高亮对应的布局设置项，滚动右侧设置面板使其居中，但不滚动左侧卡片
                 if (window.highlightCardControl && typeof window.highlightCardControl === 'function') {
-                    window.highlightCardControl(cardIndex);
+                    window.highlightCardControl(cardIndex, true, false);
                 }
                 return false;
             }
@@ -3640,8 +3805,16 @@ async function restoreBookmarkStyles() {
         }
     });
 
+    // 首先强制重置所有卡片的大小（防止配置中还有大小数据）
+    cards.forEach(card => {
+        card.style.width = '';
+        card.style.height = '';
+    });
+    
     // 第一步：恢复所有卡片的样式
     const sortedCards = [];
+    let needSaveConfig = false;
+    
     config.bookmarkLayout.forEach(item => {
         const categoryName = item.category.trim();
         const card = cardMap.get(categoryName);
@@ -3672,13 +3845,22 @@ async function restoreBookmarkStyles() {
                 if (title) {
                     title.textContent = categoryName + ' ▼';
                 }
-                // 折叠时使用默认大小，不恢复自定义尺寸
-                card.style.width = '';
-                card.style.height = '';
-            } else {
-                // 展开时恢复自定义尺寸
-                if (item.width) card.style.width = item.width;
-                if (item.height) card.style.height = item.height;
+            }
+            
+            // 再次确保刷新后不恢复之前的大小（重置为默认大小）
+            card.style.width = '';
+            card.style.height = '';
+            
+            // 同时清除配置中保存的大小数据，确保下次不会恢复
+            const hadWidth = item.width !== undefined;
+            const hadHeight = item.height !== undefined;
+            if (hadWidth) {
+                delete item.width;
+                needSaveConfig = true;
+            }
+            if (hadHeight) {
+                delete item.height;
+                needSaveConfig = true;
             }
 
             // 恢复颜色和透明度
@@ -3699,6 +3881,22 @@ async function restoreBookmarkStyles() {
             // 保存到排序数组
             sortedCards.push({ card, index: item.index !== undefined ? item.index : 999 });
         }
+    });
+
+    // 如果清除了大小数据，保存配置以确保下次不会恢复
+    if (needSaveConfig) {
+        try {
+            await dataManager.saveDashboardConfig(config);
+            console.log('[恢复样式] 已清除卡片大小配置并保存');
+        } catch (err) {
+            console.error('[恢复样式] 保存配置失败:', err);
+        }
+    }
+    
+    // 额外确保：再次遍历所有卡片，强制重置大小（防止其他地方恢复）
+    cards.forEach(card => {
+        card.style.width = '';
+        card.style.height = '';
     });
 
     // 第二步：按保存的 index 重新排序
@@ -4966,6 +5164,153 @@ function handleSearchShortcut(e) {
     
     e.preventDefault();
     openSearchModal();
+}
+
+// 为书签卡片添加右边和下边的调整大小功能（仅设置模式）
+window.addBookmarkCardResizeHandles = function(card) {
+    // 如果已经有resize handles，先移除
+    const existingRightHandle = card.querySelector('.bookmark-resize-handle-right');
+    const existingBottomHandle = card.querySelector('.bookmark-resize-handle-bottom');
+    if (existingRightHandle) existingRightHandle.remove();
+    if (existingBottomHandle) existingBottomHandle.remove();
+
+    // 获取卡片配置
+    const categoryName = card.getAttribute('data-category');
+    if (!categoryName) return;
+
+    // 创建右边调整大小手柄
+    const rightHandle = document.createElement('div');
+    rightHandle.className = 'bookmark-resize-handle-right';
+    rightHandle.style.cssText = `
+        position: absolute;
+        top: 4px;
+        right: -4px;
+        width: 6px;
+        height: calc(100% - 8px);
+        cursor: ew-resize;
+        background: rgba(139, 92, 246, 0.3);
+        opacity: 0;
+        transition: opacity 0.2s;
+        z-index: 5;
+        border-radius: 3px;
+    `;
+
+    // 创建下边调整大小手柄
+    const bottomHandle = document.createElement('div');
+    bottomHandle.className = 'bookmark-resize-handle-bottom';
+    bottomHandle.style.cssText = `
+        position: absolute;
+        bottom: -4px;
+        left: 4px;
+        width: calc(100% - 8px);
+        height: 6px;
+        cursor: ns-resize;
+        background: rgba(139, 92, 246, 0.3);
+        opacity: 0;
+        transition: opacity 0.2s;
+        z-index: 5;
+        border-radius: 3px;
+    `;
+
+    // 悬停时显示
+    card.addEventListener('mouseenter', () => {
+        rightHandle.style.opacity = '1';
+        bottomHandle.style.opacity = '1';
+    });
+    card.addEventListener('mouseleave', () => {
+        rightHandle.style.opacity = '0';
+        bottomHandle.style.opacity = '0';
+    });
+
+    // 调整大小逻辑
+    let resizing = false;
+    let direction = null;
+    let startX, startY, startWidth, startHeight;
+
+    function onMouseMove(e) {
+        if (!resizing) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        
+        if (direction === 'right') {
+            const newWidth = Math.max(200, startWidth + dx);
+            card.style.width = newWidth + 'px';
+        } else if (direction === 'bottom') {
+            const newHeight = Math.max(100, startHeight + dy);
+            card.style.height = newHeight + 'px';
+        }
+    }
+
+    function onMouseUp() {
+        if (!resizing) return;
+        
+        // 在鼠标松开时保存最终的大小
+        const finalWidth = card.offsetWidth;
+        const finalHeight = card.offsetHeight;
+        
+        // 立即保存，确保数据被持久化
+        saveBookmarkCardSize(categoryName, finalWidth, finalHeight).then(() => {
+            console.log('[调整大小] 已保存:', categoryName, finalWidth, finalHeight);
+        }).catch(err => {
+            console.error('[调整大小] 保存失败:', err);
+        });
+        
+        resizing = false;
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    rightHandle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resizing = true;
+        direction = 'right';
+        startX = e.clientX;
+        startY = e.clientY;
+        startWidth = card.offsetWidth;
+        startHeight = card.offsetHeight;
+        card.style.transition = 'none';
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+
+    bottomHandle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resizing = true;
+        direction = 'bottom';
+        startX = e.clientX;
+        startY = e.clientY;
+        startWidth = card.offsetWidth;
+        startHeight = card.offsetHeight;
+        card.style.transition = 'none';
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+
+    function onMouseUpFinal() {
+        if (resizing) {
+            card.style.transition = '';
+            resizing = false;
+        }
+    }
+    document.addEventListener('mouseup', onMouseUpFinal);
+
+    // 确保卡片有定位
+    if (getComputedStyle(card).position === 'static') {
+        card.style.position = 'relative';
+    }
+
+    card.appendChild(rightHandle);
+    card.appendChild(bottomHandle);
+};
+
+// 保存书签卡片大小（已禁用：不保存大小，确保刷新后不恢复）
+async function saveBookmarkCardSize(categoryName, width, height) {
+    // 不再保存大小到配置，确保刷新后不会恢复
+    // 调整后的大小只在当前会话有效，刷新后恢复默认大小
+    console.log('[调整大小] 已调整:', categoryName, width, height, '(不保存到配置)');
+    return;
 }
 
 // 在initDashboard中初始化搜索功能

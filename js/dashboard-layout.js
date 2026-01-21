@@ -416,6 +416,18 @@ async function renderCardControls() {
     // 绑定卡片点击事件
     bindCardClickEvents();
     
+    // 为所有书签卡片添加右边和下边的调整大小手柄（仅设置模式）
+    if (document.body.classList.contains('sidebar-open')) {
+        setTimeout(() => {
+            const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
+            bookmarkCards.forEach(card => {
+                if (typeof window.addBookmarkCardResizeHandles === 'function') {
+                    window.addBookmarkCardResizeHandles(card);
+                }
+            });
+        }, 200);
+    }
+    
     // 更新常用网站标题颜色（布局设置面板打开后）
     if (typeof window.updateFrequentHeaderColor === 'function') {
         window.updateFrequentHeaderColor();
@@ -444,89 +456,9 @@ function bindDashboardLayoutEvents(container) {
     }
 
     // 右边和下边拖动调整卡片大小（仅设置面板中的控制卡片）
-    const controlsList = document.getElementById('card-controls-list');
-    if (controlsList) {
-        controlsList.querySelectorAll('.card-control-item[data-card-index]').forEach(item => {
-            // 右边缘
-            const rightResize = document.createElement('div');
-            rightResize.style.cssText = `
-                position:absolute;
-                top:4px;
-                right:-4px;
-                width:6px;
-                height:calc(100% - 8px);
-                cursor:ew-resize;
-                z-index:5;
-            `;
-            // 底边缘
-            const bottomResize = document.createElement('div');
-            bottomResize.style.cssText = `
-                position:absolute;
-                left:4px;
-                bottom:-4px;
-                width:calc(100% - 8px);
-                height:6px;
-                cursor:ns-resize;
-                z-index:5;
-            `;
-
-            let resizing = false;
-            let startX = 0;
-            let startY = 0;
-            let startWidth = 0;
-            let startHeight = 0;
-            let direction = null;
-
-            function onMouseMove(e) {
-                if (!resizing) return;
-                const dx = e.clientX - startX;
-                const dy = e.clientY - startY;
-                if (direction === 'right') {
-                    const newW = Math.max(220, startWidth + dx);
-                    item.style.width = newW + 'px';
-                } else if (direction === 'bottom') {
-                    const newH = Math.max(80, startHeight + dy);
-                    item.style.height = newH + 'px';
-                }
-            }
-
-            function onMouseUp() {
-                if (!resizing) return;
-                resizing = false;
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-            }
-
-            rightResize.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                resizing = true;
-                direction = 'right';
-                startX = e.clientX;
-                startY = e.clientY;
-                startWidth = item.offsetWidth;
-                startHeight = item.offsetHeight;
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-            });
-
-            bottomResize.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                resizing = true;
-                direction = 'bottom';
-                startX = e.clientX;
-                startY = e.clientY;
-                startWidth = item.offsetWidth;
-                startHeight = item.offsetHeight;
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-            });
-
-            item.style.position = 'relative';
-            item.appendChild(rightResize);
-            item.appendChild(bottomResize);
-        });
+    const resizeControlsList = document.getElementById('card-controls-list');
+    if (resizeControlsList) {
+        // 已删除右侧设置面板中卡片的右边和下边调整大小功能
     }
 
     // 便签待办标题输入框
@@ -670,6 +602,7 @@ function bindDashboardLayoutEvents(container) {
     }
 
     // 卡片顺序上下移动按钮
+    // 卡片顺序上下移动按钮
     container.querySelectorAll('.card-move-up-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             e.stopPropagation();
@@ -703,8 +636,9 @@ function bindDashboardLayoutEvents(container) {
         const cardControlItem = e.target.closest('.card-control-item');
         if (cardControlItem && cardControlItem.hasAttribute('data-card-index')) {
             const index = parseInt(cardControlItem.getAttribute('data-card-index'));
-            if (!isNaN(index) && window.highlightCard) {
-                window.highlightCard(index);
+            if (!isNaN(index)) {
+                // 点击右侧设置面板时，右侧设置卡片高亮不居中，左侧对应的书签卡片居中高亮，只有左侧卡片滚动
+                highlightCardControl(index, false, true);
             }
         }
 
@@ -1851,8 +1785,7 @@ window.toggleBookmarkCardCollapse = async function(categoryName) {
         if (!card) return;
 
         const grid = card.querySelector('.bookmark-grid');
-        const title = card.querySelector('.bookmark-card-title');
-        if (!grid || !title) return;
+        if (!grid) return;
 
         const isCollapsed = card.classList.contains('bookmark-card-collapsed');
 
@@ -1861,15 +1794,11 @@ window.toggleBookmarkCardCollapse = async function(categoryName) {
             card.classList.remove('bookmark-card-collapsed');
             grid.classList.remove('bookmark-grid-collapsed');
             grid.style.display = 'grid';
-            const categoryNameText = categoryName;
-            title.textContent = categoryNameText + ' ▲';
         } else {
             // 折叠
             card.classList.add('bookmark-card-collapsed');
             grid.classList.add('bookmark-grid-collapsed');
             grid.style.display = 'none';
-            const categoryNameText = categoryName;
-            title.textContent = categoryNameText + ' ▼';
         }
 
         // 更新配置
@@ -2048,6 +1977,12 @@ async function restoreBookmarkLayout(config) {
         }
     });
 
+    // 首先强制重置所有卡片的大小（防止配置中还有大小数据）
+    cards.forEach(card => {
+        card.style.width = '';
+        card.style.height = '';
+    });
+
     // 第一步：恢复所有卡片的样式
     const sortedCards = [];
     config.bookmarkLayout.forEach(item => {
@@ -2061,9 +1996,18 @@ async function restoreBookmarkLayout(config) {
             if (item.span === 3) card.classList.add('span-3');
             if (item.span === 4) card.classList.add('span-4');
 
-            // 恢复自定义尺寸
-            if (item.width) card.style.width = item.width;
-            if (item.height) card.style.height = item.height;
+            // 不恢复自定义尺寸（宽度和高度），确保调整后的大小在刷新后不恢复
+            // 重置为默认大小，并清除配置中的大小数据
+            card.style.width = '';
+            card.style.height = '';
+            
+            // 清除配置中的大小数据
+            if (item.width !== undefined) {
+                delete item.width;
+            }
+            if (item.height !== undefined) {
+                delete item.height;
+            }
 
             // 恢复渐变色和透明度
             const opacity = item.opacity || card.dataset.customOpacity || '0.7';
@@ -2079,6 +2023,31 @@ async function restoreBookmarkLayout(config) {
             sortedCards.push({ card, index: item.index !== undefined ? item.index : 999 });
         }
     });
+    
+    // 再次确保所有卡片的大小都被重置（在清除配置数据后）
+    cards.forEach(card => {
+        card.style.width = '';
+        card.style.height = '';
+    });
+    
+    // 清除配置中的大小数据后，保存配置
+    let needSaveConfig = false;
+    config.bookmarkLayout.forEach(item => {
+        if (item.width !== undefined || item.height !== undefined) {
+            if (item.width !== undefined) delete item.width;
+            if (item.height !== undefined) delete item.height;
+            needSaveConfig = true;
+        }
+    });
+    
+    if (needSaveConfig) {
+        try {
+            await dataManager.saveDashboardConfig(config);
+            console.log('[恢复布局] 已清除卡片大小配置并保存');
+        } catch (err) {
+            console.error('[恢复布局] 保存配置失败:', err);
+        }
+    }
 
     // 第二步：按保存的 index 重新排序
     sortedCards.sort((a, b) => a.index - b.index);
@@ -2217,10 +2186,19 @@ function bindCardClickEvents() {
         
         card.addEventListener('click', (e) => {
             // 忽略拖拽或调整大小时的点击
-            if (e.target.classList.contains('resize-handle')) return;
+            if (e.target.classList.contains('resize-handle') || 
+                e.target.classList.contains('bookmark-resize-handle-right') ||
+                e.target.classList.contains('bookmark-resize-handle-bottom')) return;
             
             // 忽略点击书签项内部链接的点击（让链接正常跳转，由 handleBookmarkClick 处理）
             if (e.target.closest('.bookmark-item')) {
+                return;
+            }
+
+            // 忽略点击标题和输入框（标题有自己的双击事件，输入框有自己的点击事件）
+            if (e.target.classList.contains('bookmark-card-title') || 
+                e.target.classList.contains('bookmark-card-title-editable') ||
+                e.target.classList.contains('category-name-input')) {
                 return;
             }
 
@@ -2228,31 +2206,47 @@ function bindCardClickEvents() {
             const sidebar = document.getElementById('admin-sidebar');
             if (sidebar && sidebar.classList.contains('open')) {
                 e.stopPropagation(); // 阻止冒泡，避免触发关闭逻辑
-                highlightCardControl(index);
+                // 点击左侧卡片空白位置，滚动右侧设置面板使其居中，但不滚动左侧卡片
+                highlightCardControl(index, true, false);
             }
         });
     });
 }
 
-function highlightCardControl(index) {
+function highlightCardControl(index, shouldScroll = true, scrollLeftCard = true) {
     // 移除所有高亮
     document.querySelectorAll('.card-control-item').forEach(item => {
         item.classList.remove('highlighted');
+    });
+    document.querySelectorAll('.highlighted-card').forEach(card => {
+        card.classList.remove('highlighted-card');
     });
 
     // 添加高亮到对应控制项
     const controlItem = document.querySelector(`.card-control-item[data-card-index="${index}"]`);
     if (controlItem) {
         controlItem.classList.add('highlighted');
+    }
 
-        // 滚动到中间位置（垂直滚动）
+    // 添加高亮到对应的卡片
+    const cards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
+    const card = cards[index];
+    if (card) {
+        card.classList.add('highlighted-card');
+    }
+
+    // 当点击左侧卡片时，只滚动右侧设置面板使其居中，不滚动左侧卡片
+    // shouldScroll: 是否滚动右侧设置面板
+    // scrollLeftCard: 是否滚动左侧卡片（默认true，从右侧点击时为true，从左侧点击时为false）
+    
+    // 滚动控制面板到中间位置（垂直滚动）
+    if (shouldScroll && controlItem) {
         const sidebar = document.getElementById('admin-sidebar');
         const controlsList = document.getElementById('card-controls-list');
         if (controlsList && sidebar) {
             // 获取侧边栏和控制项的位置信息
             const sidebarRect = sidebar.getBoundingClientRect();
             const itemRect = controlItem.getBoundingClientRect();
-            const listRect = controlsList.getBoundingClientRect();
             
             // 计算侧边栏的中间位置（垂直方向）
             const sidebarMiddle = sidebarRect.top + sidebarRect.height / 2;
@@ -2275,6 +2269,27 @@ function highlightCardControl(index) {
                 behavior: 'smooth'
             });
         }
+    }
+
+    // 只有当需要滚动左侧卡片时才执行（从右侧设置卡片点击时为true，从左侧书签卡片点击时为false）
+    if (scrollLeftCard && card) {
+        // 查找卡片的标题元素
+        const title = card.querySelector('.bookmark-card-title, .bookmark-card-title-editable, h3');
+        let targetElement = title || card;
+        
+        const targetRect = targetElement.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        const viewportMiddle = viewportHeight / 2;
+        
+        // 计算标题中心到视口中间的距离
+        const targetCenter = targetRect.top + targetRect.height / 2;
+        const distanceToMiddle = targetCenter - viewportMiddle;
+        
+        // 滚动页面，使标题中心对齐到视口中间
+        window.scrollTo({
+            top: window.scrollY + distanceToMiddle,
+            behavior: 'smooth'
+        });
     }
 }
 
@@ -2844,6 +2859,43 @@ async function updateBookmarkCardOrder() {
     await dataManagerInstance.saveDashboardConfig(config);
     
     // 同步更新设置菜单中的位置
+    await renderCardControls();
+}
+
+// 使用上下箭头移动设置面板中的卡片顺序，并同步到左侧书签卡片
+async function moveCardControl(currentIndex, delta) {
+    const dataManagerInstance = window.dataManager || dataManager;
+    if (!dataManagerInstance) return;
+
+    const config = await dataManagerInstance.getDashboardConfig();
+    if (!config.bookmarkLayout || !Array.isArray(config.bookmarkLayout)) {
+        return;
+    }
+
+    const layout = [...config.bookmarkLayout];
+    // 根据 index 排序，保证顺序一致
+    layout.sort((a, b) => {
+        const ai = a.index ?? 999;
+        const bi = b.index ?? 999;
+        return ai - bi;
+    });
+
+    const pos = layout.findIndex(item => (item.index ?? 999) === currentIndex);
+    if (pos === -1) return;
+
+    const targetPos = pos + delta;
+    if (targetPos < 0 || targetPos >= layout.length) return;
+
+    // 交换 index
+    const currentItem = layout[pos];
+    const targetItem = layout[targetPos];
+    const tmpIndex = currentItem.index;
+    currentItem.index = targetItem.index;
+    targetItem.index = tmpIndex;
+
+    config.bookmarkLayout = layout;
+    await dataManagerInstance.saveDashboardConfig(config);
+    await syncBookmarkCardOrder(config.bookmarkLayout);
     await renderCardControls();
 }
 
