@@ -15,24 +15,28 @@
     --sidebar-width: 280px;
 }
 
-/* 亮色主题 */
+/* 亮色主题 - Morpher AI 风格 */
 :root[data-theme="light"] {
-    --bg-color: #f1f5f9; /* 背景亮度增加10%：从 #e2e8f0 (226, 232, 240) 加亮到 #f1f5f9 (241, 245, 249)，亮度提升约10% */
-    --card-bg: rgba(255, 255, 255, 0.9);
-    --card-border: rgba(148, 163, 184, 0.2);
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --accent-color: #7c3aed;
-    --accent-hover: #6d28d9;
-    --success-color: #059669;
-    --warning-color: #d97706;
+    --bg-color: #ffffff; /* 纯白背景 */
+    --card-bg: rgba(255, 255, 255, 0.95);
+    --card-border: rgba(226, 232, 240, 0.4);
+    --text-primary: #1e293b; /* 深灰色文字 */
+    --text-secondary: #64748b; /* 中等灰色 */
+    --accent-color: #8b5cf6; /* 紫色主色 */
+    --accent-hover: #7c3aed; /* 深紫色悬停 */
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --gradient-purple-start: #8b5cf6; /* 紫色渐变起始 */
+    --gradient-purple-end: #c084fc; /* 紫色渐变结束 */
+    --button-dark: #1e293b; /* 深灰色按钮 */
 }
 
 /* 亮色主题下的header和时间区域背景 */
 :root[data-theme="light"] header {
-    background: var(--bg-color) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.95)) !important;
+    backdrop-filter: blur(10px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(180%) !important;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.3) !important;
 }
 
 /* 亮色主题下时间区域默认背景（默认透明，不遮挡） */
@@ -44,15 +48,16 @@
 
 /* 亮色模式下，当有滚动内容经过时添加背景遮挡 */
 :root[data-theme="light"] #datetime-section.has-content-behind {
-    background: rgba(241, 245, 249, 0.9) !important; /* 使用更新后的全局背景色，稍微不透明以遮挡内容 */
-    backdrop-filter: blur(10px) !important;
-    -webkit-backdrop-filter: blur(10px) !important;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.9)) !important;
+    backdrop-filter: blur(12px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
 }
 
-/* 亮色主题下的时钟颜色 - 加亮50%，去掉文字光晕 */
+/* 亮色主题下的时钟颜色 - 深灰色，现代感 */
 :root[data-theme="light"] #main-time {
-    color: #475569 !important; /* 加亮50%：从 #1e293b (30, 41, 59) 加亮到 #475569 (71, 85, 105)，亮度提升约50% */
-    text-shadow: none !important; /* 去掉文字光晕 */
+    color: #1e293b !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+    font-weight: 600 !important;
 }
 
 /* 深色模式下的时钟颜色 - 增强可见性 */
@@ -61,35 +66,37 @@
     text-shadow: 0 0 30px rgba(139, 92, 246, 0.6), 0 2px 10px rgba(0, 0, 0, 0.3) !important; /* 增强阴影效果 */
 }
 
-/* 亮色主题下的便签待办背景 */
+/* 亮色主题下的便签待办背景 - 白色卡片，轻微渐变 */
 :root[data-theme="light"] #todos-section {
-    background: rgba(255, 255, 255, 0.95) !important;
-    border: 1px solid var(--card-border) !important;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95)) !important;
+    border: 1px solid rgba(226, 232, 240, 0.5) !important;
     border-radius: 0.75rem !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04), 0 2px 4px rgba(0, 0, 0, 0.02) !important;
 }
 
 :root[data-theme="light"] #todos-section > div {
-    background: rgba(255, 255, 255, 0.95) !important;
+    background: transparent !important;
     border-radius: 0.75rem !important;
 }
 
-/* 亮色主题下的设置弹窗背景 - 白色磨砂玻璃效果 */
+/* 亮色主题下的设置弹窗背景 - 白色磨砂玻璃效果，带紫色渐变边框 */
 :root[data-theme="light"] .admin-sidebar {
-    background: rgba(255, 255, 255, 0.85) !important;
-    backdrop-filter: blur(20px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-    border-left: 2px solid rgba(148, 163, 184, 0.3) !important;
-    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1) !important;
+    background: linear-gradient(to left, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.95)) !important;
+    backdrop-filter: blur(24px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+    border-left: 3px solid;
+    border-image: linear-gradient(to bottom, var(--gradient-purple-start), var(--gradient-purple-end)) 1 !important;
+    box-shadow: -8px 0 32px rgba(139, 92, 246, 0.08), -4px 0 12px rgba(0, 0, 0, 0.04) !important;
 }
 
 /* 亮色主题下的右侧导航背景 - 白色磨砂玻璃效果 */
 :root[data-theme="light"] .right-nav {
-    background: rgba(255, 255, 255, 0.85) !important;
+    background: linear-gradient(to left, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.9)) !important;
     backdrop-filter: blur(20px) saturate(180%) !important;
     -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-    border: 1px solid rgba(148, 163, 184, 0.3) !important;
+    border: 1px solid rgba(226, 232, 240, 0.4) !important;
     border-right: none !important;
-    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.06), -2px 0 8px rgba(0, 0, 0, 0.03) !important;
 }
 
 /* 亮色主题下右侧导航文字颜色增强对比度 */
@@ -629,6 +636,23 @@ nav a.active {
     max-width: 100%;
 }
 
+/* 亮色主题下的卡片样式 - Morpher AI 风格 */
+:root[data-theme="light"] .glass-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95)) !important;
+    border: 1px solid rgba(226, 232, 240, 0.5) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04), 
+                0 2px 4px rgba(0, 0, 0, 0.02),
+                0 0 0 1px rgba(139, 92, 246, 0.05) inset !important;
+    transition: all 0.3s ease !important;
+}
+
+:root[data-theme="light"] .glass-card:hover {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06), 
+                0 4px 8px rgba(0, 0, 0, 0.03),
+                0 0 0 1px rgba(139, 92, 246, 0.1) inset !important;
+    transform: translateY(-2px) !important;
+}
+
 .glass-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
@@ -650,13 +674,28 @@ nav a.active {
     border: none;
 }
 
-/* 亮色模式下按钮文字颜色 */
+/* 亮色模式下按钮文字颜色 - Morpher AI 风格 */
 :root[data-theme="light"] .btn {
-    color: white;
+    color: white !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
+    transition: all 0.2s ease !important;
+}
+
+:root[data-theme="light"] .btn:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
 
 :root[data-theme="light"] .btn[style*="background: transparent"] {
     color: var(--text-primary) !important;
+    border: 1px solid rgba(226, 232, 240, 0.6) !important;
+    background: rgba(255, 255, 255, 0.8) !important;
+}
+
+:root[data-theme="light"] .btn[style*="background: transparent"]:hover {
+    background: rgba(248, 250, 252, 0.95) !important;
+    border-color: rgba(139, 92, 246, 0.3) !important;
 }
 
 /* 跟随系统主题为亮色时 */
@@ -886,12 +925,19 @@ body.sidebar-open .admin-sidebar-close-btn {
     position: relative;
 }
 
-/* 亮色主题下卡片控制项增强可读性 */
+/* 亮色主题下卡片控制项增强可读性 - Morpher AI 风格 */
 :root[data-theme="light"] .card-control-item,
 :root[data-theme="auto"] .card-control-item {
-    background: rgba(255, 255, 255, 0.6) !important;
-    border: 1px solid rgba(148, 163, 184, 0.2) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95)) !important;
+    border: 1px solid rgba(226, 232, 240, 0.5) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+}
+
+:root[data-theme="light"] .card-control-item.highlighted {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(192, 132, 252, 0.05)) !important;
+    border-color: rgba(139, 92, 246, 0.3) !important;
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.12), 
+                0 2px 4px rgba(139, 92, 246, 0.08) !important;
 }
 
 :root[data-theme="light"] .card-control-item h4,
@@ -909,14 +955,20 @@ body.sidebar-open .admin-sidebar-close-btn {
 :root[data-theme="light"] .card-control-item input[type="text"],
 :root[data-theme="auto"] .card-control-item input[type="text"] {
     background: rgba(255, 255, 255, 0.9) !important;
-    border: 1px solid rgba(148, 163, 184, 0.3) !important;
+    border: 1px solid rgba(226, 232, 240, 0.6) !important;
+    transition: all 0.2s ease !important;
+}
+
+:root[data-theme="light"] .card-control-item input[type="text"],
+:root[data-theme="auto"] .card-control-item input[type="text"] {
     color: var(--text-primary) !important;
 }
 
 :root[data-theme="light"] .card-control-item input[type="text"]:focus,
 :root[data-theme="auto"] .card-control-item input[type="text"]:focus {
     border-color: var(--accent-color) !important;
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1) !important;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12) !important;
+    background: rgba(255, 255, 255, 1) !important;
 }
 
 /* 删除按钮hover效果 */
@@ -1030,6 +1082,15 @@ body.sidebar-open .admin-sidebar-close-btn {
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
 }
 
+/* 亮色主题下的模态框样式 - Morpher AI 风格 */
+:root[data-theme="light"] .modal-content {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95)) !important;
+    border: 1px solid rgba(226, 232, 240, 0.5) !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), 
+                0 8px 16px rgba(0, 0, 0, 0.04),
+                0 0 0 1px rgba(139, 92, 246, 0.05) inset !important;
+}
+
 .input-field {
     width: 100%;
     padding: 0.75rem;
@@ -1043,6 +1104,20 @@ body.sidebar-open .admin-sidebar-close-btn {
 
 .input-field:focus {
     border-color: var(--accent-color);
+}
+
+/* 亮色主题下的输入框样式 - Morpher AI 风格 */
+:root[data-theme="light"] .input-field {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border: 1px solid rgba(226, 232, 240, 0.6) !important;
+    color: var(--text-primary) !important;
+    transition: all 0.2s ease !important;
+}
+
+:root[data-theme="light"] .input-field:focus {
+    border-color: var(--accent-color) !important;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12) !important;
+    background: rgba(255, 255, 255, 1) !important;
 }
 
 /* Drag & Drop */
@@ -1174,6 +1249,23 @@ body.sidebar-open .admin-sidebar-close-btn {
     box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
+/* 亮色模式下搜索框 - 淡紫色背景 */
+:root[data-theme="light"] .global-search-input {
+    background: rgba(221, 214, 254, 0.3) !important; /* 淡紫色背景 */
+    border: 1px solid rgba(196, 181, 253, 0.4) !important; /* 淡紫色边框 */
+    color: var(--text-primary) !important;
+}
+
+:root[data-theme="light"] .global-search-input:focus {
+    background: rgba(221, 214, 254, 0.4) !important; /* 聚焦时稍深 */
+    border-color: rgba(167, 139, 250, 0.6) !important;
+    box-shadow: 0 0 0 3px rgba(196, 181, 253, 0.2) !important;
+}
+
+:root[data-theme="light"] .global-search-input::placeholder {
+    color: rgba(100, 116, 139, 0.6) !important; /* 占位符文字颜色 */
+}
+
 .global-search-btn {
     padding: 0.5rem 1rem;
     background: var(--accent-color);
@@ -1298,6 +1390,23 @@ body.sidebar-open .admin-sidebar-close-btn {
     background: rgba(255, 255, 255, 0.1);
     border-color: var(--accent-color);
     box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+/* 亮色模式下模态框搜索框 - 淡紫色背景 */
+:root[data-theme="light"] .global-search-modal-input {
+    background: rgba(221, 214, 254, 0.3) !important; /* 淡紫色背景 */
+    border: 1px solid rgba(196, 181, 253, 0.4) !important; /* 淡紫色边框 */
+    color: var(--text-primary) !important;
+}
+
+:root[data-theme="light"] .global-search-modal-input:focus {
+    background: rgba(221, 214, 254, 0.4) !important; /* 聚焦时稍深 */
+    border-color: rgba(167, 139, 250, 0.6) !important;
+    box-shadow: 0 0 0 3px rgba(196, 181, 253, 0.2) !important;
+}
+
+:root[data-theme="light"] .global-search-modal-input::placeholder {
+    color: rgba(100, 116, 139, 0.6) !important; /* 占位符文字颜色 */
 }
 
 .global-search-results {
@@ -1761,10 +1870,19 @@ body.sidebar-open header .container {
     border-radius: 0.5rem;
 }
 
-/* 亮色模式下书签背景为浅灰色 */
+/* 亮色模式下书签背景 - Morpher AI 风格 */
 :root[data-theme="light"] .bookmark-grid>div {
-    background-color: rgba(148, 163, 184, 0.15) !important; /* 浅灰色背景 */
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.85)) !important;
+    border: 1px solid rgba(226, 232, 240, 0.4) !important;
     border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.2s ease !important;
+}
+
+:root[data-theme="light"] .bookmark-grid>div:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.03) !important;
+    transform: translateY(-1px) !important;
+    border-color: rgba(139, 92, 246, 0.2) !important;
 }
 
 /* 跟随系统主题为亮色时，书签背景也为浅灰色 */
@@ -1785,9 +1903,16 @@ body.sidebar-open header .container {
     gap: 0.75rem;
     padding-right: 4px;
     /* 防止滚动条遮挡 */
-    /* 自定义滚动条更美观 */
-    scrollbar-width: thin;
-    scrollbar-color: var(--accent-color) transparent;
+    /* 隐藏滚动条 */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+}
+
+/* 隐藏 WebKit 浏览器的滚动条 */
+.bookmark-grid::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
 }
 
 /* 选中高亮卡片 */
@@ -1813,6 +1938,14 @@ body.sidebar-open header .container {
     z-index: 10;
     transition: all 0.3s ease;
     animation: breathing-glow 2s ease-in-out infinite;
+}
+
+/* 亮色主题下的高亮卡片样式 - Morpher AI 风格 */
+:root[data-theme="light"] .highlighted-card {
+    outline: 3px solid rgba(139, 92, 246, 0.9) !important;
+    box-shadow: 0 0 24px rgba(139, 92, 246, 0.25),
+                0 0 40px rgba(192, 132, 252, 0.15),
+                0 8px 24px rgba(0, 0, 0, 0.08) !important;
 }
 
 /* 布局设置打开时，保持时间天气内容显示 */
@@ -2144,6 +2277,11 @@ body.sidebar-open #todos-section .todos-resize-handle {
     align-items: center;
 }
 
+/* 确认弹窗置于最顶层 */
+#custom-confirm-modal {
+    z-index: 100002 !important; /* 确保在所有模态框之上 */
+}
+
 /* 管理功能图标按钮样式 */
 .management-icon-btn {
     transition: all 0.3s ease !important;
@@ -2242,18 +2380,37 @@ select.input-field option {
     color: var(--text-primary);
 }
 
-/* 亮色模式下模态框按钮文字颜色 */
+/* 亮色模式下模态框按钮文字颜色 - Morpher AI 风格 */
 :root[data-theme="light"] .modal-actions .btn-secondary {
     color: var(--text-primary) !important;
+    background: rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid rgba(226, 232, 240, 0.6) !important;
 }
 
+:root[data-theme="light"] .modal-actions .btn-secondary:hover {
+    background: rgba(248, 250, 252, 0.95) !important;
+    border-color: rgba(139, 92, 246, 0.3) !important;
+    transform: translateY(-1px) !important;
+}
+
+
 :root[data-theme="light"] .modal-actions .btn {
-    color: white;
+    color: white !important;
+    background: var(--button-dark) !important;
+    font-weight: 500 !important;
+}
+
+:root[data-theme="light"] .modal-actions .btn:hover {
+    background: #334155 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
 
 :root[data-theme="light"] .modal-actions .btn[style*="background: transparent"],
 :root[data-theme="light"] .modal-content .btn[style*="background: transparent"] {
     color: var(--text-primary) !important;
+    background: rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid rgba(226, 232, 240, 0.6) !important;
 }
 
 /* 亮色模式下书签模态框按钮文字颜色 */

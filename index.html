@@ -198,9 +198,8 @@
                 <h3 style="margin: 0; color: var(--accent-color);">👥 用户管理</h3>
                 <button id="user-management-close" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.5rem; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">&times;</button>
             </div>
-            <div style="margin-bottom: 1rem;">
+            <div style="margin-bottom: 1rem; display: flex; justify-content: center;">
                 <button id="add-user-btn" class="btn" style="background: var(--accent-color); color: white; border: none; padding: 0.5rem 1rem;">+ 添加用户</button>
-                <button id="refresh-users-btn" class="btn btn-secondary" style="margin-left: 0.5rem; padding: 0.5rem 1rem;">刷新</button>
             </div>
             <div id="users-list" style="max-height: 60vh; overflow-y: auto;">
                 <!-- 用户列表会由JS动态生成 -->
@@ -264,9 +263,8 @@
                 <h3 style="margin: 0; color: var(--accent-color);">💾 备份管理</h3>
                 <button id="backup-management-close" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.5rem; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">&times;</button>
             </div>
-            <div style="margin-bottom: 1rem;">
+            <div style="margin-bottom: 1rem; display: flex; justify-content: center;">
                 <button id="add-backup-config-btn" class="btn" style="background: var(--accent-color); color: white; border: none; padding: 0.5rem 1rem;">+ 添加备份配置</button>
-                <button id="refresh-backups-btn" class="btn btn-secondary" style="margin-left: 0.5rem; padding: 0.5rem 1rem;">刷新</button>
             </div>
             <div id="backup-configs-list" style="max-height: 60vh; overflow-y: auto;">
                 <!-- 备份配置列表会由JS动态生成 -->
@@ -305,6 +303,7 @@
                 <small style="color: var(--text-secondary);">格式: 分钟 小时 日 月 星期。可以使用上面的快捷选择自动生成。</small>
             </div>
             <div class="modal-actions">
+                <button class="btn" id="backup-config-edit-delete" style="background: #ef4444; color: white; border: none; display: none;">删除</button>
                 <button class="btn btn-secondary" id="backup-config-edit-cancel">取消</button>
                 <button class="btn" id="backup-config-edit-save" style="background: var(--accent-color); color: white; border: none;">保存</button>
             </div>

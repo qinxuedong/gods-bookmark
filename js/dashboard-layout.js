@@ -3148,11 +3148,6 @@ function bindUserAndBackupEvents() {
         };
     }
     
-    // 刷新用户列表按钮
-    const refreshUsersBtn = document.getElementById('refresh-users-btn');
-    if (refreshUsersBtn) {
-        refreshUsersBtn.onclick = loadUsersList;
-    }
     
     // 编辑用户按钮（事件委托）
     document.querySelectorAll('.edit-user-btn').forEach(btn => {
@@ -3309,6 +3304,8 @@ function bindUserAndBackupEvents() {
 
         const isAdmin = window.userManager && window.userManager.isAdmin && window.userManager.isAdmin();
 
+        const deleteBtn = document.getElementById('backup-config-edit-delete');
+        
         if (config) {
             // 编辑模式
             const type = config.backup_type || config.backupType || config.backup_type || 'aliyun';
@@ -3316,6 +3313,11 @@ function bindUserAndBackupEvents() {
 
             if (title) title.textContent = '编辑备份配置';
             modal.dataset.configId = config.id;
+            
+            // 显示删除按钮
+            if (deleteBtn) {
+                deleteBtn.style.display = 'inline-flex';
+            }
 
             if (typeSelect) {
                 typeSelect.value = type;
@@ -3344,6 +3346,11 @@ function bindUserAndBackupEvents() {
             // 添加模式
             if (title) title.textContent = '添加备份配置';
             delete modal.dataset.configId;
+            
+            // 隐藏删除按钮
+            if (deleteBtn) {
+                deleteBtn.style.display = 'none';
+            }
 
             if (typeSelect) {
                 Array.from(typeSelect.options).forEach(opt => {
@@ -3372,11 +3379,6 @@ function bindUserAndBackupEvents() {
         };
     }
     
-    // 刷新备份配置按钮
-    const refreshBackupsBtn = document.getElementById('refresh-backups-btn');
-    if (refreshBackupsBtn) {
-        refreshBackupsBtn.onclick = loadBackupConfigs;
-    }
 
     // 编辑备份配置按钮
     document.querySelectorAll('.edit-backup-config-btn').forEach(btn => {
@@ -3439,9 +3441,17 @@ function bindUserAndBackupEvents() {
                 alert('只有管理员可以删除用户');
                 return;
             }
-            if (!confirm('确定要删除该用户吗？此操作不可恢复。')) {
+            
+            // 使用统一的确认模态框
+            const confirmed = await window.showCustomConfirm(
+                '确定要删除该用户吗？此操作不可恢复。',
+                '删除用户'
+            );
+            
+            if (!confirmed) {
                 return;
             }
+            
             try {
                 const resp = await window.userManager.deleteUser(userId);
                 if (!resp || !resp.success) {
@@ -3519,6 +3529,53 @@ function bindUserAndBackupEvents() {
     // 备份配置保存 & 取消按钮
     const backupEditSave = document.getElementById('backup-config-edit-save');
     const backupEditCancel = document.getElementById('backup-config-edit-cancel');
+    const backupEditDelete = document.getElementById('backup-config-edit-delete');
+    
+    // 删除备份配置按钮
+    if (backupEditDelete) {
+        backupEditDelete.onclick = async () => {
+            const modal = document.getElementById('backup-config-edit-modal');
+            if (!modal) return;
+            const configId = modal.dataset.configId;
+            
+            if (!configId) {
+                alert('无法删除：未找到配置ID');
+                return;
+            }
+            
+            // 使用统一的确认模态框
+            const confirmed = await window.showCustomConfirm(
+                '确定要删除此备份配置吗？删除后无法恢复。',
+                '删除备份配置'
+            );
+            
+            if (!confirmed) {
+                return;
+            }
+            
+            try {
+                if (!window.backupManager) {
+                    // 使用统一的提示（如果需要，可以创建类似的提示模态框）
+                    alert('备份管理器不可用');
+                    return;
+                }
+                
+                const resp = await window.backupManager.deleteBackupConfig(configId);
+                if (!resp || !resp.success) {
+                    alert('删除备份配置失败: ' + (resp && resp.error ? resp.error : '未知错误'));
+                    return;
+                }
+                
+                // 删除成功，关闭模态框并刷新列表
+                modal.style.display = 'none';
+                await loadBackupConfigs();
+            } catch (error) {
+                console.error('[删除备份配置] 失败:', error);
+                alert('删除备份配置失败: ' + (error.message || '未知错误'));
+            }
+        };
+    }
+    
     if (backupEditSave) {
         backupEditSave.onclick = async () => {
             const modal = document.getElementById('backup-config-edit-modal');
