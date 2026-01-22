@@ -3319,6 +3319,9 @@ window.saveCategoryFromModal = async function () {
     const bookmarks = await dataManager.getBookmarks();
     bookmarks.push({ category: name, items: [] });
     await dataManager.saveBookmarks(bookmarks);
+    
+    // 同步创建浏览器文件夹
+    await syncAddFolderToBrowser(name);
 
     closeCategoryModal();
     loadBookmarks();
@@ -3428,6 +3431,9 @@ window.deleteCategoryByName = async function(categoryName) {
     bookmarks.splice(categoryIndex, 1);
     await dataManager.saveBookmarks(bookmarks);
     
+    // 同步删除浏览器文件夹
+    await syncDeleteFolderToBrowser(categoryName);
+    
     // 清理布局配置中已删除分类的数据
     const config = await dataManager.getDashboardConfig();
     if (config && config.bookmarkLayout) {
@@ -3470,6 +3476,9 @@ window.deleteCategory = async function (categoryIndex) {
     
     bookmarks.splice(categoryIndex, 1);
     await dataManager.saveBookmarks(bookmarks);
+    
+    // 同步删除浏览器文件夹
+    await syncDeleteFolderToBrowser(categoryName);
     
     // 清理布局配置中已删除分类的数据
     const config = await dataManager.getDashboardConfig();
@@ -3551,13 +3560,18 @@ window.saveBookmarkFromModal = async function () {
     const bookmarks = await dataManager.getBookmarks();
 
     if (currentModalState.type === 'add_bookmark') {
+        const categoryName = bookmarks[currentModalState.catIndex].category;
+        const insertIndex = bookmarks[currentModalState.catIndex].items.length;
+        
         bookmarks[currentModalState.catIndex].items.push({
             name,
             url,
             icon: iconHtml
         });
         await dataManager.saveBookmarks(bookmarks);
-        // 新添加的书签会通过扩展自动同步，无需手动同步
+        
+        // 同步添加书签到浏览器
+        await syncBookmarkAddToBrowser(url, name, categoryName, insertIndex);
     } else if (currentModalState.type === 'edit_bookmark') {
         const item = bookmarks[currentModalState.catIndex].items[currentModalState.itemIndex];
         const oldUrl = item.url;
@@ -3803,6 +3817,84 @@ async function syncBookmarkUpdateToBrowser(oldUrl, newUrl, newName) {
             oldUrl: oldUrl,
             newUrl: newUrl,
             newName: newName
+        }, '*');
+        
+    } catch (error) {
+        // 扩展可能未安装，这是正常的
+        console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
+    }
+}
+
+// 同步添加书签到浏览器（通过扩展）
+async function syncBookmarkAddToBrowser(url, name, category, index) {
+    try {
+        console.log('[书签同步] 同步添加书签到浏览器:', { url, name, category, index });
+        
+        // 方法1: 尝试使用content script注入的全局函数
+        if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.addBookmark === 'function') {
+            console.log('[书签同步] 通过扩展API添加浏览器书签:', url);
+            window.godsBookmarkExtension.addBookmark(url, name, category, index);
+            return;
+        }
+        
+        // 方法2: 使用 window.postMessage 发送消息给content script
+        console.log('[书签同步] 通过postMessage添加浏览器书签:', url);
+        window.postMessage({
+            type: 'ADD_BOOKMARK',
+            url: url,
+            name: name,
+            category: category,
+            index: index
+        }, '*');
+        
+    } catch (error) {
+        // 扩展可能未安装，这是正常的
+        console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
+    }
+}
+
+// 同步删除文件夹到浏览器（通过扩展）
+async function syncDeleteFolderToBrowser(folderName) {
+    try {
+        console.log('[书签同步] 同步删除文件夹到浏览器:', folderName);
+        
+        // 方法1: 尝试使用content script注入的全局函数
+        if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.deleteFolder === 'function') {
+            console.log('[书签同步] 通过扩展API删除浏览器文件夹:', folderName);
+            window.godsBookmarkExtension.deleteFolder(folderName);
+            return;
+        }
+        
+        // 方法2: 使用 window.postMessage 发送消息给content script
+        console.log('[书签同步] 通过postMessage删除浏览器文件夹:', folderName);
+        window.postMessage({
+            type: 'DELETE_FOLDER',
+            folderName: folderName
+        }, '*');
+        
+    } catch (error) {
+        // 扩展可能未安装，这是正常的
+        console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
+    }
+}
+
+// 同步添加文件夹到浏览器（通过扩展）
+async function syncAddFolderToBrowser(folderName) {
+    try {
+        console.log('[书签同步] 同步添加文件夹到浏览器:', folderName);
+        
+        // 方法1: 尝试使用content script注入的全局函数
+        if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.addFolder === 'function') {
+            console.log('[书签同步] 通过扩展API添加浏览器文件夹:', folderName);
+            window.godsBookmarkExtension.addFolder(folderName);
+            return;
+        }
+        
+        // 方法2: 使用 window.postMessage 发送消息给content script
+        console.log('[书签同步] 通过postMessage添加浏览器文件夹:', folderName);
+        window.postMessage({
+            type: 'ADD_FOLDER',
+            folderName: folderName
         }, '*');
         
     } catch (error) {

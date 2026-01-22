@@ -585,15 +585,39 @@ app.post('/api/bookmark/click', requireAuth, async (req, res) => {
 // 6. 书签同步API（用于浏览器扩展）
 app.post('/api/bookmark/sync', async (req, res) => {
     try {
-        const { category, bookmark, action } = req.body;
+        const { category, bookmark, action, userId } = req.body;
         
         if (!bookmark || !bookmark.url) {
             return res.status(400).json({ error: 'Invalid bookmark data' });
         }
         
-        // 获取当前书签数据
-        const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
-        let bookmarks = row ? JSON.parse(row.value) : [];
+        // 确定用户ID（优先使用请求中的userId，否则从cookie获取，最后默认为0）
+        let targetUserId = userId;
+        if (!targetUserId) {
+            const cookieUserId = req.cookies['user_id'];
+            if (cookieUserId) {
+                targetUserId = parseInt(cookieUserId);
+            } else {
+                targetUserId = 0; // 默认用户（向后兼容）
+            }
+        }
+        
+        // 获取当前用户的书签数据（优先从user_data表）
+        let bookmarks = [];
+        try {
+            const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'bookmarks'", [targetUserId]);
+            if (userRow) {
+                bookmarks = JSON.parse(userRow.value);
+            }
+        } catch (err) {
+            // user_data表可能不存在，继续使用旧方式
+        }
+        
+        // 向后兼容：如果user_data表没有数据且userId为0，从app_data表获取
+        if (bookmarks.length === 0 && targetUserId === 0) {
+            const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+            bookmarks = row ? JSON.parse(row.value) : [];
+        }
         
         if (!Array.isArray(bookmarks)) {
             bookmarks = [];
@@ -634,21 +658,29 @@ app.post('/api/bookmark/sync', async (req, res) => {
             const existingIndex = categoryItems.findIndex(item => item.url === bookmark.url);
             
             if (existingIndex >= 0) {
-                // 更新现有书签
-                categoryItems[existingIndex] = {
-                    ...categoryItems[existingIndex],
-                    ...bookmark
-                };
-                console.log('[书签同步] 更新书签:', bookmark.name, '在分类:', categoryName);
+                // 如果已存在相同URL的书签，跳过同步（不更新）
+                console.log('[书签同步] 跳过同步：分类', categoryName, '中已存在相同URL的书签:', bookmark.url);
+                return res.json({ 
+                    success: true, 
+                    message: '书签已存在，跳过同步',
+                    skipped: true,
+                    category: categoryName
+                });
             } else {
                 // 添加新书签
                 categoryItems.push(bookmark);
                 console.log('[书签同步] 添加书签:', bookmark.name, '到分类:', categoryName);
             }
             
-            // 保存书签
-            await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
-                ['bookmarks', JSON.stringify(bookmarks)]);
+            // 保存书签到user_data表
+            await db.run("INSERT OR REPLACE INTO user_data (user_id, key, value) VALUES (?, ?, ?)", 
+                [targetUserId, 'bookmarks', JSON.stringify(bookmarks)]);
+            
+            // 向后兼容：如果userId为0，同时保存到app_data表
+            if (targetUserId === 0) {
+                await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+                    ['bookmarks', JSON.stringify(bookmarks)]);
+            }
             
             res.json({ 
                 success: true, 
@@ -675,8 +707,16 @@ app.post('/api/bookmark/sync', async (req, res) => {
             }
             
             if (removed) {
-                await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
-                    ['bookmarks', JSON.stringify(bookmarks)]);
+                // 保存书签到user_data表
+                await db.run("INSERT OR REPLACE INTO user_data (user_id, key, value) VALUES (?, ?, ?)", 
+                    [targetUserId, 'bookmarks', JSON.stringify(bookmarks)]);
+                
+                // 向后兼容：如果userId为0，同时保存到app_data表
+                if (targetUserId === 0) {
+                    await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+                        ['bookmarks', JSON.stringify(bookmarks)]);
+                }
+                
                 res.json({ success: true, message: '书签已删除' });
             } else {
                 res.json({ success: false, message: '未找到要删除的书签' });
@@ -694,15 +734,39 @@ app.post('/api/bookmark/sync', async (req, res) => {
 // 7. 批量同步所有书签API（用于初始同步）
 app.post('/api/bookmark/sync-all', async (req, res) => {
     try {
-        const { bookmarks: bookmarksByCategory } = req.body;
+        const { bookmarks: bookmarksByCategory, userId } = req.body;
         
         if (!bookmarksByCategory || typeof bookmarksByCategory !== 'object') {
             return res.status(400).json({ error: 'Invalid bookmarks data format' });
         }
         
-        // 获取当前书签数据
-        const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
-        let existingBookmarks = row ? JSON.parse(row.value) : [];
+        // 确定用户ID（优先使用请求中的userId，否则从cookie获取，最后默认为0）
+        let targetUserId = userId;
+        if (!targetUserId) {
+            const cookieUserId = req.cookies['user_id'];
+            if (cookieUserId) {
+                targetUserId = parseInt(cookieUserId);
+            } else {
+                targetUserId = 0; // 默认用户（向后兼容）
+            }
+        }
+        
+        // 获取当前用户的书签数据（优先从user_data表）
+        let existingBookmarks = [];
+        try {
+            const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'bookmarks'", [targetUserId]);
+            if (userRow) {
+                existingBookmarks = JSON.parse(userRow.value);
+            }
+        } catch (err) {
+            // user_data表可能不存在，继续使用旧方式
+        }
+        
+        // 向后兼容：如果user_data表没有数据且userId为0，从app_data表获取
+        if (existingBookmarks.length === 0 && targetUserId === 0) {
+            const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+            existingBookmarks = row ? JSON.parse(row.value) : [];
+        }
         
         if (!Array.isArray(existingBookmarks)) {
             existingBookmarks = [];
@@ -744,12 +808,9 @@ app.post('/api/bookmark/sync-all', async (req, res) => {
                 const existingIndex = categoryItems.findIndex(item => item.url === bookmark.url);
                 
                 if (existingIndex >= 0) {
-                    // 更新现有书签
-                    categoryItems[existingIndex] = {
-                        ...categoryItems[existingIndex],
-                        ...bookmark
-                    };
-                    totalUpdated++;
+                    // 如果已存在相同URL的书签，跳过同步（不更新）
+                    console.log('[书签同步-批量] 跳过同步：分类', categoryName, '中已存在相同URL的书签:', bookmark.url);
+                    continue;
                 } else {
                     // 添加新书签
                     categoryItems.push(bookmark);
@@ -758,14 +819,20 @@ app.post('/api/bookmark/sync-all', async (req, res) => {
             }
         }
         
-        // 保存书签
-        await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
-            ['bookmarks', JSON.stringify(existingBookmarks)]);
+        // 保存书签到user_data表
+        await db.run("INSERT OR REPLACE INTO user_data (user_id, key, value) VALUES (?, ?, ?)", 
+            [targetUserId, 'bookmarks', JSON.stringify(existingBookmarks)]);
+        
+        // 向后兼容：如果userId为0，同时保存到app_data表
+        if (targetUserId === 0) {
+            await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+                ['bookmarks', JSON.stringify(existingBookmarks)]);
+        }
         
         const totalCategories = Object.keys(bookmarksByCategory).length;
         const totalBookmarks = Object.values(bookmarksByCategory).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
         
-        console.log(`[书签同步-批量] 同步完成: ${totalCategories} 个分类, ${totalBookmarks} 个书签 (新增: ${totalAdded}, 更新: ${totalUpdated}, 新分类: ${categoriesCreated})`);
+        console.log(`[书签同步-批量] 用户 ${targetUserId} 同步完成: ${totalCategories} 个分类, ${totalBookmarks} 个书签 (新增: ${totalAdded}, 更新: ${totalUpdated}, 新分类: ${categoriesCreated})`);
         
         res.json({ 
             success: true,
@@ -781,6 +848,239 @@ app.post('/api/bookmark/sync-all', async (req, res) => {
         
     } catch (err) {
         console.error('批量书签同步错误:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 8. 同步文件夹操作API（用于浏览器扩展删除/创建文件夹）
+app.post('/api/bookmark/sync-folder', async (req, res) => {
+    try {
+        const { action, folderName, userId } = req.body;
+        
+        if (!folderName) {
+            return res.status(400).json({ error: '文件夹名称不能为空' });
+        }
+        
+        // 确定用户ID（优先使用请求中的userId，否则从cookie获取，最后默认为0）
+        let targetUserId = userId;
+        if (!targetUserId) {
+            const cookieUserId = req.cookies['user_id'];
+            if (cookieUserId) {
+                targetUserId = parseInt(cookieUserId);
+            } else {
+                targetUserId = 0; // 默认用户（向后兼容）
+            }
+        }
+        
+        if (action === 'created') {
+            // 创建文件夹时，在网站创建分类（可能包含书签）
+            const { bookmarks: folderBookmarks = [] } = req.body;
+            
+            // 获取当前用户的书签数据（优先从user_data表）
+            let bookmarks = [];
+            try {
+                const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'bookmarks'", [targetUserId]);
+                if (userRow) {
+                    bookmarks = JSON.parse(userRow.value);
+                }
+            } catch (err) {
+                // user_data表可能不存在，继续使用旧方式
+            }
+            
+            // 向后兼容：如果user_data表没有数据且userId为0，从app_data表获取
+            if (bookmarks.length === 0 && targetUserId === 0) {
+                const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+                bookmarks = row ? JSON.parse(row.value) : [];
+            }
+            
+            // 检查分类是否已存在
+            let categoryIndex = bookmarks.findIndex(cat => cat.category === folderName);
+            
+            if (categoryIndex === -1) {
+                // 创建新分类（包含文件夹内的书签）
+                bookmarks.push({
+                    category: folderName,
+                    items: Array.isArray(folderBookmarks) ? folderBookmarks : []
+                });
+                categoryIndex = bookmarks.length - 1;
+            } else {
+                // 如果分类已存在，合并书签（避免重复）
+                const existingItems = bookmarks[categoryIndex].items;
+                const existingUrls = new Set(existingItems.map(item => item.url));
+                
+                if (Array.isArray(folderBookmarks)) {
+                    for (const bookmark of folderBookmarks) {
+                        if (bookmark && bookmark.url && !existingUrls.has(bookmark.url)) {
+                            existingItems.push(bookmark);
+                        }
+                    }
+                }
+            }
+            
+            // 保存书签到user_data表
+            await db.run("INSERT OR REPLACE INTO user_data (user_id, key, value) VALUES (?, ?, ?)", 
+                [targetUserId, 'bookmarks', JSON.stringify(bookmarks)]);
+            
+            // 向后兼容：如果userId为0，同时保存到app_data表
+            if (targetUserId === 0) {
+                await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+                    ['bookmarks', JSON.stringify(bookmarks)]);
+            }
+            
+            console.log('[书签同步] 用户', targetUserId, '创建分类:', folderName, '包含', bookmarks[categoryIndex].items.length, '个书签');
+            res.json({ success: true, message: '分类已创建' });
+        } else if (action === 'removed') {
+            // 获取当前用户的书签数据（优先从user_data表）
+            let bookmarks = [];
+            try {
+                const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'bookmarks'", [targetUserId]);
+                if (userRow) {
+                    bookmarks = JSON.parse(userRow.value);
+                }
+            } catch (err) {
+                // user_data表可能不存在，继续使用旧方式
+            }
+            
+            // 向后兼容：如果user_data表没有数据且userId为0，从app_data表获取
+            if (bookmarks.length === 0 && targetUserId === 0) {
+                const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+                bookmarks = row ? JSON.parse(row.value) : [];
+            }
+            
+            if (!Array.isArray(bookmarks)) {
+                bookmarks = [];
+            }
+            
+            // 查找并删除分类
+            const categoryIndex = bookmarks.findIndex(cat => cat.category === folderName);
+            
+            if (categoryIndex >= 0) {
+                bookmarks.splice(categoryIndex, 1);
+                
+                // 保存书签到user_data表
+                await db.run("INSERT OR REPLACE INTO user_data (user_id, key, value) VALUES (?, ?, ?)", 
+                    [targetUserId, 'bookmarks', JSON.stringify(bookmarks)]);
+                
+                // 向后兼容：如果userId为0，同时保存到app_data表
+                if (targetUserId === 0) {
+                    await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", 
+                        ['bookmarks', JSON.stringify(bookmarks)]);
+                }
+                
+                console.log('[书签同步] 用户', targetUserId, '删除分类:', folderName);
+                res.json({ success: true, message: '分类已删除' });
+            } else {
+                res.json({ success: false, message: '未找到要删除的分类' });
+            }
+        } else {
+            res.status(400).json({ error: 'Invalid action' });
+        }
+        
+    } catch (err) {
+        console.error('文件夹同步错误:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 9. 检查书签是否存在API（用于同步前校验）
+app.get('/api/bookmark/check-exists', async (req, res) => {
+    try {
+        const { userId: userIdParam, category, url } = req.query;
+        
+        if (!category || !url) {
+            return res.status(400).json({ error: '分类和URL参数不能为空' });
+        }
+        
+        // 确定用户ID（优先使用请求中的userId，否则从cookie获取，最后默认为0）
+        let targetUserId = userIdParam ? parseInt(userIdParam) : null;
+        if (!targetUserId) {
+            const cookieUserId = req.cookies['user_id'];
+            if (cookieUserId) {
+                targetUserId = parseInt(cookieUserId);
+            } else {
+                targetUserId = 0; // 默认用户（向后兼容）
+            }
+        }
+        
+        // 获取当前用户的书签数据（优先从user_data表）
+        let bookmarks = [];
+        try {
+            const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'bookmarks'", [targetUserId]);
+            if (userRow) {
+                bookmarks = JSON.parse(userRow.value);
+            }
+        } catch (err) {
+            // user_data表可能不存在，继续使用旧方式
+        }
+        
+        // 向后兼容：如果user_data表没有数据且userId为0，从app_data表获取
+        if (bookmarks.length === 0 && targetUserId === 0) {
+            const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+            bookmarks = row ? JSON.parse(row.value) : [];
+        }
+        
+        if (!Array.isArray(bookmarks)) {
+            bookmarks = [];
+        }
+        
+        // 查找指定分类
+        const categoryObj = bookmarks.find(cat => cat.category === category);
+        
+        if (!categoryObj || !categoryObj.items) {
+            return res.json({ exists: false });
+        }
+        
+        // 检查分类中是否存在相同URL的书签
+        const exists = categoryObj.items.some(item => item.url === url);
+        
+        res.json({ exists: exists });
+        
+    } catch (err) {
+        console.error('检查书签是否存在错误:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 10. 获取所有书签API（用于浏览器扩展同步，不需要认证）
+app.get('/api/bookmark/get-all', async (req, res) => {
+    try {
+        // 从查询参数或cookie获取userId
+        let targetUserId = req.query.userId ? parseInt(req.query.userId) : null;
+        if (!targetUserId) {
+            const cookieUserId = req.cookies['user_id'];
+            if (cookieUserId) {
+                targetUserId = parseInt(cookieUserId);
+            } else {
+                targetUserId = 0; // 默认用户（向后兼容）
+            }
+        }
+        
+        // 优先从user_data表获取书签
+        let bookmarks = [];
+        try {
+            const userRow = await db.get("SELECT value FROM user_data WHERE user_id = ? AND key = 'bookmarks'", [targetUserId]);
+            if (userRow) {
+                bookmarks = JSON.parse(userRow.value);
+            }
+        } catch (err) {
+            // user_data表可能不存在，继续使用旧方式
+        }
+        
+        // 向后兼容：如果user_data表没有数据且userId为0，从app_data表获取
+        if (bookmarks.length === 0 && targetUserId === 0) {
+            const row = await db.get("SELECT value FROM app_data WHERE key = 'bookmarks'");
+            bookmarks = row ? JSON.parse(row.value) : [];
+        }
+        
+        if (!Array.isArray(bookmarks)) {
+            bookmarks = [];
+        }
+        
+        console.log('[书签同步-API] 用户', targetUserId, '返回', bookmarks.length, '个分类的书签数据');
+        res.json(bookmarks);
+        
+    } catch (err) {
+        console.error('获取书签数据错误:', err);
         res.status(500).json({ error: err.message });
     }
 });

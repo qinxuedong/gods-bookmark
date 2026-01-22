@@ -127,11 +127,29 @@ async function syncAllBookmarks() {
     console.log('[弹出窗口] 收到响应:', response);
     
     if (response && response.success) {
-      const stats = response.result?.stats;
+      const browserToServer = response.result?.browserToServer;
+      const serverToBrowser = response.result?.serverToBrowser;
+      
       let message = '✓ 同步成功';
-      if (stats) {
-        message += ` (${stats.totalBookmarks}个书签, ${stats.categories}个分类)`;
+      let details = [];
+      
+      if (browserToServer?.stats) {
+        details.push(`上传: ${browserToServer.stats.totalBookmarks}个书签`);
       }
+      if (serverToBrowser) {
+        const parts = [];
+        if (serverToBrowser.added > 0) parts.push(`新增${serverToBrowser.added}个`);
+        if (serverToBrowser.updated > 0) parts.push(`更新${serverToBrowser.updated}个`);
+        if (serverToBrowser.foldersCreated > 0) parts.push(`创建${serverToBrowser.foldersCreated}个文件夹`);
+        if (parts.length > 0) {
+          details.push(`下载: ${parts.join(', ')}`);
+        }
+      }
+      
+      if (details.length > 0) {
+        message += ` (${details.join('; ')})`;
+      }
+      
       btn.textContent = message;
       btn.style.background = '#10b981';
     } else {
