@@ -365,6 +365,12 @@ async function initGlobalUI() {
         // 获取HTML中的登录链接（如果存在）
         const loginLinkItem = document.getElementById('login-link-item');
         
+        // 立即隐藏登录按钮，避免页面加载时闪现
+        // 登录功能已集成到控制中心菜单中
+        if (loginLinkItem) {
+            loginLinkItem.style.display = 'none';
+        }
+        
         // 清除之前动态添加的退出登录链接（保留HTML中的登录链接）
         const allNavLinks = navUl.querySelectorAll('li a');
         allNavLinks.forEach(link => {
@@ -403,10 +409,8 @@ async function initGlobalUI() {
         // 控制中心始终可见（无论登录状态）
         showControlCenter();
         
-        // 隐藏HTML中的登录链接（控制中心中会显示登录选项）
-        if (loginLinkItem) {
-            loginLinkItem.style.display = 'none';
-        }
+        // 登录按钮已在上面立即隐藏，这里不需要再次隐藏
+        // 登录功能已集成到控制中心菜单中
 
         // 根据登录状态更新控制中心菜单内容
         updateControlCenterMenu(isLoggedIn);
@@ -562,16 +566,19 @@ function showLoginMessage() {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 2.5rem;
-            font-weight: 700;
+            font-size: 2rem;
+            font-weight: 500;
             color: var(--accent-color);
             text-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
             z-index: 1000;
             text-align: center;
             pointer-events: none;
             animation: fadeInUp 0.8s ease-out;
+            line-height: 1.8;
+            max-width: 90%;
         `;
-        loginMessage.textContent = '做难事必有所得！';
+        // 显示文字内容
+        loginMessage.textContent = '天行健 君子以自强不息';
         document.body.appendChild(loginMessage);
     } else {
         loginMessage.style.display = 'block';
