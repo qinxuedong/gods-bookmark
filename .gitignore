@@ -49,6 +49,10 @@ build/
 *.min.js
 *.min.css
 
+# Extension release package
+extension.zip
+
+
 # Temporary files
 *.tmp
 *.temp
