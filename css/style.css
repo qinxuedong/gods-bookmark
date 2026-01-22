@@ -348,7 +348,7 @@ body.sidebar-open .add-bookmark-btn {
     -webkit-backdrop-filter: blur(10px);
 }
 
-/* 时间天气区域 - 完全透明，不遮挡内容 */
+/* 时间日期区域 - 完全透明，不遮挡内容 */
 #datetime-section {
     background: transparent !important;
     backdrop-filter: none !important;
@@ -368,7 +368,7 @@ body.sidebar-open .add-bookmark-btn {
     align-items: center !important; /* 垂直居中 */
 }
 
-/* 时间天气区域 - 当有滚动内容经过时添加毛玻璃背景（深色模式） */
+/* 时间日期区域 - 当有滚动内容经过时添加毛玻璃背景（深色模式） */
 #datetime-section.has-content-behind {
     background: rgba(30, 41, 59, 0.7) !important; /* 统一的半透明背景 */
     backdrop-filter: blur(10px) !important; /* 统一的毛玻璃模糊效果 */
@@ -2002,8 +2002,8 @@ body.sidebar-open header .container {
                 0 8px 24px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* 布局设置打开时，保持时间天气内容显示 */
-/* 移除了隐藏时间天气的规则，让时间天气在设置打开时仍然可见 */
+/* 布局设置打开时，保持时间日期内容显示 */
+/* 移除了隐藏时间日期的规则，让时间日期在设置打开时仍然可见 */
 
 /* 侧边栏打开时，确保main不偏移，保持居中 */
 body.sidebar-open main {

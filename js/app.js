@@ -962,11 +962,11 @@ async function initDashboard() {
         await initTodos();
     }
     
-    // 初始化滚动检测，为时间天气区域添加毛玻璃背景
+    // 初始化滚动检测，为时间日期区域添加毛玻璃背景
     initDatetimeScrollEffect();
 }
 
-// 检测滚动内容是否经过时间天气区域，添加毛玻璃背景
+// 检测滚动内容是否经过时间日期区域，添加毛玻璃背景
 function initDatetimeScrollEffect() {
     const datetimeSection = document.getElementById('datetime-section');
     const mainContainer = document.querySelector('main.container');

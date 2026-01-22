@@ -451,6 +451,9 @@ async function renderCardControls() {
     // 绑定管理功能按钮事件
     bindManagementButtons();
     
+    // 绑定用户和备份管理事件（包括用户资料模态框按钮）
+    bindUserAndBackupEvents();
+    
     // 不再启用设置面板中的卡片拖拽排序，改用上下移动按钮
 
     // 布局编辑默认开启（仅启用可视上的联动逻辑，不再启用卡片拖拽）
@@ -2356,7 +2359,11 @@ async function restoreBookmarkLayout(config) {
 }
 
 // 初始化
-document.addEventListener('DOMContentLoaded', restoreLayout);
+document.addEventListener('DOMContentLoaded', () => {
+    restoreLayout();
+    // 确保用户资料模态框按钮在页面加载时被绑定
+    bindUserAndBackupEvents();
+});
 
 // ===== 布局编辑默认开启 (全局拖拽) =====
 function enableLayoutEditing() {
@@ -2696,9 +2703,12 @@ window.applyBookmarkScale = applyBookmarkScale;
 window.restoreBookmarkScale = restoreBookmarkScale;
 window.enableCardControlsDragSort = enableCardControlsDragSort;
 window.bindManagementButtons = bindManagementButtons;
+window.bindUserAndBackupEvents = bindUserAndBackupEvents;
 window.showUserManagementModal = showUserManagementModal;
 window.hideUserManagementModal = hideUserManagementModal;
 window.showBackupManagementModal = showBackupManagementModal;
+window.showUserProfileModal = showUserProfileModal;
+window.hideUserProfileModal = hideUserProfileModal;
 window.hideBackupManagementModal = hideBackupManagementModal;
 window.showUserProfileModal = showUserProfileModal;
 window.hideUserProfileModal = hideUserProfileModal;
@@ -3339,6 +3349,8 @@ function showUserProfileModal() {
         if (usernameInput) {
             usernameInput.value = window.userManager.currentUser.username || '';
         }
+        // 确保按钮已绑定（防止绑定时机问题）
+        bindUserAndBackupEvents();
         modal.style.display = 'flex';
     }
 }
@@ -3699,11 +3711,7 @@ function bindUserAndBackupEvents() {
         };
     }
     
-    // 用户资料模态框关闭按钮
-    const userProfileClose = document.getElementById('user-profile-close');
-    if (userProfileClose) {
-        userProfileClose.onclick = hideUserProfileModal;
-    }
+    // 用户资料模态框关闭按钮（已在后面统一处理，这里移除避免重复）
     
     // 添加用户按钮
     const addUserBtn = document.getElementById('add-user-btn');
@@ -4169,8 +4177,13 @@ function bindUserAndBackupEvents() {
     // 用户资料模态框保存和取消按钮（修改密码）
     const userProfileSave = document.getElementById('user-profile-save');
     const userProfileCancel = document.getElementById('user-profile-cancel');
+    const userProfileClose = document.getElementById('user-profile-close');
+    
     if (userProfileSave) {
-        userProfileSave.onclick = async () => {
+        // 移除旧的事件监听器（如果存在）
+        const newSaveBtn = userProfileSave.cloneNode(true);
+        userProfileSave.parentNode.replaceChild(newSaveBtn, userProfileSave);
+        newSaveBtn.onclick = async () => {
             const oldPassword = document.getElementById('user-profile-old-password').value;
             const newPassword = document.getElementById('user-profile-new-password').value;
             const confirmPassword = document.getElementById('user-profile-confirm-password').value;
@@ -4185,11 +4198,36 @@ function bindUserAndBackupEvents() {
                 return;
             }
             
+            if (!window.userManager || !window.userManager.currentUser) {
+                alert('用户信息不可用，请重新登录');
+                return;
+            }
+            
             try {
-                if (window.userManager && window.userManager.currentUser) {
-                    await window.userManager.changePassword(window.userManager.currentUser.id, oldPassword, newPassword);
+                // 验证当前密码（通过重新登录验证）
+                const verifyResult = await window.userManager.login(
+                    window.userManager.currentUser.username,
+                    oldPassword
+                );
+                
+                if (!verifyResult || !verifyResult.success) {
+                    alert('当前密码不正确');
+                    return;
+                }
+                
+                // 修改密码
+                const result = await window.userManager.changePassword(
+                    window.userManager.currentUser.id,
+                    oldPassword,
+                    newPassword
+                );
+                
+                if (result && result.success) {
                     alert('密码修改成功');
                     hideUserProfileModal();
+                } else {
+                    const errorMsg = result && result.error ? result.error : '修改失败';
+                    alert('修改失败: ' + errorMsg);
                 }
             } catch (error) {
                 console.error('[修改密码] 失败:', error);
@@ -4198,7 +4236,20 @@ function bindUserAndBackupEvents() {
         };
     }
     if (userProfileCancel) {
-        userProfileCancel.onclick = hideUserProfileModal;
+        // 移除旧的事件监听器（如果存在）
+        const newCancelBtn = userProfileCancel.cloneNode(true);
+        userProfileCancel.parentNode.replaceChild(newCancelBtn, userProfileCancel);
+        newCancelBtn.onclick = () => {
+            hideUserProfileModal();
+        };
+    }
+    if (userProfileClose) {
+        // 移除旧的事件监听器（如果存在）
+        const newCloseBtn = userProfileClose.cloneNode(true);
+        userProfileClose.parentNode.replaceChild(newCloseBtn, userProfileClose);
+        newCloseBtn.onclick = () => {
+            hideUserProfileModal();
+        };
     }
 
     // 备份配置类型切换

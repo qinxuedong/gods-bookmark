@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  gods-bookmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gods-bookmark
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # 格式：宿主机端口:容器端口，可根据需要修改宿主机端口
+    volumes:
+      # 数据目录持久化（数据库文件）
+      - ./data:/app/data
+      # 备份目录持久化（备份文件）
+      - ./backups:/app/backups
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # 生产环境请修改以下配置
+      - ADMIN_PASSWORD=your_secure_password_here
+      - ADMIN_TOKEN=your_random_token_here
+    networks:
+      - gods-bookmark-network
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/check-auth', (r) => {process.exit(r.statusCode === 200 || r.statusCode === 401 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  gods-bookmark-network:
+    driver: bridge

@@ -8,6 +8,9 @@ data/database.sqlite-journal
 data/*.db
 data/*.db-journal
 
+# Backups
+backups/
+
 # Environment variables
 .env
 .env.local
