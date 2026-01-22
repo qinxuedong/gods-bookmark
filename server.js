@@ -1616,7 +1616,7 @@ app.delete('/api/backup/configs/:id', requireAuth, async (req, res) => {
 app.post('/api/backup/import', requireAuth, async (req, res) => {
     console.log('[BACKUP IMPORT] Request received');
     try {
-        const { backupData } = req.body;
+        const { backupData, importCategories } = req.body;
         
         if (!backupData || typeof backupData !== 'object') {
             console.log('[BACKUP IMPORT] Invalid backup data:', typeof backupData);
@@ -1624,15 +1624,46 @@ app.post('/api/backup/import', requireAuth, async (req, res) => {
         }
         
         console.log('[BACKUP IMPORT] Starting import for user:', req.userId || 0);
+        console.log('[BACKUP IMPORT] Import categories:', importCategories);
         
-        // 删除现有用户数据
-        await db.run("DELETE FROM user_data WHERE user_id = ?", [req.userId || 0]);
+        // 确定要导入的键
+        let keysToImport = Object.keys(backupData);
+        
+        // 如果指定了导入分类，只导入对应的键
+        if (importCategories && Array.isArray(importCategories) && importCategories.length > 0) {
+            const categoryKeyMap = {
+                'bookmarks': ['bookmarks'],
+                'todos': ['todos'],
+                'dashboard_config': Object.keys(backupData).filter(key => key !== 'bookmarks' && key !== 'todos')
+            };
+            
+            keysToImport = [];
+            importCategories.forEach(category => {
+                if (categoryKeyMap[category]) {
+                    keysToImport.push(...categoryKeyMap[category]);
+                }
+            });
+            
+            // 只保留备份文件中存在的键
+            keysToImport = keysToImport.filter(key => backupData.hasOwnProperty(key));
+            
+            console.log('[BACKUP IMPORT] Filtered keys to import:', keysToImport);
+        }
+        
+        if (keysToImport.length === 0) {
+            return res.status(400).json({ error: 'No data to import' });
+        }
+        
+        // 删除要导入的现有数据（只删除要导入的键）
+        for (const key of keysToImport) {
+            await db.run("DELETE FROM user_data WHERE user_id = ? AND key = ?", [req.userId || 0, key]);
+        }
         
         // 恢复备份数据
-        const entries = Object.entries(backupData);
-        console.log('[BACKUP IMPORT] Restoring', entries.length, 'data entries');
+        console.log('[BACKUP IMPORT] Restoring', keysToImport.length, 'data entries');
         
-        for (const [key, value] of entries) {
+        for (const key of keysToImport) {
+            const value = backupData[key];
             await db.run(
                 "INSERT INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
                 [req.userId || 0, key, typeof value === 'string' ? value : JSON.stringify(value)]
@@ -1640,7 +1671,12 @@ app.post('/api/backup/import', requireAuth, async (req, res) => {
         }
         
         console.log('[BACKUP IMPORT] Imported backup successfully for user:', req.userId || 0);
-        res.json({ success: true, message: 'Backup imported successfully' });
+        res.json({ 
+            success: true, 
+            message: 'Backup imported successfully',
+            importedKeys: keysToImport,
+            importedCount: keysToImport.length
+        });
     } catch (err) {
         console.error('[BACKUP IMPORT] Error:', err);
         res.status(500).json({ error: err.message });
@@ -1754,41 +1790,7 @@ app.post('/api/backup/restore/:id', requireAuth, async (req, res) => {
         let backupData;
         const filePath = backupRecord.file_path;
         
-        if (filePath && (filePath.startsWith('http://') || filePath.startsWith('https://'))) {
-            // 阿里云OSS备份，从URL下载（简化处理，实际应该使用OSS SDK）
-            try {
-                const https = require('https');
-                const http = require('http');
-                const url = require('url');
-                
-                const parsedUrl = new URL(filePath);
-                const protocol = parsedUrl.protocol === 'https:' ? https : http;
-                
-                const fileContent = await new Promise((resolve, reject) => {
-                    protocol.get(filePath, (response) => {
-                        let data = '';
-                        response.on('data', (chunk) => { data += chunk; });
-                        response.on('end', () => { resolve(data); });
-                        response.on('error', reject);
-                    }).on('error', reject);
-                });
-                
-                backupData = JSON.parse(fileContent);
-            } catch (err) {
-                return res.status(500).json({ error: `Failed to download backup from cloud: ${err.message}` });
-            }
-        } else if (filePath && filePath.startsWith('baidu://')) {
-            // 百度云备份，从本地backups目录读取
-            const fileName = path.basename(filePath.replace('baidu://', ''));
-            const localPath = path.join(__dirname, 'backups', 'baidu', `baidu_${backupRecord.backup_type}_${fileName}`);
-            
-            if (!fs.existsSync(localPath)) {
-                return res.status(404).json({ error: 'Backup file not found' });
-            }
-            
-            const fileContent = fs.readFileSync(localPath, 'utf-8');
-            backupData = JSON.parse(fileContent);
-        } else if (filePath && fs.existsSync(filePath)) {
+        if (filePath && fs.existsSync(filePath)) {
             // 本地备份文件
             const fileContent = fs.readFileSync(filePath, 'utf-8');
             backupData = JSON.parse(fileContent);
@@ -1835,42 +1837,201 @@ app.post('/api/backup/restore/:id', requireAuth, async (req, res) => {
     }
 });
 
+// 功能项映射
+const BACKUP_CATEGORIES = {
+    'bookmarks': '书签',
+    'todos': '便签',
+    'dashboard_config': '全局设置'
+};
+
+// 将书签数据转换为HTML格式
+function bookmarksToHTML(bookmarksData) {
+    let htmlContent = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<!-- This is an automatically generated file.
+     It will be read and overwritten.
+     DO NOT EDIT! -->
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+`;
+
+    // bookmarksData可能是对象 {bookmarks: [...]} 或直接是数组
+    let bookmarks = null;
+    if (bookmarksData && typeof bookmarksData === 'object') {
+        if (Array.isArray(bookmarksData)) {
+            bookmarks = bookmarksData;
+        } else if (bookmarksData.bookmarks && Array.isArray(bookmarksData.bookmarks)) {
+            bookmarks = bookmarksData.bookmarks;
+        }
+    }
+
+    if (bookmarks && Array.isArray(bookmarks)) {
+        bookmarks.forEach(category => {
+            // 添加分类标题
+            const categoryName = category.category || category.name || '未命名分类';
+            htmlContent += `    <DT><H3 ADD_DATE="${Date.now()}" LAST_MODIFIED="${Date.now()}">${escapeHtml(categoryName)}</H3>\n`;
+            htmlContent += `    <DL><p>\n`;
+            
+            // 添加该分类下的所有书签
+            if (category.items && Array.isArray(category.items)) {
+                category.items.forEach(item => {
+                    const url = item.url || '#';
+                    const name = item.name || 'Untitled';
+                    const addDate = item.addDate || Date.now();
+                    
+                    htmlContent += `        <DT><A HREF="${escapeHtml(url)}" ADD_DATE="${addDate}">${escapeHtml(name)}</A></DT>\n`;
+                });
+            }
+            
+            htmlContent += `    </DL><p>\n`;
+        });
+    }
+
+    htmlContent += `</DL><p>`;
+    return htmlContent;
+}
+
+// HTML转义函数
+function escapeHtml(text) {
+    if (typeof text !== 'string') {
+        text = String(text);
+    }
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+
 // 执行备份的内部函数
 async function executeBackup(backupConfig, userId) {
     const config = JSON.parse(backupConfig.config);
     const backupType = backupConfig.backup_type;
     let status = 'success';
-    let filePath = null;
-    let fileSize = null;
+    let filePaths = [];
+    let totalFileSize = 0;
     let errorMessage = null;
     
     try {
+        // 获取用户名
+        let username = 'admin';
+        try {
+            const user = await db.get("SELECT username FROM users WHERE id = ?", [userId]);
+            if (user && user.username) {
+                username = user.username;
+            }
+        } catch (err) {
+            console.log('[BACKUP] 无法获取用户名，使用默认值:', err.message);
+        }
+        
         // 获取用户所有数据
         const userData = await getUserAllData(userId);
         
-        // 创建备份文件
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const backupFileName = `backup_${userId}_${timestamp}.json`;
+        // 创建时间戳
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[:.]/g, '-');
         
-        // 根据备份类型执行备份
-        switch (backupType) {
-            case 'local':
-                filePath = await backupToLocal(userData, config.path || './backups', backupFileName);
-                break;
-            case 'aliyun':
-                filePath = await backupToAliyun(userData, config, backupFileName);
-                break;
-            case 'baidu':
-                filePath = await backupToBaidu(userData, config, backupFileName);
-                break;
-            default:
-                throw new Error(`Unknown backup type: ${backupType}`);
+        // 创建备份文件夹名称：backup_{用户名}_{时间戳}
+        const backupFolderName = `backup_${username}_${timestamp}`;
+        
+        // 按功能项分类数据
+        const categorizedData = {
+            'bookmarks': {},
+            'todos': {},
+            'dashboard_config': {}
+        };
+        
+        // 分类数据
+        Object.keys(userData).forEach(key => {
+            if (key === 'bookmarks') {
+                categorizedData.bookmarks[key] = userData[key];
+            } else if (key === 'todos') {
+                categorizedData.todos[key] = userData[key];
+            } else {
+                // 其他键归入全局设置（包括 dashboard_config, click_stats 等）
+                categorizedData.dashboard_config[key] = userData[key];
+            }
+        });
+        
+        // 为每个功能项创建备份文件
+        for (const [categoryKey, categoryName] of Object.entries(BACKUP_CATEGORIES)) {
+            const categoryData = categorizedData[categoryKey];
+            
+            // 如果该分类没有数据，跳过
+            if (Object.keys(categoryData).length === 0) {
+                console.log(`[BACKUP] 跳过空分类: ${categoryName}`);
+                continue;
+            }
+            
+            // 所有功能项都备份为JSON文件
+            const jsonContent = JSON.stringify(categoryData, null, 2);
+            let jsonFileName = null;
+            
+            if (categoryKey === 'bookmarks') {
+                jsonFileName = 'bookmarks.json';
+            } else if (categoryKey === 'todos') {
+                jsonFileName = 'todos.json';
+            } else {
+                jsonFileName = 'settings.json';
+            }
+            
+            // 备份JSON文件
+            let jsonFilePath = null;
+            if (backupType === 'local') {
+                jsonFilePath = await backupToLocalWithFolder(
+                    jsonContent, 
+                    config.path || './backups', 
+                    backupFolderName,
+                    jsonFileName
+                );
+            } else {
+                throw new Error(`不支持的备份类型: ${backupType}。仅支持本地备份。`);
+            }
+            
+            if (jsonFilePath) {
+                if (fs.existsSync(jsonFilePath)) {
+                    const stats = fs.statSync(jsonFilePath);
+                    totalFileSize += stats.size;
+                }
+                filePaths.push(jsonFilePath);
+                console.log(`[BACKUP] ${categoryName} JSON备份完成: ${jsonFileName}`);
+            }
+            
+            // 书签额外备份HTML文件
+            if (categoryKey === 'bookmarks') {
+                const bookmarksData = categoryData.bookmarks;
+                const htmlContent = bookmarksToHTML(bookmarksData);
+                const htmlFileName = 'bookmarks.html';
+                
+                let htmlFilePath = null;
+                if (backupType === 'local') {
+                    htmlFilePath = await backupToLocalWithFolder(
+                        htmlContent, 
+                        config.path || './backups', 
+                        backupFolderName,
+                        htmlFileName
+                    );
+                }
+                
+                if (htmlFilePath) {
+                    if (fs.existsSync(htmlFilePath)) {
+                        const stats = fs.statSync(htmlFilePath);
+                        totalFileSize += stats.size;
+                    }
+                    filePaths.push(htmlFilePath);
+                    console.log(`[BACKUP] ${categoryName} HTML备份完成: ${htmlFileName}`);
+                }
+            }
         }
         
-        // 获取文件大小
-        if (filePath && fs.existsSync(filePath)) {
-            const stats = fs.statSync(filePath);
-            fileSize = stats.size;
+        // 如果没有创建任何备份文件，记录警告
+        if (filePaths.length === 0) {
+            console.warn('[BACKUP] 没有数据需要备份');
         }
         
         // 更新最后备份时间
@@ -1885,11 +2046,27 @@ async function executeBackup(backupConfig, userId) {
         console.error('[BACKUP] Error:', err);
     }
     
-    // 记录备份历史
-    await db.run(
-        "INSERT INTO backup_history (user_id, backup_config_id, backup_type, status, file_path, file_size, error_message) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [userId, backupConfig.id, backupType, status, filePath, fileSize, errorMessage]
-    );
+    // 记录备份历史（每个功能项单独记录）
+    for (const filePath of filePaths) {
+        let fileSize = 0;
+        if (fs.existsSync(filePath)) {
+            const stats = fs.statSync(filePath);
+            fileSize = stats.size;
+        }
+        
+        await db.run(
+            "INSERT INTO backup_history (user_id, backup_config_id, backup_type, status, file_path, file_size, error_message) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [userId, backupConfig.id, backupType, status, filePath, fileSize, errorMessage]
+        );
+    }
+    
+    // 如果没有创建任何文件，至少记录一条历史
+    if (filePaths.length === 0) {
+        await db.run(
+            "INSERT INTO backup_history (user_id, backup_config_id, backup_type, status, file_path, file_size, error_message) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [userId, backupConfig.id, backupType, status, null, 0, errorMessage || 'No data to backup']
+        );
+    }
 }
 
 // 获取用户所有数据
@@ -1920,7 +2097,7 @@ async function getUserAllData(userId) {
     }
 }
 
-// 备份到本地/NAS
+// 备份到本地/NAS（旧版本，保持兼容）
 async function backupToLocal(data, backupPath, fileName) {
     // 确保备份目录存在
     if (!fs.existsSync(backupPath)) {
@@ -1933,97 +2110,26 @@ async function backupToLocal(data, backupPath, fileName) {
     return filePath;
 }
 
-// 备份到阿里云OSS
-async function backupToAliyun(data, config, fileName) {
-    try {
-        const OSS = require('ali-oss');
-        
-        const client = new OSS({
-            region: config.region,
-            accessKeyId: config.accessKeyId,
-            accessKeySecret: config.accessKeySecret,
-            bucket: config.bucket
-        });
-        
-        // 构建文件路径（包含前缀）
-        const objectName = config.prefix ? `${config.prefix.replace(/\/$/, '')}/${fileName}` : fileName;
-        
-        // 将数据转换为Buffer
-        const buffer = Buffer.from(JSON.stringify(data, null, 2), 'utf-8');
-        
-        // 上传文件
-        const result = await client.put(objectName, buffer);
-        
-        console.log('[ALIYUN OSS] Backup uploaded:', result.url);
-        
-        // 返回OSS URL作为文件路径标识
-        return result.url;
-    } catch (err) {
-        console.error('[ALIYUN OSS] Upload error:', err);
-        throw new Error(`阿里云OSS上传失败: ${err.message}`);
+// 备份到本地/NAS（新版本，支持文件夹结构）
+async function backupToLocalWithFolder(fileContent, backupPath, folderName, fileName) {
+    // 确保备份目录存在
+    if (!fs.existsSync(backupPath)) {
+        fs.mkdirSync(backupPath, { recursive: true });
     }
+    
+    // 创建备份文件夹
+    const folderPath = path.join(backupPath, folderName);
+    if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
+    }
+    
+    // 写入文件
+    const filePath = path.join(folderPath, fileName);
+    fs.writeFileSync(filePath, fileContent, 'utf-8');
+    
+    return filePath;
 }
 
-// 备份到百度云
-async function backupToBaidu(data, config, fileName) {
-    try {
-        // 百度云对象存储BOS需要使用bos-sdk
-        // 如果未安装，使用通用的HTTP API方式
-        const https = require('https');
-        const crypto = require('crypto');
-        const { URL } = require('url');
-        
-        const accessKeyId = config.accessKeyId;
-        const secretAccessKey = config.secretKey;
-        const bucket = config.bucket;
-        const region = config.region || 'bj'; // 默认北京区域
-        
-        // 构建文件路径
-        const objectName = config.prefix ? `${config.prefix.replace(/\/$/, '')}/${fileName}` : fileName;
-        
-        // 构建BOS API endpoint
-        const endpoint = `${bucket}.bcebos.com`;
-        
-        // 创建签名和时间戳
-        const timestamp = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '');
-        const expirationInSeconds = 3600;
-        const authString = `bce-auth-v1/${accessKeyId}/${timestamp}/${expirationInSeconds}`;
-        
-        // 简化版：使用AccessKey和SecretKey生成签名
-        // 实际生产环境应该使用百度云BOS SDK
-        const dataString = JSON.stringify(data, null, 2);
-        const buffer = Buffer.from(dataString, 'utf-8');
-        
-        // 这里使用简化的实现，实际应该使用百度云BOS SDK
-        // const BOS = require('baidubce-sdk');
-        // const bosClient = new BOS.BosClient({
-        //     credentials: {
-        //         ak: accessKeyId,
-        //         sk: secretAccessKey
-        //     },
-        //     endpoint: `https://${endpoint}`
-        // });
-        // const result = await bosClient.putObject(bucket, objectName, buffer);
-        
-        // 临时方案：保存到本地，并返回标识符
-        // 实际部署时应该使用百度云BOS SDK
-        const localBackupPath = path.join(__dirname, 'backups', 'baidu');
-        if (!fs.existsSync(localBackupPath)) {
-            fs.mkdirSync(localBackupPath, { recursive: true });
-        }
-        
-        const localFilePath = path.join(localBackupPath, `baidu_${bucket}_${fileName}`);
-        fs.writeFileSync(localFilePath, buffer);
-        
-        console.log('[BAIDU CLOUD] Backup saved locally (BOS SDK not implemented):', localFilePath);
-        
-        // 返回标识符
-        return `baidu://${bucket}/${objectName}`;
-    } catch (err) {
-        console.error('[BAIDU CLOUD] Upload error:', err);
-        throw new Error(`百度云上传失败: ${err.message}`);
-    }
-}
 
 // 初始化定时备份任务
 function initBackupScheduler() {

@@ -3472,6 +3472,78 @@ function renderBackupConfigs(configs) {
     bindUserAndBackupEvents();
 }
 
+// ===== 显示导入功能项选择器 =====
+function showImportCategorySelector(availableCategories, fileName) {
+    return new Promise((resolve) => {
+        // 创建模态框
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'custom-modal-overlay';
+        modalOverlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+        
+        const modal = document.createElement('div');
+        modal.className = 'custom-modal';
+        modal.style.cssText = 'max-width: 500px; background: var(--card-bg, #1e293b); border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1)); border-radius: 0.75rem; padding: 1.5rem;';
+        
+        modal.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0; color: var(--accent-color, #8b5cf6);">选择要导入的功能项</h3>
+                <button id="import-category-close" style="background: transparent; border: none; color: var(--text-secondary, #94a3b8); cursor: pointer; font-size: 1.5rem; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">&times;</button>
+            </div>
+            <div style="margin-bottom: 1rem; color: var(--text-secondary, #94a3b8); font-size: 0.9rem;">
+                文件：${fileName}
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                <div style="margin-bottom: 0.5rem; color: var(--text-primary, #f1f5f9); font-weight: 500;">请选择要导入的功能项：</div>
+                <div id="import-category-checkboxes" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    ${availableCategories.map(cat => `
+                        <label style="display: flex; align-items: center; padding: 0.75rem; background: rgba(255, 255, 255, 0.05); border-radius: 0.5rem; cursor: pointer; transition: background 0.2s;">
+                            <input type="checkbox" value="${cat.key}" checked style="margin-right: 0.75rem; width: 18px; height: 18px; cursor: pointer;">
+                            <span style="color: var(--text-primary, #f1f5f9); font-size: 1rem;">${cat.name}</span>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+                <button id="import-category-cancel" class="btn btn-secondary" style="padding: 0.5rem 1rem;">取消</button>
+                <button id="import-category-confirm" class="btn" style="background: var(--accent-color, #8b5cf6); color: white; border: none; padding: 0.5rem 1rem;">确认导入</button>
+            </div>
+        `;
+        
+        modalOverlay.appendChild(modal);
+        document.body.appendChild(modalOverlay);
+        
+        // 绑定事件
+        const closeBtn = modal.querySelector('#import-category-close');
+        const cancelBtn = modal.querySelector('#import-category-cancel');
+        const confirmBtn = modal.querySelector('#import-category-confirm');
+        const checkboxes = modal.querySelectorAll('#import-category-checkboxes input[type="checkbox"]');
+        
+        const closeModal = () => {
+            document.body.removeChild(modalOverlay);
+            resolve(null);
+        };
+        
+        closeBtn.onclick = closeModal;
+        cancelBtn.onclick = closeModal;
+        
+        confirmBtn.onclick = () => {
+            const selected = Array.from(checkboxes)
+                .filter(cb => cb.checked)
+                .map(cb => cb.value);
+            
+            document.body.removeChild(modalOverlay);
+            resolve(selected);
+        };
+        
+        // 点击背景关闭
+        modalOverlay.onclick = (e) => {
+            if (e.target === modalOverlay) {
+                closeModal();
+            }
+        };
+    });
+}
+
 // ===== 绑定用户和备份管理事件 =====
 function bindUserAndBackupEvents() {
     // 用户管理模态框关闭按钮
@@ -3499,7 +3571,7 @@ function bindUserAndBackupEvents() {
             if (!file) return;
             
             if (!file.name.endsWith('.json')) {
-                alert('请选择JSON格式的备份文件');
+                await window.showCustomAlert('请选择JSON格式的备份文件', '文件格式错误', 'error');
                 e.target.value = '';
                 return;
             }
@@ -3514,9 +3586,40 @@ function bindUserAndBackupEvents() {
                         throw new Error('无效的备份文件格式');
                     }
                     
+                    // 检测备份文件中包含的功能项
+                    const availableCategories = [];
+                    if (backupData.bookmarks !== undefined) {
+                        availableCategories.push({ key: 'bookmarks', name: '书签' });
+                    }
+                    if (backupData.todos !== undefined) {
+                        availableCategories.push({ key: 'todos', name: '便签' });
+                    }
+                    // 检查是否有其他键（归入全局设置）
+                    const otherKeys = Object.keys(backupData).filter(key => key !== 'bookmarks' && key !== 'todos');
+                    if (otherKeys.length > 0) {
+                        availableCategories.push({ key: 'dashboard_config', name: '全局设置' });
+                    }
+                    
+                    if (availableCategories.length === 0) {
+                        throw new Error('备份文件中没有可导入的数据');
+                    }
+                    
+                    // 显示功能项选择模态框
+                    const selectedCategories = await showImportCategorySelector(availableCategories, file.name);
+                    
+                    if (!selectedCategories || selectedCategories.length === 0) {
+                        e.target.value = '';
+                        return;
+                    }
+                    
                     // 确认导入
+                    const categoryNames = selectedCategories.map(cat => {
+                        const found = availableCategories.find(c => c.key === cat);
+                        return found ? found.name : cat;
+                    }).join('、');
+                    
                     const confirmed = await window.showCustomConfirm(
-                        '确定要导入此备份吗？导入将覆盖当前所有数据，此操作不可恢复！',
+                        `确定要导入以下功能项的备份吗？\n\n将导入：${categoryNames}\n\n导入将覆盖当前对应功能的数据，此操作不可恢复！`,
                         '导入备份'
                     );
                     
@@ -3532,7 +3635,10 @@ function bindUserAndBackupEvents() {
                             'Content-Type': 'application/json',
                         },
                         credentials: 'include',
-                        body: JSON.stringify({ backupData })
+                        body: JSON.stringify({ 
+                            backupData,
+                            importCategories: selectedCategories
+                        })
                     });
                     
                     // 检查响应状态
@@ -3552,7 +3658,20 @@ function bindUserAndBackupEvents() {
                     const result = await response.json();
                     
                     if (result.success) {
-                        alert('✓ 备份导入成功！页面将刷新以显示最新数据。');
+                        const importedKeys = result.importedKeys || [];
+                        const categoryNames = importedKeys.map(key => {
+                            if (key === 'bookmarks') return '书签';
+                            if (key === 'todos') return '便签';
+                            return '全局设置';
+                        }).join('、');
+                        
+                        // 显示成功提示弹窗
+                        await window.showCustomAlert(
+                            `已成功导入 ${result.importedCount} 个数据项\n\n导入的功能项：${categoryNames}\n\n页面将自动刷新以显示最新数据。`,
+                            '备份导入成功',
+                            'success'
+                        );
+                        
                         // 刷新页面
                         window.location.reload();
                     } else {
@@ -3560,14 +3679,19 @@ function bindUserAndBackupEvents() {
                     }
                 } catch (error) {
                     console.error('[导入备份] 失败:', error);
-                    alert('导入备份失败: ' + (error.message || '未知错误'));
+                    // 显示错误提示弹窗
+                    await window.showCustomAlert(
+                        error.message || '未知错误',
+                        '导入备份失败',
+                        'error'
+                    );
                 } finally {
                     e.target.value = '';
                 }
             };
             
-            reader.onerror = () => {
-                alert('文件读取失败，请重试。');
+            reader.onerror = async () => {
+                await window.showCustomAlert('文件读取失败，请重试。', '读取错误', 'error');
                 e.target.value = '';
             };
             
@@ -3953,7 +4077,11 @@ function bindUserAndBackupEvents() {
                         statusEl.textContent = '';
                     }, 5000);
                 } else {
-                    alert('备份启动失败: ' + (error.message || '未知错误'));
+                    await window.showCustomAlert(
+                        error.message || '未知错误',
+                        '备份启动失败',
+                        'error'
+                    );
                 }
             }
         };
@@ -4121,14 +4249,17 @@ function bindUserAndBackupEvents() {
             
             try {
                 if (!window.backupManager) {
-                    // 使用统一的提示（如果需要，可以创建类似的提示模态框）
-                    alert('备份管理器不可用');
+                    await window.showCustomAlert('备份管理器不可用', '错误', 'error');
                     return;
                 }
                 
                 const resp = await window.backupManager.deleteBackupConfig(configId);
                 if (!resp || !resp.success) {
-                    alert('删除备份配置失败: ' + (resp && resp.error ? resp.error : '未知错误'));
+                    await window.showCustomAlert(
+                        resp && resp.error ? resp.error : '未知错误',
+                        '删除备份配置失败',
+                        'error'
+                    );
                     return;
                 }
                 
@@ -4137,7 +4268,11 @@ function bindUserAndBackupEvents() {
                 await loadBackupConfigs();
             } catch (error) {
                 console.error('[删除备份配置] 失败:', error);
-                alert('删除备份配置失败: ' + (error.message || '未知错误'));
+                await window.showCustomAlert(
+                    error.message || '未知错误',
+                    '删除备份配置失败',
+                    'error'
+                );
             }
         };
     }
@@ -4157,7 +4292,7 @@ function bindUserAndBackupEvents() {
             const configData = getBackupConfigFormValues(backupType);
 
             if (backupType === 'local' && !configData.path) {
-                alert('请填写本地/NAS 路径');
+                await window.showCustomAlert('请填写本地/NAS 路径', '配置错误', 'error');
                 return;
             }
 
@@ -4179,14 +4314,22 @@ function bindUserAndBackupEvents() {
                     });
                 }
                 if (!resp || !resp.success) {
-                    alert('保存备份配置失败: ' + (resp && resp.error ? resp.error : '未知错误'));
+                    await window.showCustomAlert(
+                        resp && resp.error ? resp.error : '未知错误',
+                        '保存备份配置失败',
+                        'error'
+                    );
                     return;
                 }
                 modal.style.display = 'none';
                 loadBackupConfigs();
             } catch (error) {
                 console.error('[保存备份配置] 失败:', error);
-                alert('保存备份配置失败: ' + (error.message || '未知错误'));
+                await window.showCustomAlert(
+                    error.message || '未知错误',
+                    '保存备份配置失败',
+                    'error'
+                );
             }
         };
     }

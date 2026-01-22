@@ -3327,6 +3327,84 @@ window.saveCategoryFromModal = async function () {
     loadBookmarks();
 }
 
+// Global Custom Alert (成功提示，无需确认)
+window.showCustomAlert = function (message, title = '提示', type = 'success') {
+    return new Promise((resolve) => {
+        // 创建模态框元素
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'custom-modal-overlay';
+        modalOverlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+        
+        const modal = document.createElement('div');
+        modal.className = 'custom-modal';
+        modal.style.cssText = 'max-width: 450px; background: var(--card-bg, #1e293b); border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1)); border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);';
+        
+        // 根据类型设置图标和颜色
+        const iconColor = type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#8b5cf6';
+        const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+        
+        modal.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: ${iconColor}20; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;">
+                    <span style="font-size: 2rem; color: ${iconColor}; font-weight: bold;">${icon}</span>
+                </div>
+                <h3 style="margin: 0 0 0.75rem 0; color: var(--text-primary, #f1f5f9); font-size: 1.25rem;">${title}</h3>
+                <p style="margin: 0 0 1.5rem 0; color: var(--text-secondary, #94a3b8); font-size: 0.95rem; line-height: 1.6; white-space: pre-line;">${message}</p>
+                <button class="btn" id="custom-alert-ok" style="background: ${iconColor}; color: white; border: none; padding: 0.5rem 2rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.95rem;">确定</button>
+            </div>
+        `;
+        
+        modalOverlay.appendChild(modal);
+        document.body.appendChild(modalOverlay);
+        
+        // 关闭函数
+        const closeModal = () => {
+            if (modalOverlay.parentNode) {
+                document.body.removeChild(modalOverlay);
+            }
+            resolve();
+        };
+        
+        // 绑定关闭事件
+        const okBtn = modal.querySelector('#custom-alert-ok');
+        okBtn.onclick = (e) => {
+            e.stopPropagation(); // 阻止事件冒泡
+            closeModal();
+        };
+        
+        // 点击背景关闭
+        modalOverlay.onclick = (e) => {
+            if (e.target === modalOverlay) {
+                closeModal();
+            }
+        };
+        
+        // 点击弹窗内容区域也关闭（但不包括按钮，因为按钮有自己的点击事件）
+        modal.onclick = (e) => {
+            // 如果点击的不是按钮，则关闭
+            if (e.target !== okBtn && !okBtn.contains(e.target)) {
+                closeModal();
+            }
+        };
+        
+        // ESC键关闭
+        const keyHandler = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                document.removeEventListener('keydown', keyHandler);
+            }
+        };
+        document.addEventListener('keydown', keyHandler);
+        
+        // 自动关闭（3秒后）
+        setTimeout(() => {
+            if (modalOverlay.parentNode) {
+                closeModal();
+            }
+        }, 3000);
+    });
+};
+
 // Global Custom Confirm
 window.showCustomConfirm = function (message, title = '确认操作') {
     return new Promise((resolve) => {
