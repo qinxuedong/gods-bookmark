@@ -3,16 +3,21 @@ name: gods-bookmark
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 jobs:
-
   build:
-
+    name: build-and-publish
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: gods-bookmark
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Login ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build gods-bookmark image
+        run: docker build -t ghcr.io/${{ github.repository }}:latest .
+
+      - name: Push gods-bookmark image
+        run: docker push ghcr.io/${{ github.repository }}:latest
