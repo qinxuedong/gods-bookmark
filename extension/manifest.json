@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "God's Bookmark 书签同步",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "自动将浏览器书签同步到 God's Bookmark 书签模块",
   "permissions": [
     "bookmarks",
@@ -11,13 +11,13 @@
     "scripting"
   ],
   "host_permissions": [
-    "http://localhost:3000/*",
-    "http://127.0.0.1:3000/*"
+    "http://*/*",
+    "https://*/*"
   ],
   "externally_connectable": {
     "matches": [
-      "http://localhost:3000/*",
-      "http://127.0.0.1:3000/*"
+      "http://*/*",
+      "https://*/*"
     ]
   },
   "background": {
@@ -26,8 +26,8 @@
   "content_scripts": [
     {
       "matches": [
-        "http://localhost:3000/*",
-        "http://127.0.0.1:3000/*"
+        "http://*/*",
+        "https://*/*"
       ],
       "js": ["content.js"],
       "run_at": "document_end"

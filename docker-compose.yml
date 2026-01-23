@@ -21,12 +21,9 @@ services:
       - ./data:/app/data
       # 备份目录持久化（备份文件）
       - ./backups:/app/backups
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      # 生产环境请修改以下配置
-      - ADMIN_PASSWORD=your_secure_password_here
-      - ADMIN_TOKEN=your_random_token_here
+    env_file:
+      # 从 .env 文件加载环境变量
+      - .env
     networks:
       - gods-bookmark-network
     # 健康检查

@@ -5,7 +5,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const fs = require('fs');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const cron = require('node-cron');
 const db = require('./database');
 

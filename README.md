@@ -86,11 +86,11 @@ services:
     # 或使用 Docker Hub: qinxuedong/gods-bookmark:latest
 ```
 
-2. 修改环境变量：
-```yaml
-environment:
-  - ADMIN_PASSWORD=your_secure_password_here
-  - ADMIN_TOKEN=your_random_token_here
+2. 配置环境变量（复制 `.env.example` 为 `.env` 并修改）：
+```bash
+# 默认管理员账号为：admin
+ADMIN_PASSWORD=your_secure_password_here
+ADMIN_TOKEN=your_random_token_here
 ```
 
 3. 启动服务
@@ -100,11 +100,11 @@ docker-compose up -d
 
 #### 使用 Docker Compose（本地构建）
 
-1. 修改 `docker-compose.yml` 中的环境变量：
-```yaml
-environment:
-  - ADMIN_PASSWORD=your_secure_password_here
-  - ADMIN_TOKEN=your_random_token_here
+1. 配置环境变量（复制 `.env.example` 为 `.env` 并修改）：
+```bash
+# 默认管理员账号为：admin
+ADMIN_PASSWORD=your_secure_password_here
+ADMIN_TOKEN=your_random_token_here
 ```
 
 2. 启动服务（会自动构建镜像）
@@ -127,6 +127,7 @@ docker run -d \
   -e ADMIN_PASSWORD=your_password \
   -e ADMIN_TOKEN=your_token \
   ghcr.io/qinxuedong/gods-bookmark:latest
+# 注意：默认管理员账号为：admin
 ```
 
 详细部署说明请查看：
@@ -139,6 +140,7 @@ docker run -d \
 
 ```env
 PORT=3000
+# 默认管理员账号为：admin
 ADMIN_PASSWORD=your_secure_password
 ADMIN_TOKEN=your_random_token
 NODE_ENV=production

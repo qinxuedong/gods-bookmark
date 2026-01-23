@@ -36,6 +36,49 @@
   let contextInvalidatedCount = 0;
   const MAX_WARNINGS = 3; // 最多显示3次警告
   
+  // 检查当前页面是否是配置的服务器页面
+  async function isServerPage() {
+    try {
+      if (!isExtensionContextValid()) {
+        return false;
+      }
+      
+      // 获取配置的服务器URL
+      return new Promise((resolve) => {
+        chrome.storage.sync.get(['bookmarkSyncConfig'], (result) => {
+          if (chrome.runtime.lastError) {
+            // 如果无法获取配置，默认允许 localhost:3000
+            const currentUrl = window.location.href;
+            resolve(currentUrl.includes('localhost:3000') || currentUrl.includes('127.0.0.1:3000'));
+            return;
+          }
+          
+          const config = result.bookmarkSyncConfig || {};
+          const serverUrl = config.serverUrl || 'http://localhost:3000';
+          
+          try {
+            const serverUrlObj = new URL(serverUrl);
+            const currentUrlObj = new URL(window.location.href);
+            
+            // 检查是否是同一个主机（hostname + port）
+            const isMatch = serverUrlObj.hostname === currentUrlObj.hostname && 
+                           serverUrlObj.port === currentUrlObj.port;
+            
+            resolve(isMatch);
+          } catch (e) {
+            // URL解析失败，使用字符串匹配
+            const currentUrl = window.location.href;
+            resolve(currentUrl.includes(serverUrl) || 
+                   currentUrl.includes(serverUrlObj.hostname));
+          }
+        });
+      });
+    } catch (error) {
+      console.error('[书签同步-Content] 检查服务器页面失败:', error);
+      return false;
+    }
+  }
+  
   // 安全地发送消息到background script
   function sendMessageSafely(message, callback) {
     if (!isExtensionContextValid()) {
@@ -86,10 +129,16 @@
   }
   
   // 监听来自网站的消息
-  window.addEventListener('message', function(event) {
+  window.addEventListener('message', async function(event) {
     // 验证消息来源（可选，增加安全性）
     if (event.source !== window) {
       return;
+    }
+    
+    // 检查是否是服务器页面（只处理服务器页面的消息）
+    const isServer = await isServerPage();
+    if (!isServer) {
+      return; // 不是服务器页面，忽略消息
     }
     
     // 处理删除书签的消息
@@ -276,8 +325,15 @@
   });
   
   // 注入一个全局函数，让网站可以直接调用（可选，更方便的方式）
-  window.godsBookmarkExtension = {
-    deleteBookmark: function(url) {
+  // 只在服务器页面上注入
+  (async function() {
+    const isServer = await isServerPage();
+    if (!isServer) {
+      return; // 不是服务器页面，不注入全局函数
+    }
+    
+    window.godsBookmarkExtension = {
+      deleteBookmark: function(url) {
       console.log('[书签同步-Content] 通过API删除书签:', url);
       sendMessageSafely({
         action: 'deleteBookmark',
@@ -355,9 +411,13 @@
         }
       });
     }
-  };
+    };
+    
+    console.log('[书签同步-Content] Content script initialized on server page');
+  })();
   
-  console.log('[书签同步-Content] Content script initialized');
+  // 即使不是服务器页面，也记录初始化日志
+  console.log('[书签同步-Content] Content script loaded');
   
   // ===== 全局搜索快捷键支持 =====
   // 监听快捷键，在其他页面也可以调出搜索
@@ -369,6 +429,20 @@
     
     // 默认快捷键 Ctrl+Space
     if (e.ctrlKey && e.code === 'Space') {
+      // 检查当前页面是否是服务器页面
+      const isServer = await isServerPage();
+      
+      if (isServer) {
+        // 如果是服务器页面，发送消息给网页端打开搜索浮窗
+        e.preventDefault();
+        console.log('[书签同步-Content] 在服务器页面，发送消息打开搜索浮窗');
+        window.postMessage({
+          type: 'OPEN_SEARCH_MODAL'
+        }, '*');
+        return;
+      }
+      
+      // 如果不是服务器页面，打开新标签页到搜索页面
       e.preventDefault();
       
       // 检查扩展上下文是否有效

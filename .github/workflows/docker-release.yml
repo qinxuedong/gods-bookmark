@@ -1,21 +1,60 @@
-name: gods-bookmark-docker-release
+name: gods-bookmark-release
 
 on:
   release:
     types: [published]
 
-jobs:
-  build-and-publish:
-    runs-on: ubuntu-latest
+permissions:
+  contents: write
+  packages: write
 
-    permissions:
-      contents: read
-      packages: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      # ----------------------------
+      # 1. 计算并注入扩展版本号
+      # ----------------------------
+      - name: Inject version into extension manifest
+        run: |
+          RAW_VERSION="${GITHUB_REF_NAME#v}"
+          EXT_VERSION=$(echo "$RAW_VERSION" | sed 's/[^0-9.]/./g' | sed 's/\.\+/\./g')
+
+          echo "Release tag      => $RAW_VERSION"
+          echo "Extension version=> $EXT_VERSION"
+
+          jq --arg version "$EXT_VERSION" \
+            '.version = $version' \
+            extension/manifest.json > extension/manifest.json.tmp
+
+          mv extension/manifest.json.tmp extension/manifest.json
+
+      # ----------------------------
+      # 2. 打包扩展（zip 名含版本）
+      # ----------------------------
+      - name: Package browser extension
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd extension
+          zip -r "../gods-bookmark-extension-${VERSION}.zip" .
+          cd ..
+
+      # ----------------------------
+      # 3. 上传到 Release Assets
+      # ----------------------------
+      - name: Upload extension to Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            gods-bookmark-extension-*.zip
+
+      # ----------------------------
+      # 4. 构建并推送 Docker（你已有的）
+      # ----------------------------
       - name: Login ghcr.io
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 

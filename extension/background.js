@@ -82,7 +82,16 @@ async function getCurrentUserId(config) {
 async function refreshServerPage(config) {
   try {
     const serverUrl = config.serverUrl || 'http://localhost:3000';
-    const serverHostname = new URL(serverUrl).hostname;
+    let serverHostname, serverPort;
+    
+    try {
+      const serverUrlObj = new URL(serverUrl);
+      serverHostname = serverUrlObj.hostname;
+      serverPort = serverUrlObj.port || (serverUrlObj.protocol === 'https:' ? '443' : '80');
+    } catch (e) {
+      console.error('[书签同步] 无法解析服务器URL:', serverUrl);
+      return;
+    }
     
     // 查找所有打开的服务器标签页
     const tabs = await chrome.tabs.query({});
@@ -90,7 +99,10 @@ async function refreshServerPage(config) {
       if (!tab.url) return false;
       try {
         const tabUrl = new URL(tab.url);
+        const tabPort = tabUrl.port || (tabUrl.protocol === 'https:' ? '443' : '80');
+        // 检查主机名和端口是否匹配
         return tabUrl.hostname === serverHostname && 
+               tabPort === serverPort &&
                (tabUrl.pathname === '/' || tabUrl.pathname === '/index.html' || tabUrl.pathname.endsWith('/'));
       } catch (e) {
         return false;
