@@ -68,3 +68,5 @@ coverage/
 .dockerignore
 
 RELEASE_NOTES_*.md
+EXTENSION_CHECK_REPORT.md
+SECURITY_FIX_RELEASE.md
