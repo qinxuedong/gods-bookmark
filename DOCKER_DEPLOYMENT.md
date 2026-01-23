@@ -1,17 +1,18 @@
 # Docker 部署指南
-
+##⚠️ **请提前导出自己的书签做好备份！！！**⚠️ **请提前导出自己的书签做好备份！！！**⚠️ **请提前导出自己的书签做好备份！！！**
 ## 快速开始
 
-### 方式一：使用 Docker Compose（推荐）
+### 使用 Docker Compose（以飞牛OS为例）
 
 1. **创建数据目录并设置权限** ⚠️ **重要！**
 
    ```bash
-   # 创建数据目录
-   mkdir -p data backups
+   # 创建工程数据目录
    
-   # 设置目录权限（非常重要！）
-   chmod -R 755 data backups
+   mkdir -p /vol3/1000/Docker/gods-bookmark
+   mkdir -p /vol3/1000/Docker/gods-bookmark/data
+   mkdir -p /vol3/1000/Docker/gods-bookmark/backups
+   
    ```
    
    **⚠️ 权限问题说明：**
@@ -19,14 +20,21 @@
    - 确保 `data` 和 `backups` 目录有正确的读写权限
    - 如果容器内使用非 root 用户，可能需要调整权限：
      ```bash
-     # 如果容器内用户ID是1000，可以设置：
-     sudo chown -R 1000:1000 data backups
-     chmod -R 755 data backups
+     # 把 owner 改成 nodejs 对应的 UID/GID（默认1001）
+     chown -R 1001:1001 /vol3/1000/Docker/gods-bookmark
+     # 给基础权限
+     chmod -R 755 /vol3/1000/Docker/gods-bookmark
      ```
+    **⚠️ 如果飞牛用了 ACL（我的就是）**
+    ```bash
+     # 清理 ACL
+    setfacl -b /vol3/1000/Docker/gods-bookmark/data
+    setfacl -b /vol3/1000/Docker/gods-bookmark/backups
+    ```
 
 2. **配置环境变量**
 
-   复制环境变量模板并修改配置：
+   复制环境变量模板并修改配置（直接在本地改好放进“gods-bookmark”文件夹即可，下面是在线编辑方法）：
    ```bash
    # 复制模板文件
    cp .env.example .env
@@ -51,46 +59,24 @@
    - `PORT`: 服务端口（默认 3000，可根据需要修改）
    - `NODE_ENV`: 运行环境（默认 production）
 
-3. **启动服务**
+3.**上传docker-compose.yml**
+   将文件上传到 /vol3/1000/Docker/gods-bookmark
+
+4. **拉取镜像，启动服务**
 
    ```bash
-   docker-compose up -d
+   docker pull ghcr.io/qinxuedong/gods-bookmark:latest
+   docker compose up -d
+
    ```
 
-3. **查看日志**
+5. **查看日志**
 
    ```bash
    docker-compose logs -f
    ```
 
-4. **停止服务**
 
-   ```bash
-   docker-compose down
-   ```
-
-### 方式二：使用 Docker 命令
-
-1. **构建镜像**
-
-   ```bash
-   docker build -t gods-bookmark:latest .
-   ```
-
-2. **运行容器**
-
-   ```bash
-   docker run -d \
-     --name gods-bookmark \
-     --restart unless-stopped \
-     -p 3000:3000 \
-     -v $(pwd)/data:/app/data \
-     -v $(pwd)/backups:/app/backups \
-     -e NODE_ENV=production \
-     -e PORT=3000 \
-     -e ADMIN_PASSWORD=your_secure_password \
-     -e ADMIN_TOKEN=your_random_token \
-     gods-bookmark:latest
 # 注意：默认管理员账号为：admin
    ```
 
@@ -185,30 +171,6 @@ docker inspect --format='{{.State.Health.Status}}' gods-bookmark
    docker-compose up -d
    ```
 
-## 备份和恢复
-
-### 备份数据
-
-```bash
-# 备份数据库
-cp -r data/database.sqlite backups/database_backup_$(date +%Y%m%d).sqlite
-
-# 或使用 Docker 命令
-docker exec gods-bookmark tar czf /app/backups/backup_$(date +%Y%m%d).tar.gz /app/data
-```
-
-### 恢复数据
-
-```bash
-# 停止容器
-docker-compose down
-
-# 恢复数据库文件
-cp backups/database_backup_YYYYMMDD.sqlite data/database.sqlite
-
-# 启动容器
-docker-compose up -d
-```
 
 ## 故障排查
 
@@ -248,7 +210,7 @@ docker exec -it gods-bookmark sh
      chmod -R 755 data backups
      
      # 4. 如果需要，设置所有者（根据容器内用户ID）
-     sudo chown -R 1000:1000 data backups
+     sudo chown -R 1001:1001 data backups
      
      # 5. 重新启动容器
      docker-compose up -d
@@ -268,30 +230,3 @@ docker exec -it gods-bookmark sh
 4. **定期备份**：设置自动备份任务
 5. **更新镜像**：定期更新基础镜像和依赖
 
-## 反向代理配置（Nginx 示例）
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
-## 资源监控
-
-查看容器资源使用情况：
-```bash
-docker stats gods-bookmark
-```
