@@ -76,7 +76,29 @@ npm start
 
 ### 方式二：Docker 部署（推荐用于 NAS）
 
-#### 使用 Docker Compose
+#### 使用发布的 Docker 镜像（推荐）
+
+1. 修改 `docker-compose.yml`，使用发布的镜像：
+```yaml
+services:
+  gods-bookmark:
+    image: ghcr.io/qinxuedong/gods-bookmark:latest
+    # 或使用 Docker Hub: qinxuedong/gods-bookmark:latest
+```
+
+2. 修改环境变量：
+```yaml
+environment:
+  - ADMIN_PASSWORD=your_secure_password_here
+  - ADMIN_TOKEN=your_random_token_here
+```
+
+3. 启动服务
+```bash
+docker-compose up -d
+```
+
+#### 使用 Docker Compose（本地构建）
 
 1. 修改 `docker-compose.yml` 中的环境变量：
 ```yaml
@@ -85,12 +107,31 @@ environment:
   - ADMIN_TOKEN=your_random_token_here
 ```
 
-2. 启动服务
+2. 启动服务（会自动构建镜像）
 ```bash
 docker-compose up -d
 ```
 
-详细部署说明请查看 [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
+#### 使用 Docker 命令
+
+```bash
+# 拉取镜像
+docker pull ghcr.io/qinxuedong/gods-bookmark:latest
+
+# 运行容器
+docker run -d \
+  --name gods-bookmark \
+  -p 3000:3000 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/backups:/app/backups \
+  -e ADMIN_PASSWORD=your_password \
+  -e ADMIN_TOKEN=your_token \
+  ghcr.io/qinxuedong/gods-bookmark:latest
+```
+
+详细部署说明请查看：
+- [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Docker 部署详细指南
+- [DOCKER_PUBLISH_GUIDE.md](DOCKER_PUBLISH_GUIDE.md) - Docker 镜像发布指南
 
 ## 环境变量
 
