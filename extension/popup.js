@@ -79,7 +79,9 @@ async function testConnection() {
   btn.disabled = true;
   
   try {
-    const response = await fetch(`${serverUrl}/api/check-auth`);
+    const response = await fetch(`${serverUrl}/api/users/check-auth`, {
+      credentials: 'include'
+    });
     if (response.ok) {
       btn.textContent = '✓ 连接成功';
       btn.style.background = '#10b981';

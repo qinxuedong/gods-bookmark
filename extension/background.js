@@ -56,7 +56,7 @@ async function getCurrentUserId(config) {
     
     // 如果content script无法获取，尝试直接调用API（但可能无法获取cookie）
     try {
-      const apiResponse = await fetch(`${serverUrl}/api/check-auth`, {
+      const apiResponse = await fetch(`${serverUrl}/api/users/check-auth`, {
         method: 'GET',
         credentials: 'include' // 尝试包含cookie
       });
@@ -1023,7 +1023,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   
   // 测试服务器连接
   try {
-    const response = await fetch(`${config.serverUrl}/api/check-auth`);
+    const response = await fetch(`${config.serverUrl}/api/users/check-auth`, {
+      credentials: 'include'
+    });
     if (response.ok) {
       console.log('[书签同步] 服务器连接正常');
       

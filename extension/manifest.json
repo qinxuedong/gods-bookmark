@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "God's Bookmark 书签同步",
-  "version": "0.0.0",
-  "description": "自动将浏览器书签同步到 God's Bookmark 书签模块",
+  "version": "0.0.4",
+  "description": "自动将浏览器书签同步到 God's Bookmark 书签模块 (RC)",
   "permissions": [
     "bookmarks",
     "storage",
