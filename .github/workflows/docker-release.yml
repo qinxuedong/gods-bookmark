@@ -17,21 +17,31 @@ jobs:
         uses: actions/checkout@v4
 
       # ----------------------------
-      # 1. 计算并注入扩展版本号
-      # ----------------------------
-      - name: Inject version into extension manifest
-        run: |
-          RAW_VERSION="${GITHUB_REF_NAME#v}"
-          EXT_VERSION=$(echo "$RAW_VERSION" | sed 's/[^0-9.]/./g' | sed 's/\.\+/\./g')
+     # 1. 计算并注入扩展版本号
+# ----------------------------
+- name: Inject version into extension manifest
+  run: |
+    RAW_VERSION="${GITHUB_REF_NAME#v}"
 
-          echo "Release tag      => $RAW_VERSION"
-          echo "Extension version=> $EXT_VERSION"
+    # 提取纯数字版本号（去掉 RC / beta 等）
+    EXT_VERSION=$(echo "$RAW_VERSION" | sed -E 's/^([0-9]+(\.[0-9]+)*).*/\1/')
 
-          jq --arg version "$EXT_VERSION" \
-            '.version = $version' \
-            extension/manifest.json > extension/manifest.json.tmp
+    echo "Release tag       => $RAW_VERSION"
+    echo "Extension version => $EXT_VERSION"
 
-          mv extension/manifest.json.tmp extension/manifest.json
+    # 注入 version
+    jq --arg version "$EXT_VERSION" \
+      '.version = $version' \
+      extension/manifest.json > extension/manifest.json.tmp
+
+    mv extension/manifest.json.tmp extension/manifest.json
+
+    # 在 description 里追加 RC 标识（如果 tag 包含 RC）
+    if echo "$RAW_VERSION" | grep -qi "rc"; then
+      jq '.description = (.description + " (RC)")' \
+        extension/manifest.json > extension/manifest.json.tmp
+      mv extension/manifest.json.tmp extension/manifest.json
+    fi
 
       # ----------------------------
       # 2. 打包扩展（zip 名含版本）
