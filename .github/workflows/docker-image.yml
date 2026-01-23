@@ -9,6 +9,10 @@ jobs:
     name: build-and-publish
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
