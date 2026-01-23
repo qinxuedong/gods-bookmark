@@ -1,0 +1,15 @@
+# 数据库文件不应被 Git 跟踪或包含在 release 中
+data/*.sqlite -export-ignore
+data/*.sqlite-journal -export-ignore
+data/*.db -export-ignore
+data/*.db-journal -export-ignore
+
+# 备份文件也不应被包含
+backups/** -export-ignore
+
+# 环境变量文件
+.env* -export-ignore
+
+# 日志文件
+*.log -export-ignore
+logs/** -export-ignore

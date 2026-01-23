@@ -1,0 +1,53 @@
+name: Release Security Check
+
+on:
+  release:
+    types: [created, edited]
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Check for database files
+        run: |
+          echo "🔍 Checking for database files in release..."
+          
+          # 检查是否存在数据库文件
+          DB_FILES=$(find . -type f \( -name "*.sqlite" -o -name "*.db" -o -name "*.sqlite-journal" -o -name "*.db-journal" \) ! -path "*/node_modules/*" ! -path "*/.git/*")
+          
+          if [ -n "$DB_FILES" ]; then
+            echo "❌ ERROR: Database files found in release!"
+            echo "Found files:"
+            echo "$DB_FILES"
+            echo ""
+            echo "Please remove these files from the repository before creating a release."
+            exit 1
+          else
+            echo "✅ No database files found - Release is safe!"
+          fi
+      
+      - name: Check for sensitive files
+        run: |
+          echo "🔍 Checking for other sensitive files..."
+          
+          # 检查环境变量文件
+          ENV_FILES=$(find . -type f -name ".env*" ! -path "*/node_modules/*" ! -path "*/.git/*")
+          
+          if [ -n "$ENV_FILES" ]; then
+            echo "⚠️  WARNING: Environment files found:"
+            echo "$ENV_FILES"
+            echo "These should not be included in releases."
+          fi
+          
+          # 检查备份目录
+          if [ -d "backups" ] && [ "$(ls -A backups 2>/dev/null)" ]; then
+            echo "⚠️  WARNING: Backups directory contains files!"
+            echo "Backup files should not be included in releases."
+          fi
+          
+          echo "✅ Security check completed!"
