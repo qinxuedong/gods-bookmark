@@ -65,21 +65,35 @@ function initTables() {
             FOREIGN KEY (backup_config_id) REFERENCES backup_configs(id) ON DELETE CASCADE
         )`);
 
+        // Sessions Table - 会话表
+        db.run(`CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at DATETIME NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )`);
+
+        // Create indexes for sessions table
+        db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`);
+
         // Original app_data table for backward compatibility
         db.run(`CREATE TABLE IF NOT EXISTS app_data (
             key TEXT PRIMARY KEY,
             value TEXT
         )`);
 
-        // Create default admin user if not exists (使用同步方式，因为db.serialize已确保顺序执行)
-        db.get("SELECT id FROM users WHERE username = 'admin'", (err, row) => {
+        // Create default admin user if users table is empty (使用同步方式，因为db.serialize已确保顺序执行)
+        db.get("SELECT COUNT(*) as count FROM users", (err, row) => {
             if (err) {
-                console.error('Error checking admin user:', err);
+                console.error('Error checking users table:', err);
                 return;
             }
-            if (!row) {
+            if (row && row.count === 0) {
+                // users 表为空，创建默认 admin 用户
                 try {
-                    const bcrypt = require('bcrypt');
+                    const bcrypt = require('bcryptjs');
                     const defaultPassword = process.env.ADMIN_PASSWORD || 'admin';
                     const passwordHash = bcrypt.hashSync(defaultPassword, 10);
                     db.run("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)", 
@@ -94,7 +108,7 @@ function initTables() {
                     console.error('Error initializing admin user:', error);
                 }
             } else {
-                console.log('Admin user already exists');
+                console.log('Users table already has data, skipping admin user creation');
             }
         });
 

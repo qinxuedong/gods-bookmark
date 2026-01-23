@@ -773,7 +773,7 @@ function bindControlCenterMenuEvents() {
                         console.error('[bindControlCenterMenuEvents] dataManager.logout not found!', typeof dataManager, dataManager);
                         // 尝试直接调用 API 登出
                         try {
-                            await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+                            await fetch('/api/users/logout', { method: 'POST', credentials: 'include' });
                             window.location.reload();
                         } catch (fetchError) {
                             console.error('[bindControlCenterMenuEvents] Failed to logout via API:', fetchError);

@@ -42,7 +42,6 @@
    # 编辑 .env 文件，修改以下配置：
    # 默认管理员账号为：admin
    # ADMIN_PASSWORD=your_secure_password_here  # 修改为强密码
-   # ADMIN_TOKEN=your_random_token_here         # 修改为随机 token
    ```
    
    使用文本编辑器编辑 `.env` 文件：
@@ -55,7 +54,6 @@
    **环境变量说明：**
    - `ADMIN_PASSWORD`: 管理员登录密码（生产环境必须修改）
      - **默认管理员账号为：admin**
-   - `ADMIN_TOKEN`: 管理员认证 Token（生产环境必须修改为随机字符串）
    - `PORT`: 服务端口（默认 3000，可根据需要修改）
    - `NODE_ENV`: 运行环境（默认 production）
 
@@ -65,7 +63,7 @@
 4. **拉取镜像，启动服务**
 
    ```bash
-   docker pull ghcr.io/qinxuedong/gods-bookmark:latest
+   docker compose pull
    docker compose up -d
 
    ```
@@ -137,12 +135,11 @@ chmod -R 755 data backups
 | `PORT` | 服务端口 | `3000` | 否 |
 | `ADMIN_PASSWORD` | 管理员密码 | `admin` | 是（生产环境必须修改） |
 | | | **默认管理员账号为：admin** | |
-| `ADMIN_TOKEN` | 管理员 Token | `secret-admin-token-123` | 是（生产环境必须修改） |
 
 **配置步骤：**
 1. 复制模板：`cp .env.example .env`
 2. 编辑配置：`nano .env` 或 `vi .env`
-3. 修改 `ADMIN_PASSWORD` 和 `ADMIN_TOKEN` 为安全的值
+3. 修改 `ADMIN_PASSWORD` 为安全的值
 4. 保存文件，Docker Compose 会自动加载 `.env` 文件中的环境变量
 
 ## 健康检查
@@ -224,7 +221,7 @@ docker exec -it gods-bookmark sh
 
 ## 安全建议
 
-1. **修改默认密码**：生产环境必须修改 `ADMIN_PASSWORD` 和 `ADMIN_TOKEN`
+1. **修改默认密码**：生产环境必须修改 `ADMIN_PASSWORD`
 2. **使用 HTTPS**：通过反向代理（如 Nginx）配置 HTTPS
 3. **限制访问**：使用防火墙限制访问来源
 4. **定期备份**：设置自动备份任务

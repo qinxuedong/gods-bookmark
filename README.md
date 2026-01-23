@@ -1,6 +1,10 @@
 # God's Bookmark
 
-一个现代化的个人书签管理仪表板，支持浏览器扩展自动同步、多用户系统、待办事项管理和自动备份功能。
+<strong style="color: red; font-weight: bold;">请提前导出自己的书签，做好备份！！！</strong>  
+<strong style="color: red; font-weight: bold;">请提前导出自己的书签，做好备份！！！</strong>  
+<strong style="color: red; font-weight: bold;">请提前导出自己的书签，做好备份！！！</strong>
+
+一个现代化的个人书签管理仪表板，支持浏览器扩展自动同步/全局搜索/多用户系统/待办事项管理和自动备份功能。
 
 ## 适合人群 / 使用场景
 
@@ -8,26 +12,18 @@
 - 需要集中管理浏览器书签的个人用户
 - 希望自托管书签数据，保护隐私的用户
 - 需要在多设备间同步书签的用户
-- 需要管理待办事项和常用链接的用户
-- 希望部署在 NAS 或 Docker 环境中的用户
-
-**不适合：**
-- 需要云端同步服务（如 Chrome Sync）的用户
-- 需要复杂权限管理的企业用户
-- 需要移动端原生应用的用户
 
 ## 核心功能
 
 - **书签管理**：分类管理书签，支持导入/导出（HTML格式）
-- **浏览器扩展**：自动同步浏览器书签到网站（Chrome/Edge 扩展）
+- **浏览器扩展**：自动同步浏览器书签到网站（Chrome扩展）
+- **全局搜索**：快捷键快速调取搜索浮窗（支持搜索便签/书签/功能/网络）
 - **待办事项**：便签式待办管理，支持图片
-- **世界时间**：显示当前时间和农历
 - **点击统计**：追踪最常用的书签（Top10）
 - **多用户系统**：支持多用户，数据隔离，管理员可管理用户
 - **自动备份**：支持本地/NAS备份，定时备份（Cron表达式）
-- **全局搜索**：快速搜索书签和功能
 - **用户认证**：基于Cookie的认证系统
-- **现代UI**：黑洞背景动画，玻璃态设计，支持暗色/亮色主题
+- **现代UI**：玻璃态设计，支持暗色/亮色主题
 
 ## 技术栈
 
@@ -90,7 +86,6 @@ services:
 ```bash
 # 默认管理员账号为：admin
 ADMIN_PASSWORD=your_secure_password_here
-ADMIN_TOKEN=your_random_token_here
 ```
 
 3. 启动服务
@@ -104,7 +99,6 @@ docker-compose up -d
 ```bash
 # 默认管理员账号为：admin
 ADMIN_PASSWORD=your_secure_password_here
-ADMIN_TOKEN=your_random_token_here
 ```
 
 2. 启动服务（会自动构建镜像）
@@ -125,33 +119,12 @@ docker run -d \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/backups:/app/backups \
   -e ADMIN_PASSWORD=your_password \
-  -e ADMIN_TOKEN=your_token \
   ghcr.io/qinxuedong/gods-bookmark:latest
 # 注意：默认管理员账号为：admin
 ```
 
 详细部署说明请查看：
 - [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) - Docker 部署详细指南
-- [DOCKER_PUBLISH_GUIDE.md](DOCKER_PUBLISH_GUIDE.md) - Docker 镜像发布指南
-
-## 环境变量
-
-创建 `.env` 文件（可选，用于生产环境）：
-
-```env
-PORT=3000
-# 默认管理员账号为：admin
-ADMIN_PASSWORD=your_secure_password
-ADMIN_TOKEN=your_random_token
-NODE_ENV=production
-```
-镜像更新
-
-当有新版本发布时：
-```
-docker pull ghcr.io/qinxuedong/gods-bookmark:latest
-docker compose up -d
-```
 
 
 ## 浏览器扩展
@@ -237,8 +210,7 @@ God's Bookmark/
 **生产环境部署前必须：**
 
 1. 修改默认管理员密码（设置 `ADMIN_PASSWORD` 环境变量）
-2. 修改默认 token（设置 `ADMIN_TOKEN` 环境变量）
-3. 配置 HTTPS（启用 cookie `secure` 标志）
+2. 配置 HTTPS（启用 cookie `secure` 标志）
 4. 设置数据目录的持久化卷（Docker）
 5. 配置防火墙规则
 6. 定期备份数据库文件

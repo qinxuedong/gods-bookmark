@@ -54,12 +54,14 @@ class DataManager {
     }
 
     // --- Auth ---
+    // 向后兼容：使用默认 admin 用户名
     async login(password) {
         try {
-            console.log('[DataManager] Login attempt, password:', password ? '***' : 'empty');
-            const result = await this.apiRequest('/api/login', {
+            console.log('[DataManager] Login attempt (backward compatibility mode)');
+            // 使用新的多用户登录接口，默认用户名为 admin
+            const result = await this.apiRequest('/api/users/login', {
                 method: 'POST',
-                body: JSON.stringify({ password })
+                body: JSON.stringify({ username: 'admin', password })
             });
             
             console.log('[DataManager] Login API response:', result);
@@ -89,7 +91,7 @@ class DataManager {
 
     async logout() {
         try {
-            await this.apiRequest('/api/logout', { method: 'POST' });
+            await this.apiRequest('/api/users/logout', { method: 'POST' });
         } catch (error) {
             console.error('Logout error:', error);
         } finally {
@@ -106,7 +108,8 @@ class DataManager {
         }
 
         try {
-            const result = await this.apiRequest('/api/check-auth');
+            // 使用新的认证端点
+            const result = await this.apiRequest('/api/users/check-auth');
             this.authStatus = result.isLoggedIn || false;
             this.authChecked = true;
             return this.authStatus;

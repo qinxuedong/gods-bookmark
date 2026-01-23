@@ -18,79 +18,145 @@ app.use(bodyParser.json({ limit: '50mb' })); // 默认 100kb，增加到 50mb
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
-// Simple Auth Middleware (保持向后兼容)
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "secret-admin-token-123"; // In prod, use environment variable and real JWT
+// ADMIN_PASSWORD 用于数据库初始化时创建默认 admin 用户（在 database.js 中使用）
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin"; // Simple password - CHANGE IN PRODUCTION!
 
-// 多用户认证中间件
+// ===== Session 管理函数 =====
+const crypto = require('crypto');
+
+// 创建 session
+async function createSession(userId) {
+    try {
+        // 生成随机 session ID
+        const sessionId = crypto.randomBytes(32).toString('hex');
+        
+        // 设置过期时间（7天）
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+        // SQLite datetime 格式：YYYY-MM-DD HH:MM:SS
+        const expiresAtStr = expiresAt.toISOString().replace('T', ' ').substring(0, 19);
+        
+        // 插入 session 到数据库
+        await db.run(
+            "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)",
+            [sessionId, userId, expiresAtStr]
+        );
+        
+        console.log('[SESSION] Created session for user:', userId, 'expires at:', expiresAtStr);
+        return sessionId;
+    } catch (err) {
+        console.error('[SESSION] Error creating session:', err);
+        throw err;
+    }
+}
+
+// 验证 session
+async function validateSession(sessionId) {
+    try {
+        const session = await db.get(`
+            SELECT 
+                s.id as session_id,
+                s.user_id,
+                s.expires_at,
+                u.id,
+                u.username,
+                u.role
+            FROM sessions s
+            INNER JOIN users u ON s.user_id = u.id
+            WHERE s.id = ? AND s.expires_at > datetime('now')
+        `, [sessionId]);
+        
+        return session || null;
+    } catch (err) {
+        console.error('[SESSION] Error validating session:', err);
+        return null;
+    }
+}
+
+// 删除 session
+async function deleteSession(sessionId) {
+    try {
+        await db.run("DELETE FROM sessions WHERE id = ?", [sessionId]);
+        console.log('[SESSION] Deleted session:', sessionId);
+        return true;
+    } catch (err) {
+        console.error('[SESSION] Error deleting session:', err);
+        return false;
+    }
+}
+
+// 清理过期 session（可选）
+async function cleanExpiredSessions() {
+    try {
+        const result = await db.run("DELETE FROM sessions WHERE expires_at <= datetime('now')");
+        console.log('[SESSION] Cleaned expired sessions');
+        return result;
+    } catch (err) {
+        console.error('[SESSION] Error cleaning expired sessions:', err);
+        return null;
+    }
+}
+
+// 从 session 获取用户ID（用于不需要 requireAuth 的接口）
+async function getUserIdFromSession(req) {
+    try {
+        const sessionId = req.cookies['session_id'];
+        if (!sessionId) {
+            return null;
+        }
+        
+        const session = await validateSession(sessionId);
+        return session ? session.user_id : null;
+    } catch (err) {
+        console.error('[GET USER ID] Error getting user ID from session:', err);
+        return null;
+    }
+}
+
+// 多用户认证中间件 - 基于 sessions 表
 async function requireAuth(req, res, next) {
-    const userId = req.cookies['user_id'];
-    const token = req.cookies['auth_token'];
+    const sessionId = req.cookies['session_id'];
     
     console.log('[REQUIRE AUTH] Checking authentication for:', req.path);
-    console.log('[REQUIRE AUTH] All cookies:', JSON.stringify(req.cookies));
-    console.log('[REQUIRE AUTH] Cookies received:', {
-        user_id: userId || 'none',
-        auth_token: token || 'none'
-    });
+    console.log('[REQUIRE AUTH] Session ID:', sessionId || 'none');
     
-    if (userId && token) {
-        // 多用户模式：验证用户ID和token（token格式：user_${userId}）
-        try {
-            const expectedToken = `user_${userId}`;
-            console.log('[REQUIRE AUTH] Expected token:', expectedToken);
-            console.log('[REQUIRE AUTH] Received token:', token);
-            console.log('[REQUIRE AUTH] Token match:', token === expectedToken);
-            
-            if (token.startsWith('user_') && token === expectedToken) {
-                const user = await db.get("SELECT id, username, role FROM users WHERE id = ?", [userId]);
-                if (user) {
-                    console.log('[REQUIRE AUTH] User authenticated:', user.username);
-                    req.userId = user.id;
-                    req.user = user;
-                    return next();
-                } else {
-                    console.log('[REQUIRE AUTH] User not found in database for ID:', userId);
-                }
-            } else {
-                console.log('[REQUIRE AUTH] Token format mismatch');
-            }
-        } catch (err) {
-            // 如果users表不存在，继续检查旧的token
-            console.error('[REQUIRE AUTH] Error checking user:', err);
-        }
+    if (!sessionId) {
+        console.log('[REQUIRE AUTH] No session_id cookie found');
+        return res.status(401).json({ error: 'Unauthorized' });
     }
     
-    // 向后兼容：旧的admin token验证
-    if (token === ADMIN_TOKEN) {
-        console.log('[REQUIRE AUTH] Using legacy admin token');
-        // 尝试找到默认admin用户
-        try {
-            let adminUser = await db.get("SELECT id, username, role FROM users WHERE username = 'admin'");
-            if (!adminUser) {
-                // 如果没有admin用户，使用默认的userId 0（向后兼容）
-                req.userId = 0;
-                req.user = { id: 0, username: 'admin', role: 'admin' };
-            } else {
-                req.userId = adminUser.id;
-                req.user = adminUser;
-            }
-            console.log('[REQUIRE AUTH] Legacy admin authenticated');
+    try {
+        // 从 sessions 表 JOIN users 表验证 session，并检查过期时间
+        const session = await db.get(`
+            SELECT 
+                s.id as session_id,
+                s.user_id,
+                s.expires_at,
+                u.id,
+                u.username,
+                u.role
+            FROM sessions s
+            INNER JOIN users u ON s.user_id = u.id
+            WHERE s.id = ? AND s.expires_at > datetime('now')
+        `, [sessionId]);
+        
+        if (session) {
+            console.log('[REQUIRE AUTH] Session validated for user:', session.username);
+            req.userId = session.user_id;
+            req.user = {
+                id: session.user_id,
+                username: session.username,
+                role: session.role
+            };
             return next();
-        } catch (err) {
-            // 如果数据库还没有users表，使用旧的认证方式
-            if (err.message && err.message.includes('no such table')) {
-                req.userId = 0;
-                req.user = { id: 0, username: 'admin', role: 'admin' };
-                console.log('[REQUIRE AUTH] Legacy admin authenticated (no users table)');
-                return next();
-            }
-            console.error('[REQUIRE AUTH] Error finding admin user:', err);
+        } else {
+            console.log('[REQUIRE AUTH] Session not found or expired');
+            return res.status(401).json({ error: 'Unauthorized' });
         }
+    } catch (err) {
+        console.error('[REQUIRE AUTH] Error validating session:', err);
+        return res.status(401).json({ error: 'Unauthorized' });
     }
-    
-    console.log('[REQUIRE AUTH] Authentication failed - returning 401');
-    res.status(401).json({ error: 'Unauthorized' });
 }
 
 // 管理员权限检查
@@ -105,82 +171,6 @@ function requireAdmin(req, res, next) {
 // --- API Routes --- (必须在静态文件服务之前定义)
 
 // 1. Auth
-app.post('/api/login', (req, res) => {
-    const { password } = req.body;
-    
-    console.log('[LOGIN] ========== Login attempt received ==========');
-    console.log('[LOGIN] Request body:', JSON.stringify(req.body));
-    console.log('[LOGIN] Expected password:', ADMIN_PASSWORD);
-    console.log('[LOGIN] Received password:', password ? '***' : 'empty');
-    console.log('[LOGIN] Password type:', typeof password);
-    console.log('[LOGIN] Password match:', password === ADMIN_PASSWORD);
-    
-    // 输入验证
-    if (!password || typeof password !== 'string') {
-        console.log('[LOGIN] Invalid input - missing or wrong type');
-        return res.status(400).json({ error: 'Invalid input' });
-    }
-    
-    // 防止暴力破解：简单的速率限制（生产环境应使用 express-rate-limit）
-    if (password === ADMIN_PASSWORD) {
-        console.log('[LOGIN] Password correct, setting cookie');
-        // 在生产环境（HTTPS）中，应添加 secure: true
-        const isProduction = process.env.NODE_ENV === 'production';
-        const cookieOptions = { 
-            httpOnly: true, 
-            maxAge: 86400000, // 1 day
-            secure: isProduction, // 仅在 HTTPS 环境下传输
-            sameSite: isProduction ? 'strict' : 'lax' // 开发环境使用 'lax'，生产环境使用 'strict'
-        };
-        console.log('[LOGIN] Cookie options:', JSON.stringify(cookieOptions));
-        res.cookie('auth_token', ADMIN_TOKEN, cookieOptions);
-        console.log('[LOGIN] Cookie set, sending success response');
-        res.json({ success: true });
-    } else {
-        console.log('[LOGIN] Password incorrect');
-        console.log('[LOGIN] Expected:', ADMIN_PASSWORD);
-        console.log('[LOGIN] Received:', password);
-        res.status(401).json({ error: 'Invalid password' });
-    }
-    console.log('[LOGIN] ========== Login attempt completed ==========');
-});
-
-app.post('/api/logout', (req, res) => {
-    res.clearCookie('auth_token');
-    res.json({ success: true });
-});
-
-app.get('/api/check-auth', async (req, res) => {
-    const userId = req.cookies['user_id'];
-    const token = req.cookies['auth_token'];
-    let isLoggedIn = false;
-    let user = null;
-    
-    if (userId && token) {
-        try {
-            const userRow = await db.get("SELECT id, username, role FROM users WHERE id = ?", [userId]);
-            if (userRow) {
-                isLoggedIn = true;
-                user = userRow;
-            }
-        } catch (err) {
-            // 如果数据库还没有users表，检查旧的token
-            isLoggedIn = token === ADMIN_TOKEN;
-            if (isLoggedIn) {
-                user = { id: 0, username: 'admin', role: 'admin' };
-            }
-        }
-    } else {
-        // 向后兼容：检查旧的admin token
-        isLoggedIn = token === ADMIN_TOKEN;
-        if (isLoggedIn) {
-            user = { id: 0, username: 'admin', role: 'admin' };
-        }
-    }
-    
-    console.log('[AUTH CHECK] User:', user ? user.username : 'none', 'Logged in:', isLoggedIn);
-    res.json({ isLoggedIn, user });
-});
 
 // ===== 多用户管理API =====
 
@@ -201,45 +191,46 @@ app.post('/api/users/login', async (req, res) => {
         
         if (!user) {
             console.log('[USER LOGIN] User not found:', username);
-            return res.status(401).json({ error: 'Invalid credentials' });
+            // 检查数据库中是否有任何用户
+            const userCount = await db.get("SELECT COUNT(*) as count FROM users");
+            console.log('[USER LOGIN] Total users in database:', userCount ? userCount.count : 0);
+            return res.status(401).json({ error: 'Invalid credentials', details: 'User not found' });
         }
         
         console.log('[USER LOGIN] User found, checking password...');
+        console.log('[USER LOGIN] User ID:', user.id, 'Role:', user.role);
         const isValid = await bcrypt.compare(password, user.password_hash);
         
         if (!isValid) {
             console.log('[USER LOGIN] Invalid password for user:', username);
-            return res.status(401).json({ error: 'Invalid credentials' });
+            console.log('[USER LOGIN] Password hash in DB:', user.password_hash.substring(0, 20) + '...');
+            return res.status(401).json({ error: 'Invalid credentials', details: 'Password mismatch' });
         }
         
-        console.log('[USER LOGIN] Password valid, setting cookies...');
-        // 设置cookie
+        console.log('[USER LOGIN] Password valid, creating session...');
+        
+        // 创建 session
+        const sessionId = await createSession(user.id);
+        
+        // 设置 session_id cookie
         const isProduction = process.env.NODE_ENV === 'production';
         const cookieOptions = {
             httpOnly: true,
             maxAge: 86400000 * 7, // 7 days
             secure: isProduction,
-            sameSite: 'lax', // 开发环境使用lax，生产环境也使用lax以确保兼容性
-            path: '/' // 明确设置路径，确保Cookie在所有路径下都可用
+            sameSite: 'lax',
+            path: '/'
         };
         
-        const userIdStr = user.id.toString();
-        const authTokenValue = `user_${user.id}`;
+        // 设置 session_id cookie
+        res.cookie('session_id', sessionId, cookieOptions);
         
-        // 设置cookie
-        res.cookie('user_id', userIdStr, cookieOptions);
-        res.cookie('auth_token', authTokenValue, cookieOptions);
+        // 清除旧的 cookie（如果存在）
+        res.clearCookie('user_id', { path: '/' });
+        res.clearCookie('auth_token', { path: '/' });
         
+        console.log('[USER LOGIN] Session created:', sessionId);
         console.log('[USER LOGIN] Cookie options:', JSON.stringify(cookieOptions));
-        console.log('[USER LOGIN] Setting cookies:');
-        console.log('[USER LOGIN]   - user_id:', userIdStr);
-        console.log('[USER LOGIN]   - auth_token:', authTokenValue);
-        
-        // 验证Cookie是否已设置（通过检查响应头）
-        const setCookieHeaders = res.getHeader('Set-Cookie');
-        if (setCookieHeaders) {
-            console.log('[USER LOGIN] Set-Cookie headers:', Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]);
-        }
         
         console.log('[USER LOGIN] Login successful for user:', username, 'ID:', user.id);
         console.log('[USER LOGIN] ========== Login attempt completed ==========');
@@ -258,47 +249,88 @@ app.post('/api/users/login', async (req, res) => {
 });
 
 // 用户登出
-app.post('/api/users/logout', (req, res) => {
-    res.clearCookie('user_id');
-    res.clearCookie('auth_token');
-    res.json({ success: true });
+app.post('/api/users/logout', async (req, res) => {
+    try {
+        const sessionId = req.cookies['session_id'];
+        
+        if (sessionId) {
+            // 删除 sessions 表中的记录
+            await deleteSession(sessionId);
+            console.log('[USER LOGOUT] Session deleted:', sessionId);
+        }
+        
+        // 清除 session_id cookie
+        res.clearCookie('session_id', { path: '/' });
+        
+        // 清除旧的 cookie（如果存在）
+        res.clearCookie('user_id', { path: '/' });
+        res.clearCookie('auth_token', { path: '/' });
+        
+        console.log('[USER LOGOUT] Logout successful');
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[USER LOGOUT] Error:', err);
+        // 即使删除失败，也清除 cookie
+        res.clearCookie('session_id', { path: '/' });
+        res.clearCookie('user_id', { path: '/' });
+        res.clearCookie('auth_token', { path: '/' });
+        res.json({ success: true });
+    }
+});
+
+// 调试接口：检查数据库用户（仅用于调试，生产环境应删除）
+app.get('/api/debug/users', async (req, res) => {
+    try {
+        const users = await db.all("SELECT id, username, role, created_at FROM users");
+        const userCount = await db.get("SELECT COUNT(*) as count FROM users");
+        const adminUser = await db.get("SELECT id, username, role FROM users WHERE username = ?", ['admin']);
+        
+        res.json({
+            totalUsers: userCount ? userCount.count : 0,
+            adminExists: !!adminUser,
+            adminUser: adminUser,
+            allUsers: users
+        });
+    } catch (err) {
+        console.error('[DEBUG] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // 检查用户认证状态
 app.get('/api/users/check-auth', async (req, res) => {
-    const userId = req.cookies['user_id'];
-    const token = req.cookies['auth_token'];
-    
-    console.log('[USER CHECK-AUTH] All cookies:', JSON.stringify(req.cookies));
-    console.log('[USER CHECK-AUTH] user_id:', userId || 'none');
-    console.log('[USER CHECK-AUTH] auth_token:', token || 'none');
-    
-    let isLoggedIn = false;
-    let user = null;
-    
-    if (userId && token) {
-        try {
-            // 验证token格式
-            const expectedToken = `user_${userId}`;
-            if (token === expectedToken) {
-                const userRow = await db.get("SELECT id, username, role FROM users WHERE id = ?", [userId]);
-                if (userRow) {
-                    isLoggedIn = true;
-                    user = userRow;
-                    console.log('[USER CHECK-AUTH] User authenticated:', user.username);
-                }
+    try {
+        const sessionId = req.cookies['session_id'];
+        
+        console.log('[USER CHECK-AUTH] Session ID:', sessionId || 'none');
+        
+        let isLoggedIn = false;
+        let user = null;
+        
+        if (sessionId) {
+            // 验证 session
+            const session = await validateSession(sessionId);
+            
+            if (session) {
+                isLoggedIn = true;
+                user = {
+                    id: session.user_id,
+                    username: session.username,
+                    role: session.role
+                };
+                console.log('[USER CHECK-AUTH] User authenticated:', user.username);
             } else {
-                console.log('[USER CHECK-AUTH] Token mismatch. Expected:', expectedToken, 'Got:', token);
+                console.log('[USER CHECK-AUTH] Session not found or expired');
             }
-        } catch (err) {
-            // 数据库可能还没有users表
-            console.error('[USER CHECK-AUTH] Error:', err);
+        } else {
+            console.log('[USER CHECK-AUTH] No session_id cookie found');
         }
-    } else {
-        console.log('[USER CHECK-AUTH] Missing userId or token');
+        
+        res.json({ isLoggedIn, user });
+    } catch (err) {
+        console.error('[USER CHECK-AUTH] Error:', err);
+        res.json({ isLoggedIn: false, user: null });
     }
-    
-    res.json({ isLoggedIn, user });
 });
 
 // 获取用户列表（仅管理员）
@@ -590,12 +622,12 @@ app.post('/api/bookmark/sync', async (req, res) => {
             return res.status(400).json({ error: 'Invalid bookmark data' });
         }
         
-        // 确定用户ID（优先使用请求中的userId，否则从cookie获取，最后默认为0）
+        // 确定用户ID（优先使用请求中的userId，否则从session获取，最后默认为0）
         let targetUserId = userId;
         if (!targetUserId) {
-            const cookieUserId = req.cookies['user_id'];
-            if (cookieUserId) {
-                targetUserId = parseInt(cookieUserId);
+            const sessionUserId = await getUserIdFromSession(req);
+            if (sessionUserId !== null) {
+                targetUserId = sessionUserId;
             } else {
                 targetUserId = 0; // 默认用户（向后兼容）
             }
@@ -739,12 +771,12 @@ app.post('/api/bookmark/sync-all', async (req, res) => {
             return res.status(400).json({ error: 'Invalid bookmarks data format' });
         }
         
-        // 确定用户ID（优先使用请求中的userId，否则从cookie获取，最后默认为0）
+        // 确定用户ID（优先使用请求中的userId，否则从session获取，最后默认为0）
         let targetUserId = userId;
         if (!targetUserId) {
-            const cookieUserId = req.cookies['user_id'];
-            if (cookieUserId) {
-                targetUserId = parseInt(cookieUserId);
+            const sessionUserId = await getUserIdFromSession(req);
+            if (sessionUserId !== null) {
+                targetUserId = sessionUserId;
             } else {
                 targetUserId = 0; // 默认用户（向后兼容）
             }
@@ -860,12 +892,12 @@ app.post('/api/bookmark/sync-folder', async (req, res) => {
             return res.status(400).json({ error: '文件夹名称不能为空' });
         }
         
-        // 确定用户ID（优先使用请求中的userId，否则从cookie获取，最后默认为0）
+        // 确定用户ID（优先使用请求中的userId，否则从session获取，最后默认为0）
         let targetUserId = userId;
         if (!targetUserId) {
-            const cookieUserId = req.cookies['user_id'];
-            if (cookieUserId) {
-                targetUserId = parseInt(cookieUserId);
+            const sessionUserId = await getUserIdFromSession(req);
+            if (sessionUserId !== null) {
+                targetUserId = sessionUserId;
             } else {
                 targetUserId = 0; // 默认用户（向后兼容）
             }
@@ -990,12 +1022,12 @@ app.get('/api/bookmark/check-exists', async (req, res) => {
             return res.status(400).json({ error: '分类和URL参数不能为空' });
         }
         
-        // 确定用户ID（优先使用请求中的userId，否则从cookie获取，最后默认为0）
+        // 确定用户ID（优先使用请求中的userId，否则从session获取，最后默认为0）
         let targetUserId = userIdParam ? parseInt(userIdParam) : null;
         if (!targetUserId) {
-            const cookieUserId = req.cookies['user_id'];
-            if (cookieUserId) {
-                targetUserId = parseInt(cookieUserId);
+            const sessionUserId = await getUserIdFromSession(req);
+            if (sessionUserId !== null) {
+                targetUserId = sessionUserId;
             } else {
                 targetUserId = 0; // 默认用户（向后兼容）
             }
@@ -1043,12 +1075,12 @@ app.get('/api/bookmark/check-exists', async (req, res) => {
 // 10. 获取所有书签API（用于浏览器扩展同步，不需要认证）
 app.get('/api/bookmark/get-all', async (req, res) => {
     try {
-        // 从查询参数或cookie获取userId
+        // 从查询参数或session获取userId
         let targetUserId = req.query.userId ? parseInt(req.query.userId) : null;
         if (!targetUserId) {
-            const cookieUserId = req.cookies['user_id'];
-            if (cookieUserId) {
-                targetUserId = parseInt(cookieUserId);
+            const sessionUserId = await getUserIdFromSession(req);
+            if (sessionUserId !== null) {
+                targetUserId = sessionUserId;
             } else {
                 targetUserId = 0; // 默认用户（向后兼容）
             }
