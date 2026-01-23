@@ -1,22 +1,22 @@
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache \
+# 安装 sqlite3 编译依赖（glibc 环境，稳定）
+RUN apt-get update && apt-get install -y \
     python3 \
     make \
     g++ \
-    sqlite-dev
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+# 创建非 root 用户
+RUN useradd -m -u 1001 nodejs
 
 COPY package*.json ./
 
-ENV npm_config_build_from_source=true
-
-RUN npm ci --only=production && \
-    npm cache clean --force
+# 关键：这里基本不会再炸
+RUN npm ci --omit=dev && npm cache clean --force
 
 COPY . .
 
@@ -29,8 +29,5 @@ EXPOSE 3000
 
 ENV NODE_ENV=production \
     PORT=3000
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/api/check-auth', r => process.exit([200,401].includes(r.statusCode)?0:1))"
 
 CMD ["node", "server.js"]
