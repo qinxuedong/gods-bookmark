@@ -105,10 +105,10 @@ NODE_ENV=production
 镜像更新
 
 当有新版本发布时：
-
+```
 docker pull ghcr.io/qinxuedong/gods-bookmark:latest
 docker compose up -d
-
+```
 
 
 ## 浏览器扩展
