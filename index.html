@@ -55,7 +55,8 @@
             </nav>
         </div>
         <!-- 导入文件输入框（保留用于导入书签功能） -->
-        <input type="file" id="import-file" accept=".html" style="display: none;">
+        <label for="import-file" class="sr-only">导入书签文件</label>
+        <input type="file" id="import-file" accept=".html" style="display: none;" aria-label="导入书签文件">
     </header>
 
     <main class="container">
@@ -99,9 +100,11 @@
                 <h3>🔥 上帝的指引</h3>
                 <div class="global-search-container">
                     <div class="global-search-wrapper">
+                        <label for="global-search-input" class="sr-only">搜索书签、功能或使用搜索引擎</label>
                         <input type="text" id="global-search-input" class="global-search-input" 
                             placeholder="搜索书签/功能/网络..." 
-                            autocomplete="off">
+                            autocomplete="off"
+                            aria-label="搜索书签、功能或使用搜索引擎">
                         <!-- 网页内搜索下拉结果 -->
                         <div id="global-search-dropdown" class="global-search-dropdown">
                             <div id="global-search-dropdown-results" class="global-search-dropdown-results"></div>
@@ -118,9 +121,11 @@
         <div id="global-search-modal" class="global-search-modal" style="display: none;">
             <div class="global-search-modal-content">
                 <div class="global-search-modal-header">
+                    <label for="global-search-modal-input" class="sr-only">搜索书签、功能或使用搜索引擎</label>
                     <input type="text" id="global-search-modal-input" class="global-search-modal-input" 
                         placeholder="搜索书签/功能/网络..." 
-                        autocomplete="off">
+                        autocomplete="off"
+                        aria-label="搜索书签、功能或使用搜索引擎">
                 </div>
                 <div id="global-search-results" class="global-search-results">
                     <!-- 搜索结果会动态生成 -->
@@ -212,11 +217,11 @@
         <div class="custom-modal" style="max-width: 500px;">
             <h3 id="user-edit-title">添加用户</h3>
             <div style="margin-top: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">用户名</label>
+                <label for="user-edit-username" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">用户名</label>
                 <input type="text" id="user-edit-username" class="input-field" placeholder="输入用户名" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">密码</label>
+                <label for="user-edit-password" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">密码</label>
                 <input type="password" id="user-edit-password" class="input-field" placeholder="输入密码（编辑用户时留空则不修改）" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">角色</label>
+                <label for="user-edit-role" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">角色</label>
                 <select id="user-edit-role" class="input-field" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
                     <option value="user">普通用户</option>
                     <option value="admin">管理员</option>
@@ -240,13 +245,13 @@
                 <button id="user-profile-close" style="background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.5rem; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">&times;</button>
             </div>
             <div style="margin-top: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">用户名</label>
+                <label for="user-profile-username" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">用户名</label>
                 <input type="text" id="user-profile-username" class="input-field" disabled style="width: 100%; padding: 0.5rem; margin-bottom: 1rem; opacity: 0.6;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">当前密码</label>
+                <label for="user-profile-old-password" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">当前密码</label>
                 <input type="password" id="user-profile-old-password" class="input-field" placeholder="输入当前密码" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">新密码</label>
+                <label for="user-profile-new-password" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">新密码</label>
                 <input type="password" id="user-profile-new-password" class="input-field" placeholder="输入新密码" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">确认新密码</label>
+                <label for="user-profile-confirm-password" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">确认新密码</label>
                 <input type="password" id="user-profile-confirm-password" class="input-field" placeholder="再次输入新密码" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
             </div>
             <div class="modal-actions">
@@ -266,7 +271,8 @@
             <div style="margin-bottom: 1rem; display: flex; justify-content: center; gap: 0.5rem;">
                 <button id="add-backup-config-btn" class="btn" style="background: var(--accent-color); color: white; border: none; padding: 0.5rem 1rem;">+ 添加备份配置</button>
                 <button id="import-backup-btn" class="btn" style="background: rgba(139, 92, 246, 0.8); color: white; border: none; padding: 0.5rem 1rem;">📥 导入备份</button>
-                <input type="file" id="import-backup-file" accept=".json" style="display: none;">
+                <label for="import-backup-file" class="sr-only">导入备份文件</label>
+                <input type="file" id="import-backup-file" accept=".json" style="display: none;" aria-label="导入备份文件">
             </div>
             <div id="backup-configs-list" style="max-height: 60vh; overflow-y: auto;">
                 <!-- 备份配置列表会由JS动态生成 -->
@@ -279,19 +285,18 @@
         <div class="custom-modal" style="max-width: 600px; max-height: 85vh; overflow-y: auto;">
             <h3 id="backup-config-edit-title">添加备份配置</h3>
             <div style="margin-top: 1rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">备份类型</label>
+                <label for="backup-config-type" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">备份类型</label>
                 <select id="backup-config-type" class="input-field" style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;">
                     <option value="local">本地/NAS</option>
                 </select>
                 <div id="backup-config-options" style="margin-top: 1rem;">
                     <!-- 配置选项会根据备份类型动态生成 -->
                 </div>
-                <label style="display: block; margin-bottom: 0.5rem; margin-top: 1rem; font-weight: 500; color: var(--text-primary);">启用状态</label>
-                <label style="display: flex; align-items: center; margin-bottom: 1rem; color: var(--text-primary);">
+                <label for="backup-config-enabled" style="display: flex; align-items: center; margin-bottom: 1rem; margin-top: 1rem; color: var(--text-primary);">
                     <input type="checkbox" id="backup-config-enabled" checked style="margin-right: 0.5rem;">
                     <span>启用此备份配置</span>
                 </label>
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">定时计划</label>
+                <label for="backup-config-schedule-preset" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">定时计划</label>
                 <select id="backup-config-schedule-preset" class="input-field" style="width: 100%; padding: 0.5rem; margin-bottom: 0.5rem;">
                     <option value="">不自动备份（仅手动）</option>
                     <option value="daily">每天（凌晨2点）</option>
@@ -299,7 +304,8 @@
                     <option value="monthly">每月（1号凌晨2点）</option>
                     <option value="quarterly">每3个月（1号凌晨2点）</option>
                 </select>
-                <input type="text" id="backup-config-schedule" class="input-field" placeholder="Cron 表达式，例如: 0 2 * * * (每天凌晨2点)" style="width: 100%; padding: 0.5rem; margin-bottom: 0.25rem;">
+                <label for="backup-config-schedule" class="sr-only">Cron 表达式</label>
+                <input type="text" id="backup-config-schedule" class="input-field" placeholder="Cron 表达式，例如: 0 2 * * * (每天凌晨2点)" style="width: 100%; padding: 0.5rem; margin-bottom: 0.25rem;" aria-label="Cron 表达式">
                 <small style="color: var(--text-secondary);">
                     格式: 分钟 小时 日 月 星期。可以使用上面的快捷选择自动生成。
                     <br>
@@ -336,7 +342,8 @@
                 <button class="todo-edit-modal-close" id="add-todo-modal-close">×</button>
             </div>
             <div class="todo-edit-modal-body">
-                <textarea id="new-todo-input" class="todo-edit-text" placeholder="输入待办事项或直接粘贴图片..." rows="4"></textarea>
+                <label for="new-todo-input" class="sr-only">待办事项内容</label>
+                <textarea id="new-todo-input" class="todo-edit-text" placeholder="输入待办事项或直接粘贴图片..." rows="4" aria-label="待办事项内容"></textarea>
                 <div id="add-todo-image-preview" style="display: none; margin-top: 0.5rem;">
                     <img id="add-todo-image-display" src="" alt="预览图片" style="max-width: 100%; max-height: 200px; border-radius: 0.375rem;">
                     <button id="add-todo-image-remove" class="todo-edit-image-remove">删除图片</button>

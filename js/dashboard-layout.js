@@ -174,13 +174,13 @@ async function renderCardControls() {
             <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--card-border);">
                 <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: 500;">🔍 全局搜索</label>
                 <div class="control-row" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                    <label style="width: 70px; font-size: 0.75rem;">快捷键</label>
+                    <label for="search-shortcut-input" style="width: 70px; font-size: 0.75rem;">快捷键</label>
                     <input type="text" id="search-shortcut-input" value="${searchShortcut}"
                         style="flex: 1; padding: 0.4rem 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.375rem; font-size: 0.8rem;"
                         placeholder="例如：Ctrl+Space">
                 </div>
                 <div class="control-row" style="display: flex; align-items: center; gap: 0.5rem;">
-                    <label style="width: 70px; font-size: 0.75rem;">搜索引擎</label>
+                    <label for="search-engine-input" style="width: 70px; font-size: 0.75rem;">搜索引擎</label>
                     <input type="text" id="search-engine-input" value="${searchEngine}"
                         style="flex: 1; padding: 0.4rem 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.375rem; font-size: 0.8rem;"
                         placeholder="例如：https://www.bing.com/search?q=">
@@ -203,7 +203,7 @@ async function renderCardControls() {
             
             <!-- 网站标题 -->
             <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--card-border);">
-                <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: 500;">🌐 网站标题</label>
+                <label for="site-title-input" style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: 500;">🌐 网站标题</label>
                 <input type="text" id="site-title-input" value="${siteTitle}" 
                     style="width: 100%; padding: 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.375rem; font-size: 0.85rem; font-weight: 500;"
                     placeholder="输入网站标题">
@@ -211,7 +211,7 @@ async function renderCardControls() {
             
             <!-- 便签待办 -->
             <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--card-border);">
-                <label style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: 500;">📝 便签待办</label>
+                <label for="todos-title-input" style="display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; font-weight: 500;">📝 便签待办</label>
                 <input type="text" id="todos-title-input" value="${todosSettings.title}" 
                     style="width: 100%; margin-bottom: 0.5rem; padding: 0.4rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.375rem; font-size: 0.8rem;"
                     placeholder="输入便签待办标题">
@@ -410,15 +410,19 @@ async function renderCardControls() {
                         ` : ''}
                     </div>
                 </div>
-                <input type="text" class="card-name-input" data-card-index="${globalIndex}" value="${cardName}" 
-                    style="width: 100%; margin-bottom: 0.35rem; padding: 0.2rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.25rem; font-size: 0.75rem;">
+                <label for="card-name-input-${globalIndex}" class="sr-only">卡片名称</label>
+                <input type="text" id="card-name-input-${globalIndex}" class="card-name-input" data-card-index="${globalIndex}" value="${cardName}" 
+                    style="width: 100%; margin-bottom: 0.35rem; padding: 0.2rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.25rem; font-size: 0.75rem;"
+                    aria-label="卡片名称">
                 
                 <div class="control-row" style="margin-bottom: 0;">
-                    <label style="width: 50px; font-size: 0.7rem;">透明/色</label>
-                    <input type="range" class="card-opacity-range" data-card-index="${globalIndex}" min="0.1" max="1" step="0.1" value="${currentOpacity}"
+                    <label for="card-opacity-range-${globalIndex}" style="width: 50px; font-size: 0.7rem;">透明/色</label>
+                    <input type="range" id="card-opacity-range-${globalIndex}" class="card-opacity-range" data-card-index="${globalIndex}" min="0.1" max="1" step="0.1" value="${currentOpacity}"
                         style="flex: 1;">
                     <span class="value-display" style="font-size: 0.7rem; width: 34px; text-align: right;">${currentOpacity}</span>
-                    <input type="color" class="card-color-input" data-card-index="${globalIndex}" value="${currentColor}" 
+                    <label for="card-color-input-${globalIndex}" class="sr-only">卡片颜色</label>
+                    <input type="color" id="card-color-input-${globalIndex}" class="card-color-input" data-card-index="${globalIndex}" value="${currentColor}"
+                        aria-label="卡片颜色" 
                         style="width: 24px; height: 24px; margin-left: 4px;">
                 </div>
                 ${
@@ -3508,8 +3512,8 @@ function showImportCategorySelector(availableCategories, fileName) {
                 <div style="margin-bottom: 0.5rem; color: var(--text-primary, #f1f5f9); font-weight: 500;">请选择要导入的功能项：</div>
                 <div id="import-category-checkboxes" style="display: flex; flex-direction: column; gap: 0.75rem;">
                     ${availableCategories.map(cat => `
-                        <label style="display: flex; align-items: center; padding: 0.75rem; background: rgba(255, 255, 255, 0.05); border-radius: 0.5rem; cursor: pointer; transition: background 0.2s;">
-                            <input type="checkbox" value="${cat.key}" checked style="margin-right: 0.75rem; width: 18px; height: 18px; cursor: pointer;">
+                        <label for="import-category-${cat.key}" style="display: flex; align-items: center; padding: 0.75rem; background: rgba(255, 255, 255, 0.05); border-radius: 0.5rem; cursor: pointer; transition: background 0.2s;">
+                            <input type="checkbox" id="import-category-${cat.key}" value="${cat.key}" checked style="margin-right: 0.75rem; width: 18px; height: 18px; cursor: pointer;">
                             <span style="color: var(--text-primary, #f1f5f9); font-size: 1rem;">${cat.name}</span>
                         </label>
                     `).join('')}
@@ -3775,7 +3779,7 @@ function bindUserAndBackupEvents() {
         let html = '';
         if (type === 'local') {
             html = `
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">本地/NAS 路径</label>
+                <label for="backup-config-local-path" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary);">本地/NAS 路径</label>
                 <input type="text" id="backup-config-local-path" class="input-field"
                     placeholder="例如：D:\\\\Backups 或 \\\\NAS\\\\share\\\\backups"
                     style="width: 100%; padding: 0.5rem; margin-bottom: 1rem;"

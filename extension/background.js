@@ -915,6 +915,9 @@ async function syncServerToBrowser() {
       const existingBookmarks = await chrome.bookmarks.getChildren(folderId);
       const existingUrls = new Set(existingBookmarks.filter(b => b.url).map(b => b.url));
       
+      // 计算当前文件夹中实际的书签数量（排除文件夹）
+      const currentBookmarkCount = existingBookmarks.filter(b => b.url).length;
+      
       // 同步书签
       for (let index = 0; index < items.length; index++) {
         const item = items[index];
@@ -929,15 +932,36 @@ async function syncServerToBrowser() {
           continue;
         }
         
-        // 添加新书签
-        await chrome.bookmarks.create({
-          parentId: folderId,
-          title: item.name,
-          url: item.url,
-          index: index
-        });
-        totalAdded++;
-        console.log('[书签同步] 添加书签:', item.name);
+        // 计算插入位置：使用当前书签数量 + 已添加的书签数量
+        // 确保 index 不超过文件夹中现有书签的数量
+        const insertIndex = Math.min(currentBookmarkCount + totalAdded, currentBookmarkCount + index);
+        
+        try {
+          // 添加新书签（不指定 index，让浏览器自动添加到末尾，更安全）
+          await chrome.bookmarks.create({
+            parentId: folderId,
+            title: item.name,
+            url: item.url
+            // 不指定 index，让浏览器自动添加到末尾，避免索引越界
+          });
+          totalAdded++;
+          console.log('[书签同步] 添加书签:', item.name, '到文件夹:', categoryName);
+        } catch (createError) {
+          console.error('[书签同步] 创建书签失败:', item.name, createError);
+          // 如果创建失败，尝试不指定 index
+          try {
+            await chrome.bookmarks.create({
+              parentId: folderId,
+              title: item.name,
+              url: item.url
+            });
+            totalAdded++;
+            console.log('[书签同步] 添加书签成功（重试）:', item.name);
+          } catch (retryError) {
+            console.error('[书签同步] 重试创建书签也失败:', item.name, retryError);
+            // 继续处理下一个书签，不中断整个同步过程
+          }
+        }
       }
     }
     
@@ -1448,15 +1472,25 @@ async function moveBrowserBookmark(url, targetCategory, index) {
     // 获取目标文件夹的所有子节点
     const targetFolder = await chrome.bookmarks.getChildren(targetParentId);
     
-    // 确定插入位置
-    let insertIndex = index !== undefined ? index : targetFolder.length;
+    // 计算实际的书签数量（排除文件夹）
+    const bookmarkCount = targetFolder.filter(b => b.url).length;
+    
+    // 确定插入位置（确保不超出范围）
+    let insertIndex = index !== undefined ? Math.min(index, bookmarkCount) : bookmarkCount;
     
     // 如果书签已经在目标文件夹中，需要调整索引
     if (bookmark.parentId === targetParentId) {
       const currentIndex = targetFolder.findIndex(b => b.id === bookmark.id);
-      if (currentIndex !== -1 && insertIndex > currentIndex) {
-        insertIndex--; // 如果从前面移到后面，索引需要减1
+      if (currentIndex !== -1) {
+        if (insertIndex > currentIndex) {
+          insertIndex--; // 如果从前面移到后面，索引需要减1
+        }
+        // 确保索引在有效范围内
+        insertIndex = Math.max(0, Math.min(insertIndex, bookmarkCount - 1));
       }
+    } else {
+      // 如果书签不在目标文件夹中，确保索引不超过当前书签数量
+      insertIndex = Math.min(insertIndex, bookmarkCount);
     }
     
     // 移动书签到新位置
@@ -1591,20 +1625,57 @@ async function addBrowserBookmark(url, name, category, index) {
       return { success: true, message: '书签已存在', skipped: true };
     }
     
-    // 确定插入位置
-    let insertIndex = index !== undefined ? index : targetFolder.length;
+    // 计算实际的书签数量（排除文件夹）
+    const bookmarkCount = targetFolder.filter(b => b.url).length;
+    
+    // 确定插入位置（确保不超出范围）
+    // 如果不指定 index，添加到末尾；如果指定了，确保不超过当前书签数量
+    let insertIndex = index !== undefined ? Math.min(index, bookmarkCount) : bookmarkCount;
     
     // 创建书签（临时禁用同步监听，避免循环同步）
     // 使用一个标记来防止循环同步
     const syncFlag = `skip_sync_${Date.now()}_${Math.random()}`;
     await chrome.storage.local.set({ skipNextBookmarkSync: syncFlag });
     
-    const newBookmark = await chrome.bookmarks.create({
-      parentId: targetParentId,
-      title: name,
-      url: url,
-      index: insertIndex
-    });
+    try {
+      const newBookmark = await chrome.bookmarks.create({
+        parentId: targetParentId,
+        title: name,
+        url: url,
+        index: insertIndex
+      });
+      
+      // 清除标记（延迟清除，确保监听器有机会检查）
+      setTimeout(async () => {
+        await chrome.storage.local.remove('skipNextBookmarkSync');
+      }, 1000);
+      
+      console.log('[书签同步] 已添加浏览器书签:', name, '到分类:', category, '位置:', insertIndex);
+      return { success: true, bookmarkId: newBookmark.id };
+    } catch (createError) {
+      // 如果创建失败（可能是索引问题），尝试不指定 index
+      console.warn('[书签同步] 使用索引创建失败，尝试添加到末尾:', createError);
+      try {
+        const newBookmark = await chrome.bookmarks.create({
+          parentId: targetParentId,
+          title: name,
+          url: url
+          // 不指定 index，让浏览器自动添加到末尾
+        });
+        
+        // 清除标记
+        setTimeout(async () => {
+          await chrome.storage.local.remove('skipNextBookmarkSync');
+        }, 1000);
+        
+        console.log('[书签同步] 已添加浏览器书签（重试）:', name, '到分类:', category);
+        return { success: true, bookmarkId: newBookmark.id };
+      } catch (retryError) {
+        // 清除标记
+        await chrome.storage.local.remove('skipNextBookmarkSync');
+        throw retryError;
+      }
+    }
     
     // 清除标记（延迟清除，确保监听器有机会检查）
     setTimeout(async () => {

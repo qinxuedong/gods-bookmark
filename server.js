@@ -2179,7 +2179,9 @@ app.use((req, res, next) => {
             "font-src 'self' https://fonts.gstatic.com data:; " +
             "img-src 'self' data: https: http:; " +
             "connect-src 'self'; " +
-            "frame-ancestors 'none';"
+            "frame-ancestors 'none'; " +
+            "base-uri 'self'; " +
+            "form-action 'self';"
         );
     }
     next();

@@ -2737,6 +2737,7 @@ async function loadBookmarks() {
                     input.value = categoryName;
                     input.className = 'category-name-input';
                     input.setAttribute('data-category-index', catIndex.toString());
+                    input.setAttribute('aria-label', '分类名称');
                     input.style.cssText = 'background: rgba(255,255,255,0.1); border: 1px solid var(--accent-color); color: var(--accent-color); font-size: 1.1rem; font-weight: bold; width: 100%; border-radius: 4px; padding: 2px 5px; flex: 1; min-width: 0;';
                     
                     // 替换标题为输入框
@@ -4945,13 +4946,26 @@ async function refreshBookmarksCache() {
         
         console.log('[GlobalSearch] 已缓存', allBookmarksCache.length, '个书签');
         
-        // 同时刷新点击统计数据
-        await refreshClickStatsCache();
+        // 同时刷新点击统计数据（失败不影响主流程）
+        try {
+            await refreshClickStatsCache();
+        } catch (statsError) {
+            console.warn('[GlobalSearch] 刷新点击统计失败，但不影响搜索功能:', statsError);
+        }
         
-        return allBookmarksCache.length > 0;
+        const success = allBookmarksCache.length > 0;
+        if (!success) {
+            console.warn('[GlobalSearch] 缓存刷新完成，但书签数量为0');
+        }
+        return success;
     } catch (error) {
         console.error('[GlobalSearch] 刷新书签缓存失败:', error);
-        console.error('[GlobalSearch] 错误详情:', error.message, error.stack);
+        console.error('[GlobalSearch] 错误详情:', error.message);
+        if (error.stack) {
+            console.error('[GlobalSearch] 错误堆栈:', error.stack);
+        }
+        // 清空缓存，避免使用旧数据
+        allBookmarksCache = [];
         // 不抛出异常，但返回 false 表示失败
         return false;
     }
@@ -4991,15 +5005,44 @@ async function handleSearch(query, isModal = false) {
     // 确保书签缓存已加载（如果缓存为空，先刷新）
     if (!allBookmarksCache || allBookmarksCache.length === 0) {
         console.log('[GlobalSearch] 搜索时发现缓存为空，正在刷新...');
-        await refreshBookmarksCache();
+        try {
+            const success = await refreshBookmarksCache();
+            if (!success) {
+                console.warn('[GlobalSearch] 缓存刷新失败，将只搜索功能项');
+            }
+        } catch (refreshError) {
+            console.error('[GlobalSearch] 刷新缓存失败:', refreshError);
+            // 继续执行搜索，即使缓存刷新失败
+        }
     }
     
     const trimmedQuery = query.trim().toLowerCase();
-    const bookmarkResults = searchBookmarks(trimmedQuery);
-    const functionResults = searchFunctions(trimmedQuery);
+    
+    // 搜索功能项（即使缓存失败也能搜索功能）
+    let functionResults = [];
+    try {
+        functionResults = searchFunctions(trimmedQuery);
+        console.log('[GlobalSearch] 功能搜索结果:', functionResults.length, '个');
+    } catch (funcError) {
+        console.error('[GlobalSearch] 搜索功能项失败:', funcError);
+    }
+    
+    // 搜索书签（如果缓存可用）
+    let bookmarkResults = [];
+    if (allBookmarksCache && allBookmarksCache.length > 0) {
+        try {
+            bookmarkResults = searchBookmarks(trimmedQuery);
+            console.log('[GlobalSearch] 书签搜索结果:', bookmarkResults.length, '个');
+        } catch (bookmarkError) {
+            console.error('[GlobalSearch] 搜索书签失败:', bookmarkError);
+        }
+    } else {
+        console.log('[GlobalSearch] 书签缓存为空，跳过书签搜索');
+    }
     
     // 合并结果，功能项优先显示（放在前面）
     const results = [...functionResults, ...bookmarkResults];
+    console.log('[GlobalSearch] 总搜索结果:', results.length, '个（功能:', functionResults.length, '书签:', bookmarkResults.length, '）');
     renderSearchResults(results, isModal);
 }
 
@@ -5373,7 +5416,12 @@ window.openSearchModal = async function() {
     const modal = document.getElementById('global-search-modal');
     const modalInput = document.getElementById('global-search-modal-input');
     
-    if (modal && modalInput) {
+    if (!modal || !modalInput) {
+        console.error('[GlobalSearch] 搜索浮窗元素未找到');
+        return;
+    }
+    
+    try {
         // 显示加载状态
         modal.style.display = 'flex';
         modalInput.value = '';
@@ -5385,18 +5433,43 @@ window.openSearchModal = async function() {
         // 确保书签缓存已加载（如果缓存为空，先刷新）
         if (!allBookmarksCache || allBookmarksCache.length === 0) {
             console.log('[GlobalSearch] 缓存为空，正在刷新书签缓存...');
-            const success = await refreshBookmarksCache();
-            if (!success || !allBookmarksCache || allBookmarksCache.length === 0) {
-                console.warn('[GlobalSearch] 缓存刷新失败或为空，搜索功能可能受限');
-                modalInput.placeholder = '书签缓存加载失败，请刷新页面重试';
-            } else {
-                console.log('[GlobalSearch] 缓存刷新成功，共', allBookmarksCache.length, '个书签');
+            try {
+                const success = await refreshBookmarksCache();
+                if (!success || !allBookmarksCache || allBookmarksCache.length === 0) {
+                    console.warn('[GlobalSearch] 缓存刷新失败或为空');
+                    console.warn('[GlobalSearch] 当前缓存状态:', {
+                        cacheExists: !!allBookmarksCache,
+                        cacheLength: allBookmarksCache ? allBookmarksCache.length : 0,
+                        success: success
+                    });
+                    modalInput.placeholder = '书签缓存加载失败，但可以搜索功能';
+                } else {
+                    console.log('[GlobalSearch] 缓存刷新成功，共', allBookmarksCache.length, '个书签');
+                }
+            } catch (refreshError) {
+                console.error('[GlobalSearch] 刷新缓存时发生异常:', refreshError);
+                modalInput.placeholder = '缓存加载出错，但可以搜索功能';
             }
+        } else {
+            console.log('[GlobalSearch] 使用现有缓存，共', allBookmarksCache.length, '个书签');
         }
         
-        // 恢复输入框状态
+        // 恢复输入框状态（无论缓存是否加载成功，都允许搜索功能）
         modalInput.disabled = false;
         modalInput.placeholder = '搜索书签、功能或使用搜索引擎...';
+        modalInput.focus();
+        
+        // 确保功能项列表已初始化
+        if (!functionItems || !Array.isArray(functionItems) || functionItems.length === 0) {
+            console.warn('[GlobalSearch] 功能项列表未初始化');
+        } else {
+            console.log('[GlobalSearch] 功能项列表已就绪，共', functionItems.length, '个功能');
+        }
+    } catch (error) {
+        console.error('[GlobalSearch] 打开搜索浮窗时发生错误:', error);
+        // 即使出错，也尝试恢复输入框状态
+        modalInput.disabled = false;
+        modalInput.placeholder = '搜索功能或使用搜索引擎...';
         modalInput.focus();
     }
 }
