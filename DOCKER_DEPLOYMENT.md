@@ -154,18 +154,17 @@ docker inspect --format='{{.State.Health.Status}}' gods-bookmark
 
 1. **停止容器**
    ```bash
-   docker-compose down
+     # 请更改为自己的路径
+   cd /vol3/1000/Docker/gods-bookmark
+ 
+     # 停止容器
+   docker compose down
    ```
 
-2. **拉取最新代码并重新构建**
+2. **拉取最新代码并启动容器**
    ```bash
-   git pull
-   docker-compose build --no-cache
-   ```
-
-3. **启动新容器**
-   ```bash
-   docker-compose up -d
+   docker compose pull
+   docker compose up -d
    ```
 
 

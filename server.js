@@ -1350,6 +1350,51 @@ app.post('/api/backup/configs', requireAuth, async (req, res) => {
             return res.status(403).json({ error: 'Only admin can create local/NAS backup' });
         }
         
+        // 验证本地备份路径
+        if (backupType === 'local' && config.path) {
+            const backupPath = config.path.trim();
+            if (!backupPath) {
+                return res.status(400).json({ error: '备份路径不能为空' });
+            }
+            
+            // 尝试解析路径
+            const resolvedPath = path.isAbsolute(backupPath) 
+                ? backupPath 
+                : path.resolve(__dirname, backupPath);
+            
+            console.log('[CREATE BACKUP CONFIG] 备份路径:', resolvedPath);
+            
+            // 检查路径是否可访问（如果目录已存在）
+            if (fs.existsSync(resolvedPath)) {
+                try {
+                    fs.accessSync(resolvedPath, fs.constants.W_OK);
+                } catch (accessErr) {
+                    console.error('[CREATE BACKUP CONFIG] 路径不可写:', accessErr.message);
+                    return res.status(400).json({ 
+                        error: `备份路径不可写: ${resolvedPath}。请检查目录权限。错误: ${accessErr.message}` 
+                    });
+                }
+            } else {
+                // 如果目录不存在，尝试创建（仅验证，不实际创建）
+                try {
+                    // 检查父目录是否存在且可写
+                    const parentDir = path.dirname(resolvedPath);
+                    if (fs.existsSync(parentDir)) {
+                        fs.accessSync(parentDir, fs.constants.W_OK);
+                    } else {
+                        return res.status(400).json({ 
+                            error: `备份路径的父目录不存在: ${parentDir}。请先创建目录。` 
+                        });
+                    }
+                } catch (parentErr) {
+                    console.error('[CREATE BACKUP CONFIG] 父目录检查失败:', parentErr.message);
+                    return res.status(400).json({ 
+                        error: `无法访问备份路径的父目录。请检查目录权限。错误: ${parentErr.message}` 
+                    });
+                }
+            }
+        }
+        
         const result = await db.run(
             "INSERT INTO backup_configs (user_id, backup_type, config, enabled, schedule) VALUES (?, ?, ?, ?, ?)",
             [req.userId || 0, backupType, JSON.stringify(config), enabled ? 1 : 0, schedule || null]
@@ -1907,22 +1952,83 @@ async function backupToLocal(data, backupPath, fileName) {
 
 // 备份到本地/NAS（新版本，支持文件夹结构）
 async function backupToLocalWithFolder(fileContent, backupPath, folderName, fileName) {
-    // 确保备份目录存在
-    if (!fs.existsSync(backupPath)) {
-        fs.mkdirSync(backupPath, { recursive: true });
+    try {
+        // 解析路径（支持绝对路径和相对路径）
+        const resolvedPath = path.isAbsolute(backupPath) 
+            ? backupPath 
+            : path.resolve(__dirname, backupPath);
+        
+        console.log('[BACKUP] 备份路径:', resolvedPath);
+        console.log('[BACKUP] 备份文件夹:', folderName);
+        console.log('[BACKUP] 文件名:', fileName);
+        
+        // 确保备份目录存在
+        if (!fs.existsSync(resolvedPath)) {
+            console.log('[BACKUP] 创建备份目录:', resolvedPath);
+            try {
+                fs.mkdirSync(resolvedPath, { recursive: true, mode: 0o755 });
+                console.log('[BACKUP] 备份目录创建成功');
+            } catch (mkdirErr) {
+                console.error('[BACKUP] 创建备份目录失败:', mkdirErr.message);
+                console.error('[BACKUP] 错误详情:', {
+                    code: mkdirErr.code,
+                    path: resolvedPath,
+                    errno: mkdirErr.errno
+                });
+                throw new Error(`无法创建备份目录: ${resolvedPath}。错误: ${mkdirErr.message}。请检查目录权限。`);
+            }
+        } else {
+            // 检查目录是否可写
+            try {
+                fs.accessSync(resolvedPath, fs.constants.W_OK);
+            } catch (accessErr) {
+                console.error('[BACKUP] 备份目录不可写:', accessErr.message);
+                throw new Error(`备份目录不可写: ${resolvedPath}。请检查目录权限。`);
+            }
+        }
+        
+        // 创建备份文件夹
+        const folderPath = path.join(resolvedPath, folderName);
+        if (!fs.existsSync(folderPath)) {
+            console.log('[BACKUP] 创建备份子文件夹:', folderPath);
+            try {
+                fs.mkdirSync(folderPath, { recursive: true, mode: 0o755 });
+                console.log('[BACKUP] 备份子文件夹创建成功');
+            } catch (mkdirErr) {
+                console.error('[BACKUP] 创建备份子文件夹失败:', mkdirErr.message);
+                throw new Error(`无法创建备份子文件夹: ${folderPath}。错误: ${mkdirErr.message}。请检查目录权限。`);
+            }
+        }
+        
+        // 写入文件
+        const filePath = path.join(folderPath, fileName);
+        console.log('[BACKUP] 写入备份文件:', filePath);
+        try {
+            fs.writeFileSync(filePath, fileContent, 'utf-8');
+            console.log('[BACKUP] 备份文件写入成功:', filePath);
+            
+            // 验证文件是否成功写入
+            if (fs.existsSync(filePath)) {
+                const stats = fs.statSync(filePath);
+                console.log('[BACKUP] 备份文件大小:', stats.size, 'bytes');
+            } else {
+                throw new Error('备份文件写入后验证失败');
+            }
+        } catch (writeErr) {
+            console.error('[BACKUP] 写入备份文件失败:', writeErr.message);
+            console.error('[BACKUP] 错误详情:', {
+                code: writeErr.code,
+                path: filePath,
+                errno: writeErr.errno
+            });
+            throw new Error(`无法写入备份文件: ${filePath}。错误: ${writeErr.message}。请检查目录权限。`);
+        }
+        
+        return filePath;
+    } catch (error) {
+        console.error('[BACKUP] 备份操作失败:', error);
+        throw error;
     }
-    
-    // 创建备份文件夹
-    const folderPath = path.join(backupPath, folderName);
-    if (!fs.existsSync(folderPath)) {
-        fs.mkdirSync(folderPath, { recursive: true });
-    }
-    
-    // 写入文件
-    const filePath = path.join(folderPath, fileName);
-    fs.writeFileSync(filePath, fileContent, 'utf-8');
-    
-    return filePath;
 }
 
 

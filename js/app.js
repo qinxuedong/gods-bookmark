@@ -4810,7 +4810,14 @@ async function initGlobalSearch() {
     }
     
     if (modalInput) {
-        modalInput.addEventListener('input', (e) => handleSearch(e.target.value, true));
+        modalInput.addEventListener('input', async (e) => {
+            // 确保缓存已加载
+            if (!allBookmarksCache || allBookmarksCache.length === 0) {
+                console.log('[GlobalSearch] 输入时发现缓存为空，正在刷新...');
+                await refreshBookmarksCache();
+            }
+            await handleSearch(e.target.value, true);
+        });
         modalInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 const query = e.target.value.trim();
@@ -4910,20 +4917,28 @@ async function loadSearchConfig() {
 // 刷新书签缓存
 async function refreshBookmarksCache() {
     try {
+        console.log('[GlobalSearch] 开始刷新书签缓存...');
         const bookmarksData = await dataManager.getBookmarks();
         allBookmarksCache = [];
         
+        if (!bookmarksData || !Array.isArray(bookmarksData)) {
+            console.warn('[GlobalSearch] 书签数据格式不正确:', typeof bookmarksData);
+            return;
+        }
+        
         bookmarksData.forEach((category, catIndex) => {
-            if (category.items && Array.isArray(category.items)) {
+            if (category && category.items && Array.isArray(category.items)) {
                 category.items.forEach((item, itemIndex) => {
-                    allBookmarksCache.push({
-                        name: item.name || '',
-                        url: item.url || '',
-                        icon: item.icon || '🔗',
-                        category: category.category || '未分类',
-                        catIndex,
-                        itemIndex
-                    });
+                    if (item && item.name) {
+                        allBookmarksCache.push({
+                            name: item.name || '',
+                            url: item.url || '',
+                            icon: item.icon || '🔗',
+                            category: category.category || '未分类',
+                            catIndex,
+                            itemIndex
+                        });
+                    }
                 });
             }
         });
@@ -4932,8 +4947,13 @@ async function refreshBookmarksCache() {
         
         // 同时刷新点击统计数据
         await refreshClickStatsCache();
+        
+        return allBookmarksCache.length > 0;
     } catch (error) {
         console.error('[GlobalSearch] 刷新书签缓存失败:', error);
+        console.error('[GlobalSearch] 错误详情:', error.message, error.stack);
+        // 不抛出异常，但返回 false 表示失败
+        return false;
     }
 }
 
@@ -4989,10 +5009,20 @@ function searchFunctions(query) {
         return [];
     }
     
+    // 确保 functionItems 已定义
+    if (!functionItems || !Array.isArray(functionItems)) {
+        console.warn('[GlobalSearch] 功能项列表未定义');
+        return [];
+    }
+    
     const results = [];
     const queryLower = query.toLowerCase();
     
     functionItems.forEach(func => {
+        // 确保 func 对象有效
+        if (!func || !func.name) {
+            return;
+        }
         let score = 0;
         const nameLower = func.name.toLowerCase();
         
@@ -5045,11 +5075,21 @@ function searchBookmarks(query) {
         return [];
     }
     
+    // 如果缓存为空，返回空结果
+    if (!allBookmarksCache || !Array.isArray(allBookmarksCache) || allBookmarksCache.length === 0) {
+        console.warn('[GlobalSearch] 书签缓存为空，无法搜索书签');
+        return [];
+    }
+    
     const results = [];
     const queryLower = query.toLowerCase();
     
     // 计算相关度分数
     allBookmarksCache.forEach(bookmark => {
+        // 确保 bookmark 对象有效
+        if (!bookmark || !bookmark.name) {
+            return;
+        }
         const nameLower = bookmark.name.toLowerCase();
         const urlLower = bookmark.url.toLowerCase();
         const categoryLower = bookmark.category.toLowerCase();
@@ -5334,17 +5374,30 @@ window.openSearchModal = async function() {
     const modalInput = document.getElementById('global-search-modal-input');
     
     if (modal && modalInput) {
+        // 显示加载状态
+        modal.style.display = 'flex';
+        modalInput.value = '';
+        modalInput.disabled = true;
+        modalInput.placeholder = '正在加载书签缓存...';
+        renderSearchResults([], true);
+        selectedResultIndex = -1;
+        
         // 确保书签缓存已加载（如果缓存为空，先刷新）
         if (!allBookmarksCache || allBookmarksCache.length === 0) {
             console.log('[GlobalSearch] 缓存为空，正在刷新书签缓存...');
-            await refreshBookmarksCache();
+            const success = await refreshBookmarksCache();
+            if (!success || !allBookmarksCache || allBookmarksCache.length === 0) {
+                console.warn('[GlobalSearch] 缓存刷新失败或为空，搜索功能可能受限');
+                modalInput.placeholder = '书签缓存加载失败，请刷新页面重试';
+            } else {
+                console.log('[GlobalSearch] 缓存刷新成功，共', allBookmarksCache.length, '个书签');
+            }
         }
         
-        modal.style.display = 'flex';
+        // 恢复输入框状态
+        modalInput.disabled = false;
+        modalInput.placeholder = '搜索书签、功能或使用搜索引擎...';
         modalInput.focus();
-        modalInput.value = '';
-        renderSearchResults([], true);
-        selectedResultIndex = -1;
     }
 }
 
