@@ -4958,7 +4958,7 @@ async function refreshClickStatsCache() {
 }
 
 // 处理搜索输入
-function handleSearch(query, isModal = false) {
+async function handleSearch(query, isModal = false) {
     if (!query || query.trim() === '') {
         if (isModal) {
             renderSearchResults([], isModal);
@@ -4966,6 +4966,12 @@ function handleSearch(query, isModal = false) {
             hideInlineSearchDropdown();
         }
         return;
+    }
+    
+    // 确保书签缓存已加载（如果缓存为空，先刷新）
+    if (!allBookmarksCache || allBookmarksCache.length === 0) {
+        console.log('[GlobalSearch] 搜索时发现缓存为空，正在刷新...');
+        await refreshBookmarksCache();
     }
     
     const trimmedQuery = query.trim().toLowerCase();
@@ -5323,15 +5329,21 @@ async function performSearch(query) {
 }
 
 // 打开搜索浮窗
-window.openSearchModal = function() {
+window.openSearchModal = async function() {
     const modal = document.getElementById('global-search-modal');
     const modalInput = document.getElementById('global-search-modal-input');
     
     if (modal && modalInput) {
+        // 确保书签缓存已加载（如果缓存为空，先刷新）
+        if (!allBookmarksCache || allBookmarksCache.length === 0) {
+            console.log('[GlobalSearch] 缓存为空，正在刷新书签缓存...');
+            await refreshBookmarksCache();
+        }
+        
         modal.style.display = 'flex';
         modalInput.focus();
         modalInput.value = '';
-        renderSearchResults([]);
+        renderSearchResults([], true);
         selectedResultIndex = -1;
     }
 }
