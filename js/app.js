@@ -1,16 +1,16 @@
 // Main App Logic dependent on DataManager
 
 // 切换单个菜单显示（用于单独按钮）
-window.toggleHubMenu = function(menuId) {
+window.toggleHubMenu = function (menuId) {
     const menu = document.getElementById(menuId);
     const wrapper = menu ? menu.closest('.hub-button-wrapper') : null;
-    
+
     if (!menu || !wrapper) return;
-    
-    const isActive = menu.classList.contains('active') || 
-                     menu.style.opacity === '1' || 
-                     menu.style.visibility === 'visible';
-    
+
+    const isActive = menu.classList.contains('active') ||
+        menu.style.opacity === '1' ||
+        menu.style.visibility === 'visible';
+
     if (isActive) {
         // 关闭当前菜单
         menu.classList.remove('active');
@@ -20,7 +20,7 @@ window.toggleHubMenu = function(menuId) {
     } else {
         // 关闭其他菜单
         closeHubMenus();
-        
+
         // 打开当前菜单
         menu.classList.add('active');
         menu.style.opacity = '1';
@@ -30,7 +30,7 @@ window.toggleHubMenu = function(menuId) {
 };
 
 // 关闭所有菜单
-window.closeHubMenus = function() {
+window.closeHubMenus = function () {
     document.querySelectorAll('.hub-menu').forEach(menu => {
         menu.classList.remove('active');
         menu.style.opacity = '0';
@@ -42,7 +42,7 @@ window.closeHubMenus = function() {
 };
 
 // 点击外部关闭菜单
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
     const adminHub = document.getElementById('admin-hub-container');
     const btnHub = document.querySelector('.btn-hub');
     if (adminHub && btnHub && !adminHub.contains(e.target)) {
@@ -52,12 +52,12 @@ document.addEventListener('click', function(e) {
 
 document.addEventListener('DOMContentLoaded', async () => {
     // 静默处理favicon加载错误（避免控制台显示404错误）
-    window.addEventListener('error', function(e) {
+    window.addEventListener('error', function (e) {
         if (e.target && e.target.tagName === 'IMG' && e.target.src) {
             const src = e.target.src;
             // 匹配所有favicon相关的URL（包括Google的favicon服务）
-            if (src.includes('favicon') || 
-                src.includes('gstatic.com') || 
+            if (src.includes('favicon') ||
+                src.includes('gstatic.com') ||
                 src.includes('google.com/s2') ||
                 src.includes('faviconV2')) {
                 // 静默处理favicon加载错误
@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         // 处理全局错误消息（可能来自网络请求）
         if (e.message && (
-            e.message.includes('favicon') || 
+            e.message.includes('favicon') ||
             e.message.includes('gstatic.com') ||
             e.message.includes('faviconV2') ||
             e.message.includes('Failed to load resource'))) {
@@ -79,22 +79,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             return true;
         }
     }, true);
-    
+
     // 也监听unhandledrejection事件（处理Promise rejections）
-    window.addEventListener('unhandledrejection', function(e) {
-        if (e.reason && e.reason.message && 
-            (e.reason.message.includes('favicon') || 
-             e.reason.message.includes('gstatic.com') ||
-             e.reason.message.includes('faviconV2'))) {
+    window.addEventListener('unhandledrejection', function (e) {
+        if (e.reason && e.reason.message &&
+            (e.reason.message.includes('favicon') ||
+                e.reason.message.includes('gstatic.com') ||
+                e.reason.message.includes('faviconV2'))) {
             e.preventDefault();
         }
     });
-    
+
     // 重写console.error来过滤favicon相关的错误
     const originalConsoleError = console.error;
-    console.error = function(...args) {
+    console.error = function (...args) {
         const message = args.join(' ');
-        if (message.includes('favicon') || 
+        if (message.includes('favicon') ||
             message.includes('gstatic.com') ||
             message.includes('faviconV2') ||
             (message.includes('Failed to load resource') && message.includes('favicon'))) {
@@ -103,10 +103,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         originalConsoleError.apply(console, args);
     };
-    
+
     // 绑定HTML中的内联事件处理器（符合CSP）
     bindInlineEventHandlers();
-    
+
     // Check if on login page, if so skip
     if (window.location.pathname.includes('login.html')) return;
 
@@ -130,17 +130,17 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     // 导入文件输入框
     const importFile = document.getElementById('import-file');
     if (importFile) {
-        importFile.addEventListener('change', function() {
+        importFile.addEventListener('change', function () {
             if (typeof handleBookmarkImport === 'function') {
                 handleBookmarkImport(this);
             }
         });
     }
-    
+
     // 待办事项相关按钮
     const btnAddTodo = document.getElementById('btn-add-todo');
     if (btnAddTodo) {
@@ -150,7 +150,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     const newTodoInput = document.getElementById('new-todo-input');
     if (newTodoInput) {
         newTodoInput.addEventListener('keydown', (e) => {
@@ -169,7 +169,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     const btnAddTodoConfirm = document.getElementById('btn-add-todo-confirm');
     if (btnAddTodoConfirm) {
         btnAddTodoConfirm.addEventListener('click', () => {
@@ -178,7 +178,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     const btnAddTodoCancel = document.getElementById('btn-add-todo-cancel');
     if (btnAddTodoCancel) {
         btnAddTodoCancel.addEventListener('click', () => {
@@ -187,7 +187,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     // 绑定添加待办图片删除按钮
     const addTodoImageRemove = document.getElementById('add-todo-image-remove');
     if (addTodoImageRemove) {
@@ -200,7 +200,7 @@ function bindInlineEventHandlers() {
             if (modal) modal.dataset.todoImage = '';
         });
     }
-    
+
     // 添加待办模态框关闭按钮
     const addTodoModalClose = document.getElementById('add-todo-modal-close');
     if (addTodoModalClose) {
@@ -210,7 +210,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     const todosToggleButton = document.getElementById('todos-toggle-button');
     if (todosToggleButton) {
         todosToggleButton.addEventListener('click', () => {
@@ -219,7 +219,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     // 书签模态框按钮
     const bookmarkModalCancel = document.getElementById('bookmark-modal-cancel');
     if (bookmarkModalCancel) {
@@ -229,7 +229,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     const bookmarkModalSave = document.getElementById('bookmark-modal-save');
     if (bookmarkModalSave) {
         bookmarkModalSave.addEventListener('click', () => {
@@ -238,11 +238,11 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     // 为书签名称和网址输入框添加回车键确认
     const bookmarkNameInput = document.getElementById('bookmark-name');
     const bookmarkUrlInput = document.getElementById('bookmark-url');
-    
+
     if (bookmarkNameInput) {
         bookmarkNameInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -256,7 +256,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     if (bookmarkUrlInput) {
         bookmarkUrlInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -267,7 +267,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     // 分类模态框按钮
     const categoryModalCancel = document.getElementById('category-modal-cancel');
     if (categoryModalCancel) {
@@ -277,7 +277,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     const categoryModalSave = document.getElementById('category-modal-save');
     if (categoryModalSave) {
         categoryModalSave.addEventListener('click', () => {
@@ -286,7 +286,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     // 为分类名称输入框添加回车键确认
     const categoryNameInput = document.getElementById('category-name');
     if (categoryNameInput) {
@@ -299,7 +299,7 @@ function bindInlineEventHandlers() {
             }
         });
     }
-    
+
     // 地点模态框按钮
     const locationModalCancel = document.getElementById('location-modal-cancel');
     if (locationModalCancel) {
@@ -318,7 +318,7 @@ async function initGlobalUI() {
         // 移除旧的事件监听器（如果存在）
         const newCloseBtn = closeBtn.cloneNode(true);
         closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-        
+
         newCloseBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
@@ -334,7 +334,7 @@ async function initGlobalUI() {
             }
         });
     }
-    
+
     try {
         // 加载并显示网站标题
         try {
@@ -354,23 +354,23 @@ async function initGlobalUI() {
             }
             document.title = 'God\'s Bookmark';
         }
-        
+
         // Inject Admin Controls to Header
         const navUl = document.querySelector('nav ul');
         if (!navUl) {
             console.error('[initGlobalUI] Navigation ul not found!');
             return;
         }
-        
+
         // 获取HTML中的登录链接（如果存在）
         const loginLinkItem = document.getElementById('login-link-item');
-        
+
         // 立即隐藏登录按钮，避免页面加载时闪现
         // 登录功能已集成到控制中心菜单中
         if (loginLinkItem) {
             loginLinkItem.style.display = 'none';
         }
-        
+
         // 清除之前动态添加的退出登录链接（保留HTML中的登录链接）
         const allNavLinks = navUl.querySelectorAll('li a');
         allNavLinks.forEach(link => {
@@ -387,7 +387,7 @@ async function initGlobalUI() {
             console.log('[initGlobalUI] Checking login status...');
             isLoggedIn = await dataManager.isLoggedIn();
             console.log('[initGlobalUI] Login status:', isLoggedIn);
-            
+
             // 同时检查多用户认证状态，确保userManager.currentUser被设置
             if (window.userManager) {
                 try {
@@ -408,7 +408,7 @@ async function initGlobalUI() {
 
         // 控制中心始终可见（无论登录状态）
         showControlCenter();
-        
+
         // 登录按钮已在上面立即隐藏，这里不需要再次隐藏
         // 登录功能已集成到控制中心菜单中
 
@@ -428,38 +428,38 @@ async function initGlobalUI() {
             if (todosSection) {
                 todosSection.style.display = 'none';
             }
-            
+
             // 隐藏常用标签栏（上帝的指引）
             const frequentBookmarksBar = document.getElementById('frequent-bookmarks-bar');
             if (frequentBookmarksBar) {
                 frequentBookmarksBar.style.display = 'none';
             }
-            
+
             // 隐藏书签容器
             const bookmarksContainer = document.getElementById('bookmarks-container');
             if (bookmarksContainer) {
                 bookmarksContainer.closest('section')?.style.setProperty('display', 'none', 'important');
             }
-            
+
             // 隐藏搜索浮窗
             const searchModal = document.getElementById('global-search-modal');
             if (searchModal) {
                 searchModal.style.display = 'none';
             }
-            
+
             // 隐藏管理员侧边栏
             const adminSidebar = document.getElementById('admin-sidebar');
             if (adminSidebar) {
                 adminSidebar.style.display = 'none';
             }
-            
+
             // 确保时间板块可见
             const datetimeSection = document.getElementById('datetime-section');
             if (datetimeSection) {
                 datetimeSection.style.display = 'flex';
                 datetimeSection.style.visibility = 'visible';
             }
-            
+
             // 在屏幕中心显示提示文字
             showLoginMessage();
         } else {
@@ -468,17 +468,17 @@ async function initGlobalUI() {
             if (frequentBookmarksBar) {
                 frequentBookmarksBar.style.display = '';
             }
-            
+
             const bookmarksContainer = document.getElementById('bookmarks-container');
             if (bookmarksContainer) {
                 bookmarksContainer.closest('section')?.style.removeProperty('display');
             }
-            
+
             const adminSidebar = document.getElementById('admin-sidebar');
             if (adminSidebar) {
                 adminSidebar.style.display = '';
             }
-            
+
             // 隐藏登录提示信息
             hideLoginMessage();
         }
@@ -493,46 +493,46 @@ async function initGlobalUI() {
         } else {
             console.error('[initGlobalUI] Navigation ul not found in error handler');
         }
-        
+
         // 错误时也隐藏所有板块，只保留时间板块
         const todosSection = document.getElementById('todos-section');
         if (todosSection) {
             todosSection.style.display = 'none';
         }
-        
+
         const frequentBookmarksBar = document.getElementById('frequent-bookmarks-bar');
         if (frequentBookmarksBar) {
             frequentBookmarksBar.style.display = 'none';
         }
-        
+
         const bookmarksContainer = document.getElementById('bookmarks-container');
         if (bookmarksContainer) {
             bookmarksContainer.closest('section')?.style.setProperty('display', 'none', 'important');
         }
-        
+
         const searchModal = document.getElementById('global-search-modal');
         if (searchModal) {
             searchModal.style.display = 'none';
         }
-        
+
         const adminSidebar = document.getElementById('admin-sidebar');
         if (adminSidebar) {
             adminSidebar.style.display = 'none';
         }
-        
+
         // 确保时间板块可见
         const datetimeSection = document.getElementById('datetime-section');
         if (datetimeSection) {
             datetimeSection.style.display = 'flex';
             datetimeSection.style.visibility = 'visible';
         }
-        
+
         // 在屏幕中心显示提示文字
         showLoginMessage();
     }
-    
+
     console.log('[initGlobalUI] Initialization completed');
-    
+
     // 页面完全加载后再次确保控制中心正确显示并更新菜单
     if (document.readyState === 'complete') {
         showControlCenter();
@@ -597,24 +597,24 @@ function hideLoginMessage() {
 function showControlCenter() {
     const controlCenterItem = document.getElementById('control-center-item');
     const controlCenterBtn = document.getElementById('control-center-btn');
-    
+
     if (!controlCenterItem) {
         console.error('[showControlCenter] ❌ control-center-item NOT FOUND in DOM!');
         return;
     }
-    
+
     // 始终显示控制中心
     controlCenterItem.style.display = 'list-item';
     controlCenterItem.style.visibility = 'visible';
     controlCenterItem.style.opacity = '1';
-    
+
     // 确保按钮也可见
     if (controlCenterBtn) {
         controlCenterBtn.style.display = 'flex';
         controlCenterBtn.style.visibility = 'visible';
         controlCenterBtn.style.opacity = '1';
     }
-    
+
     console.log('[showControlCenter] ✅ Control center displayed');
 }
 
@@ -625,9 +625,9 @@ async function updateControlCenterMenu(isLoggedIn) {
         console.error('[updateControlCenterMenu] ❌ control-center-menu NOT FOUND!');
         return;
     }
-    
+
     console.log('[updateControlCenterMenu] Updating menu for logged in:', isLoggedIn);
-    
+
     if (isLoggedIn) {
         // 登录后的菜单内容
         menu.innerHTML = `
@@ -662,7 +662,7 @@ async function updateControlCenterMenu(isLoggedIn) {
             </a>
         `;
     }
-    
+
     // 绑定菜单项点击事件
     bindControlCenterMenuEvents();
 }
@@ -673,26 +673,26 @@ let controlCenterMenuHandler = null;
 function bindControlCenterMenuEvents() {
     const menu = document.getElementById('control-center-menu');
     if (!menu) return;
-    
+
     // 移除旧的事件监听器（如果存在）
     if (controlCenterMenuHandler) {
         menu.removeEventListener('click', controlCenterMenuHandler);
     }
-    
+
     // 创建新的事件处理器
     controlCenterMenuHandler = async (e) => {
         // 阻止事件冒泡，避免触发覆盖层的点击事件
         e.stopPropagation();
-        
+
         const link = e.target.closest('.control-menu-link');
         if (!link) return;
-        
+
         e.preventDefault();
-        
+
         const action = link.getAttribute('data-action');
         console.log('[bindControlCenterMenuEvents] Menu item clicked:', action);
-        
-        switch(action) {
+
+        switch (action) {
             case 'settings':
                 console.log('[bindControlCenterMenuEvents] Opening settings sidebar...');
                 closeControlCenter();
@@ -703,7 +703,7 @@ function bindControlCenterMenuEvents() {
                     if (sidebar) {
                         sidebar.classList.add('open');
                         document.body.classList.add('sidebar-open');
-                        
+
                         // 尝试调用renderCardControls，多次重试
                         let retries = 0;
                         const maxRetries = 5;
@@ -793,23 +793,23 @@ function bindControlCenterMenuEvents() {
                 console.warn('[bindControlCenterMenuEvents] Unknown action:', action);
         }
     };
-    
+
     // 绑定新的事件监听器
     menu.addEventListener('click', controlCenterMenuHandler);
     console.log('[bindControlCenterMenuEvents] ✅ Event handler bound');
 }
 
 // 控制中心下拉菜单
-window.toggleControlCenter = async function(event) {
+window.toggleControlCenter = async function (event) {
     if (event) {
         event.stopPropagation();
     }
     const menu = document.getElementById('control-center-menu');
     if (!menu) return;
-    
+
     // 检查菜单是否打开（通过 class 判断）
     const isOpen = menu.classList.contains('open');
-    
+
     if (isOpen) {
         closeControlCenter();
     } else {
@@ -823,21 +823,21 @@ window.toggleControlCenter = async function(event) {
     }
 };
 
-window.openControlCenter = function() {
+window.openControlCenter = function () {
     const menu = document.getElementById('control-center-menu');
     const btn = document.getElementById('control-center-btn');
     const frequentBar = document.getElementById('frequent-bookmarks-bar');
-    
+
     if (menu && btn) {
         // 获取按钮位置用于设置菜单的top
         const btnRect = btn.getBoundingClientRect();
         menu.style.top = btnRect.top + 'px';
-        
+
         // 定位菜单：优先使用按钮右侧定位，如果按钮太靠右则使用左侧定位
         const viewportWidth = window.innerWidth;
         const menuWidth = 180; // 菜单最大宽度
         const padding = 20; // 距离边缘的最小距离
-        
+
         // 如果按钮右侧有足够空间，使用右侧定位
         if (btnRect.right + menuWidth + padding <= viewportWidth) {
             menu.style.left = (btnRect.right + 8) + 'px';
@@ -849,10 +849,10 @@ window.openControlCenter = function() {
         }
         menu.style.height = 'auto'; // 改为自动高度
         menu.style.maxHeight = 'calc(100vh - ' + btnRect.top + 'px)'; // 限制最大高度
-        
+
         // 显示菜单（使用 class 触发动画）
         menu.style.display = 'flex';
-        
+
         // 使用 requestAnimationFrame 确保 display 已经应用后再添加 class
         requestAnimationFrame(() => {
             menu.classList.add('open');
@@ -862,19 +862,19 @@ window.openControlCenter = function() {
     }
 };
 
-window.closeControlCenter = function() {
+window.closeControlCenter = function () {
     const menu = document.getElementById('control-center-menu');
-    
+
     // 移除点击空白处关闭的事件监听器
     if (controlCenterOutsideClickHandler) {
         document.removeEventListener('click', controlCenterOutsideClickHandler);
         controlCenterOutsideClickHandler = null;
     }
-    
+
     if (menu) {
         // 移除 open class 触发动画
         menu.classList.remove('open');
-        
+
         // 动画结束后隐藏
         setTimeout(() => {
             menu.style.display = 'none';
@@ -891,13 +891,13 @@ function setupControlCenterOutsideClick() {
         document.removeEventListener('click', controlCenterOutsideClickHandler);
         controlCenterOutsideClickHandler = null;
     }
-    
+
     // 延迟添加事件监听器，避免立即触发（因为打开菜单的点击事件可能还在冒泡）
     setTimeout(() => {
-        controlCenterOutsideClickHandler = function(event) {
+        controlCenterOutsideClickHandler = function (event) {
             const menu = document.getElementById('control-center-menu');
             const btn = document.getElementById('control-center-btn');
-            
+
             if (!menu || !menu.classList.contains('open')) {
                 // 菜单未打开，移除监听器
                 if (controlCenterOutsideClickHandler) {
@@ -906,11 +906,11 @@ function setupControlCenterOutsideClick() {
                 }
                 return;
             }
-            
+
             // 检查点击的目标是否在菜单内或按钮上
             const isClickInsideMenu = menu && menu.contains(event.target);
             const isClickOnButton = btn && btn.contains(event.target);
-            
+
             // 如果点击的是外部（既不是菜单也不是按钮），则关闭菜单
             if (!isClickInsideMenu && !isClickOnButton) {
                 closeControlCenter();
@@ -921,7 +921,7 @@ function setupControlCenterOutsideClick() {
                 }
             }
         };
-        
+
         // 添加事件监听器
         document.addEventListener('click', controlCenterOutsideClickHandler);
     }, 100);
@@ -933,13 +933,13 @@ async function initDashboard() {
     if (typeof window.restoreTheme === 'function') {
         await window.restoreTheme();
     }
-    
+
     await loadBookmarks();
     await initMonitor();
-    
+
     // 加载常用标签栏
     await loadFrequentBookmarks();
-    
+
     // 初始化全局搜索（在加载书签后，确保缓存已更新）
     await initGlobalSearch();
 
@@ -955,13 +955,13 @@ async function initDashboard() {
             console.error('[initDashboard] Error checking user auth:', error);
         }
     }
-    
+
     // 加载便签待办
     const isLoggedIn = await dataManager.isLoggedIn();
     if (isLoggedIn) {
         await initTodos();
     }
-    
+
     // 初始化滚动检测，为时间日期区域添加毛玻璃背景
     initDatetimeScrollEffect();
 }
@@ -970,54 +970,54 @@ async function initDashboard() {
 function initDatetimeScrollEffect() {
     const datetimeSection = document.getElementById('datetime-section');
     const mainContainer = document.querySelector('main.container');
-    
+
     if (!datetimeSection) return;
-    
+
     function checkScrollOverlap() {
         const datetimeRect = datetimeSection.getBoundingClientRect();
         const scrollY = window.scrollY || window.pageYOffset;
-        
+
         // 时间区域是固定的（position: fixed, top: 0），高度约260px
         // 主容器有 padding-top: 375px，所以主内容从375px位置开始
         // 当滚动时，如果滚动位置使得主内容的可见部分进入时间区域范围，就应该添加毛玻璃
-        
+
         // 检测所有可能的内容元素（书签卡片、上帝的指引区域等）
         let hasContentBehind = false;
-        
+
         // 检测主容器是否与时间区域重叠
         if (mainContainer) {
             const mainRect = mainContainer.getBoundingClientRect();
             // 如果主容器的任何部分与时间区域重叠，并且已经滚动
-            if (mainRect.top < datetimeRect.bottom && 
+            if (mainRect.top < datetimeRect.bottom &&
                 mainRect.bottom > datetimeRect.top &&
                 scrollY > 0) {
                 hasContentBehind = true;
             }
         }
-        
+
         // 检测所有书签卡片是否与时间区域重叠
         const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
         if (!hasContentBehind && bookmarkCards.length > 0) {
             bookmarkCards.forEach(card => {
                 const cardRect = card.getBoundingClientRect();
                 // 如果任何书签卡片与时间区域重叠
-                if (cardRect.top < datetimeRect.bottom && 
+                if (cardRect.top < datetimeRect.bottom &&
                     cardRect.bottom > datetimeRect.top) {
                     hasContentBehind = true;
                 }
             });
         }
-        
+
         // 检测上帝的指引区域是否与时间区域重叠
         const frequentBar = document.getElementById('frequent-bookmarks-bar');
         if (!hasContentBehind && frequentBar) {
             const frequentRect = frequentBar.getBoundingClientRect();
-            if (frequentRect.top < datetimeRect.bottom && 
+            if (frequentRect.top < datetimeRect.bottom &&
                 frequentRect.bottom > datetimeRect.top) {
                 hasContentBehind = true;
             }
         }
-        
+
         // 如果页面滚动且有任何内容在时间区域范围内，添加毛玻璃效果
         if (hasContentBehind && scrollY > 50) {
             datetimeSection.classList.add('has-content-behind');
@@ -1025,7 +1025,7 @@ function initDatetimeScrollEffect() {
             datetimeSection.classList.remove('has-content-behind');
         }
     }
-    
+
     // 监听滚动事件（使用节流优化性能）
     let ticking = false;
     function onScroll() {
@@ -1037,7 +1037,7 @@ function initDatetimeScrollEffect() {
             ticking = true;
         }
     }
-    
+
     window.addEventListener('scroll', onScroll, { passive: true });
     // 初始检查
     checkScrollOverlap();
@@ -1048,7 +1048,7 @@ function initDatetimeScrollEffect() {
         });
         resizeObserver.observe(mainContainer);
     }
-    
+
     // 监听DOM变化，确保新添加的内容也能被检测到
     if (window.MutationObserver && mainContainer) {
         const mutationObserver = new MutationObserver(() => {
@@ -1084,7 +1084,7 @@ async function initTodos() {
     try {
         const isLoggedIn = await dataManager.isLoggedIn();
         console.log('[Todos] Init - isLoggedIn:', isLoggedIn);
-        
+
         if (isLoggedIn) {
             // 加载便签待办设置
             try {
@@ -1095,7 +1095,7 @@ async function initTodos() {
                     opacity: 0.1,
                     mainColor: '#8b5cf6'
                 };
-                
+
                 // 应用标题
                 const todosTitleElement = document.getElementById('todos-title');
                 if (todosTitleElement) {
@@ -1105,14 +1105,14 @@ async function initTodos() {
                     // 添加双击钉住功能
                     window.bindTodosTitleDoubleClick();
                 }
-                
+
                 // 应用显示/隐藏状态
                 todosSection.style.display = todosSettings.visible !== false ? 'block' : 'none';
             } catch (error) {
                 console.error('[Todos] Load settings error:', error);
                 todosSection.style.display = 'block'; // 默认显示
             }
-            
+
             // 强制设置固定位置（左侧悬浮停靠），避免移动到中间
             todosSection.style.position = 'fixed';
             todosSection.style.left = '0';
@@ -1124,18 +1124,18 @@ async function initTodos() {
             todosSection.style.overflow = 'visible';
             todosSection.style.zIndex = '20';
             todosSection.style.pointerEvents = 'auto';
-            
+
             // 添加鼠标悬停事件，确保滑出功能正常工作
-            todosSection.addEventListener('mouseenter', function() {
+            todosSection.addEventListener('mouseenter', function () {
                 this.style.transform = 'translateX(0)';
             });
-            todosSection.addEventListener('mouseleave', function() {
+            todosSection.addEventListener('mouseleave', function () {
                 this.style.transform = 'translateX(-310px)';
             });
-            
+
             // 更新配置缓存
             await updateTodosConfigCache();
-            
+
             await loadTodos();
             // 不再加载保存的位置（待办面板固定位置）
             // loadTodosPosition 函数现在也会强制设置固定位置
@@ -1147,44 +1147,44 @@ async function initTodos() {
             todosSection.style.display = 'none';
         }
     } catch (error) {
-            console.error('[Todos] Init error:', error);
+        console.error('[Todos] Init error:', error);
         todosSection.style.display = 'none';
     }
 }
 
 // 绑定便签待办标题的双击事件（钉住/取消固定）
-window.bindTodosTitleDoubleClick = function() {
+window.bindTodosTitleDoubleClick = function () {
     const todosTitleElement = document.getElementById('todos-title');
     if (!todosTitleElement) return;
-    
+
     // 移除旧的事件监听器（通过克隆节点）
     const newTitle = todosTitleElement.cloneNode(true);
     todosTitleElement.parentNode.replaceChild(newTitle, todosTitleElement);
-    
+
     // 获取新的标题元素
     const titleElement = document.getElementById('todos-title');
     if (!titleElement) return;
-    
+
     // 添加双击事件
     titleElement.addEventListener('dblclick', (e) => {
         e.preventDefault();
         e.stopPropagation();
         toggleTodosPin();
     });
-    
+
     // 添加样式提示（鼠标悬停时显示可双击）
     titleElement.style.cursor = 'pointer';
     updateTodosPinTooltip();
 }
 
 // 切换便签待办面板的完全折叠状态（已废弃，保留用于兼容）
-window.toggleTodosCollapse = function() {
+window.toggleTodosCollapse = function () {
     todosCollapsed = !todosCollapsed;
     applyTodosCollapse();
 };
 
 // 切换便签待办面板的钉住状态（双击后钉住，不再悬浮停靠）
-window.toggleTodosPin = function() {
+window.toggleTodosPin = function () {
     todosPinned = !todosPinned;
     applyTodosPin();
 };
@@ -1193,19 +1193,19 @@ window.toggleTodosPin = function() {
 function applyTodosPin() {
     const todosSection = document.getElementById('todos-section');
     const todosTitleElement = document.getElementById('todos-title');
-    
+
     if (!todosSection) return;
-    
+
     if (todosPinned) {
         // 钉住：固定在当前位置，移除悬浮停靠效果
         todosSection.style.transform = 'translateX(0)';
         todosSection.style.transition = 'none';
         todosSection.classList.add('todos-pinned');
-        
+
         // 移除hover事件监听器（如果存在）
         todosSection.onmouseenter = null;
         todosSection.onmouseleave = null;
-        
+
         // 更新标题，不添加图标（移除固定图标）
         if (todosTitleElement) {
             const currentText = todosTitleElement.textContent;
@@ -1218,19 +1218,19 @@ function applyTodosPin() {
         todosSection.style.transform = 'translateX(-310px)';
         todosSection.style.transition = 'transform 0.3s ease-out';
         todosSection.classList.remove('todos-pinned');
-        
+
         // 重新添加hover事件监听器
-        todosSection.addEventListener('mouseenter', function() {
+        todosSection.addEventListener('mouseenter', function () {
             if (!todosPinned) {
                 this.style.transform = 'translateX(0)';
             }
         });
-        todosSection.addEventListener('mouseleave', function() {
+        todosSection.addEventListener('mouseleave', function () {
             if (!todosPinned) {
                 this.style.transform = 'translateX(-310px)';
             }
         });
-        
+
         // 更新标题，移除钉住指示器（取消📍图标）
         if (todosTitleElement) {
             const currentText = todosTitleElement.textContent;
@@ -1240,12 +1240,12 @@ function applyTodosPin() {
             todosTitleElement.textContent = textWithoutMarkers;
         }
     }
-    
+
     updateTodosPinTooltip();
 }
 
 // 清理便签标题文本，移除所有图标和特殊字符
-window.cleanTodosTitle = function(text) {
+window.cleanTodosTitle = function (text) {
     if (!text) return '便签待办';
     // 移除所有可能的图标标记（包括emoji、问号等）
     // 使用更全面的正则表达式匹配各种可能的图标
@@ -1260,7 +1260,7 @@ window.cleanTodosTitle = function(text) {
 function updateTodosPinTooltip() {
     const todosTitleElement = document.getElementById('todos-title');
     if (!todosTitleElement) return;
-    
+
     todosTitleElement.title = todosPinned ? '双击取消固定' : '双击固定位置';
 }
 
@@ -1270,7 +1270,7 @@ function applyTodosCollapse() {
     const toggleButton = document.getElementById('todos-toggle-button');
     const todosTitleElement = document.getElementById('todos-title');
     const btnAddTodo = document.getElementById('btn-add-todo');
-    
+
     if (todosCollapsed) {
         // 折叠：隐藏所有内容，只显示标题
         if (todosListContainer) {
@@ -1282,7 +1282,7 @@ function applyTodosCollapse() {
         if (btnAddTodo) {
             btnAddTodo.style.display = 'none';
         }
-        
+
         // 更新标题，添加折叠指示器
         if (todosTitleElement) {
             const currentText = todosTitleElement.textContent;
@@ -1301,7 +1301,7 @@ function applyTodosCollapse() {
         if (btnAddTodo) {
             btnAddTodo.style.display = 'flex';
         }
-        
+
         // 更新标题，添加展开指示器（取消📍图标）
         if (todosTitleElement) {
             const currentText = todosTitleElement.textContent;
@@ -1320,20 +1320,20 @@ async function loadTodos() {
         const isLoggedIn = await dataManager.isLoggedIn();
         if (!isLoggedIn) {
             console.warn('[Todos] User not logged in, cannot load todos');
-        todosList = [];
-        await renderTodos();
-        return;
+            todosList = [];
+            await renderTodos();
+            return;
         }
-        
+
         todosList = await dataManager.getTodos();
-        
+
         // 确保每个待办项都有原始索引（用于恢复位置）
         todosList.forEach((todo, index) => {
             if (todo.originalIndex === undefined) {
                 todo.originalIndex = index;
             }
         });
-        
+
         console.log('[Todos] Loaded', todosList.length, 'todos');
         await renderTodos();
         enableTodosDrag(); // 启用拖拽功能
@@ -1398,11 +1398,11 @@ async function renderTodos() {
         if (toggleButton) toggleButton.style.display = 'none';
         return;
     }
-    
+
     // 获取配置中的主颜色和透明度（同步获取，避免异步问题）
     let mainColor = '#8b5cf6';
     let opacity = 0.1;
-    
+
     try {
         const config = await dataManager.getDashboardConfig();
         if (config.todosSettings) {
@@ -1412,7 +1412,7 @@ async function renderTodos() {
     } catch (error) {
         console.error('[Todos] Get config error:', error);
     }
-    
+
     // 将主颜色转换为RGB
     function hexToRgb(hex) {
         const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -1422,7 +1422,7 @@ async function renderTodos() {
             b: parseInt(result[3], 16)
         } : null;
     }
-    
+
     // 根据主颜色和透明度生成待办项颜色（更鲜艳的随机色）
     function generateTodoColor(todoId, baseColor, baseOpacity) {
         // 为待办项生成一个稳定的颜色（基于ID哈希）
@@ -1431,7 +1431,7 @@ async function renderTodos() {
         for (let i = 0; i < idStr.length; i++) {
             hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
         }
-        
+
         // 使用更鲜艳的预定义颜色数组，基于hash选择
         const vibrantColors = [
             { r: 139, g: 92, b: 246 },   // 紫色
@@ -1451,13 +1451,13 @@ async function renderTodos() {
             { r: 37, g: 99, b: 235 },    // 深蓝色
             { r: 5, g: 150, b: 105 },    // 深绿色
         ];
-        
+
         const colorIndex = Math.abs(hash) % vibrantColors.length;
         const selectedColor = vibrantColors[colorIndex];
-        
+
         // 使用适中的透明度（0.15，降低一半）使颜色更柔和
         const enhancedOpacity = Math.max(0.15, baseOpacity * 1.5);
-        
+
         return `rgba(${selectedColor.r}, ${selectedColor.g}, ${selectedColor.b}, ${enhancedOpacity})`;
     }
 
@@ -1471,8 +1471,8 @@ async function renderTodos() {
         // 如果展开，visibleTodos就是todosList，索引相同
         // 如果未展开，visibleTodos是todosList.slice(0, 5)，索引对应关系不变
         // 为了更安全，从todosList中找到对应的索引
-        const actualIndex = todosList.findIndex(t => 
-            (t.id && t.id === todo.id) || 
+        const actualIndex = todosList.findIndex(t =>
+            (t.id && t.id === todo.id) ||
             (!t.id && !todo.id && t.text === todo.text && t.completed === todo.completed)
         );
         const finalIndex = actualIndex >= 0 ? actualIndex : visibleIndex;
@@ -1492,28 +1492,28 @@ async function renderTodos() {
         </div>
     `;
     }).join('');
-    
+
     // 显示/隐藏展开/收起按钮
     const toggleButton = document.getElementById('todos-toggle-button');
     if (toggleButton) {
         if (shouldShowToggle) {
             toggleButton.style.display = 'block';
-            toggleButton.innerHTML = todosExpanded 
+            toggleButton.innerHTML = todosExpanded
                 ? `<span style="font-size: 0.75rem; color: var(--text-secondary);">收起 ▲</span>`
                 : `<span style="font-size: 0.75rem; color: var(--text-secondary);">展开更多 (${todosList.length - maxVisible} 项) ▼</span>`;
         } else {
             toggleButton.style.display = 'none';
         }
     }
-    
+
     // 应用折叠状态（如果折叠了，隐藏内容）
     applyTodosCollapse();
-    
+
     // 渲染后启用拖拽（如果未折叠）
     if (!todosCollapsed) {
         enableTodosDrag();
     }
-    
+
     // 绑定事件监听器（避免内联事件处理器，符合CSP）
     bindTodoEvents(todosListContainer);
 }
@@ -1527,7 +1527,7 @@ function bindTodoEvents(container) {
     if (todoEventHandlersBound) {
         return; // 已经绑定过，不再重复绑定
     }
-    
+
     // 使用事件委托处理复选框变化
     container.addEventListener('change', (e) => {
         if (e.target.classList.contains('todo-checkbox')) {
@@ -1550,7 +1550,7 @@ function bindTodoEvents(container) {
             }
         }
     }, true); // 使用捕获阶段，确保先处理
-    
+
     // 使用事件委托处理删除按钮点击
     container.addEventListener('click', (e) => {
         // 阻止复选框的点击事件冒泡
@@ -1558,7 +1558,7 @@ function bindTodoEvents(container) {
             e.stopPropagation();
             return;
         }
-        
+
         // 处理删除按钮
         if (e.target.classList.contains('todo-delete-btn')) {
             e.stopPropagation();
@@ -1580,7 +1580,7 @@ function bindTodoEvents(container) {
             }
         }
     }, true); // 使用捕获阶段
-    
+
     // 处理图片图标双击（仅双击，不响应单击）
     container.addEventListener('dblclick', (e) => {
         if (e.target.classList.contains('todo-image-icon')) {
@@ -1593,7 +1593,7 @@ function bindTodoEvents(container) {
             }
         }
     });
-    
+
     // 处理右键菜单（编辑）
     container.addEventListener('contextmenu', (e) => {
         const todoItem = e.target.closest('.todo-item');
@@ -1606,25 +1606,25 @@ function bindTodoEvents(container) {
             }
         }
     });
-    
+
     // 阻止复选框和删除按钮的 mousedown 事件冒泡
     container.addEventListener('mousedown', (e) => {
         if (e.target.classList.contains('todo-checkbox') || e.target.classList.contains('todo-delete-btn')) {
             e.stopPropagation();
         }
     }, true); // 使用捕获阶段
-    
+
     todoEventHandlersBound = true;
 }
 
 // 切换待办事项展开/收起状态
-window.toggleTodosExpanded = async function() {
+window.toggleTodosExpanded = async function () {
     todosExpanded = !todosExpanded;
     await renderTodos();
 };
 
 // 回到顶部
-window.scrollToTop = function() {
+window.scrollToTop = function () {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
@@ -1634,20 +1634,20 @@ let rightNavScrollHandler = null;
 function initRightNavScroll() {
     const rightNav = document.getElementById('right-nav-container');
     if (!rightNav) return;
-    
+
     // 如果已经存在监听器，先移除避免重复绑定
     if (rightNavScrollHandler) {
         window.removeEventListener('scroll', rightNavScrollHandler);
     }
-    
+
     let ticking = false;
-    
-    rightNavScrollHandler = function() {
+
+    rightNavScrollHandler = function () {
         if (!ticking) {
             window.requestAnimationFrame(() => {
                 const scrollY = window.scrollY || window.pageYOffset;
                 const scrollThreshold = 200; // 滚动200px后显示
-                
+
                 if (scrollY > scrollThreshold) {
                     // 向下滚动超过阈值，显示右侧导航（完整界面）
                     rightNav.classList.add('show');
@@ -1655,43 +1655,43 @@ function initRightNavScroll() {
                     // 回到顶部，隐藏右侧导航
                     rightNav.classList.remove('show');
                 }
-                
+
                 ticking = false;
             });
             ticking = true;
         }
     };
-    
+
     // 监听滚动事件
     window.addEventListener('scroll', rightNavScrollHandler, { passive: true });
-    
+
     // 初始检查
     rightNavScrollHandler();
 }
 
 // 显示添加待办输入框（中心弹窗）
-window.showAddTodoInput = function() {
+window.showAddTodoInput = function () {
     const modal = document.getElementById('add-todo-modal');
     const input = document.getElementById('new-todo-input');
     const imagePreview = document.getElementById('add-todo-image-preview');
     const imageDisplay = document.getElementById('add-todo-image-display');
-    
+
     if (modal && input) {
         modal.style.display = 'flex';
         input.focus();
-        
+
         // 清除之前的图片预览
         if (imagePreview) imagePreview.style.display = 'none';
         if (imageDisplay) imageDisplay.src = '';
         if (modal.dataset) modal.dataset.todoImage = '';
-        
+
         // 绑定图片粘贴事件
         if (input) {
             input.addEventListener('paste', handleAddTodoImagePaste, { once: false });
         }
-        
+
         // 点击背景关闭弹窗
-        modal.addEventListener('click', function(e) {
+        modal.addEventListener('click', function (e) {
             if (e.target === modal) {
                 hideAddTodoInput();
             }
@@ -1700,21 +1700,21 @@ window.showAddTodoInput = function() {
 };
 
 // 隐藏添加待办输入框（中心弹窗）
-window.hideAddTodoInput = function() {
+window.hideAddTodoInput = function () {
     const modal = document.getElementById('add-todo-modal');
     const input = document.getElementById('new-todo-input');
     const imagePreview = document.getElementById('add-todo-image-preview');
     const imageDisplay = document.getElementById('add-todo-image-display');
-    
+
     if (modal && input) {
         modal.style.display = 'none';
         input.value = '';
-        
+
         // 清除图片预览
         if (imagePreview) imagePreview.style.display = 'none';
         if (imageDisplay) imageDisplay.src = '';
         if (modal.dataset) modal.dataset.todoImage = '';
-        
+
         // 移除粘贴事件监听器
         if (input) {
             input.removeEventListener('paste', handleAddTodoImagePaste);
@@ -1723,7 +1723,7 @@ window.hideAddTodoInput = function() {
 };
 
 // 处理输入框按键
-window.handleTodoInputKeydown = function(event) {
+window.handleTodoInputKeydown = function (event) {
     if (event.key === 'Enter') {
         addTodo();
     } else if (event.key === 'Escape') {
@@ -1744,7 +1744,7 @@ function handleAddTodoImagePaste(e) {
                 const modal = document.getElementById('add-todo-modal');
                 const imagePreview = document.getElementById('add-todo-image-preview');
                 const imageDisplay = document.getElementById('add-todo-image-display');
-                
+
                 if (modal) {
                     modal.dataset.todoImage = imageData;
                 }
@@ -1762,14 +1762,14 @@ function handleAddTodoImagePaste(e) {
 }
 
 // 添加待办事项
-window.addTodo = async function() {
+window.addTodo = async function () {
     const input = document.getElementById('new-todo-input');
     const modal = document.getElementById('add-todo-modal');
     if (!input || !modal) return;
 
     const text = input.value.trim();
     const imageData = modal.dataset?.todoImage || '';
-    
+
     // 允许只有文字或只有图片
     if (!text && !imageData) {
         alert('请输入待办事项内容或粘贴图片');
@@ -1795,42 +1795,42 @@ window.addTodo = async function() {
         // 有已完成的待办项，插入到第一个已完成待办项之前（未完成部分的开头）
         todosList.splice(firstCompletedIndex, 0, newTodo);
     }
-    
+
     // 更新所有未完成待办项的 originalIndex（因为新项插入了）
     todosList.forEach((todo, index) => {
         if (!todo.completed) {
             todo.originalIndex = index;
         }
     });
-    
+
     await saveTodos();
     await renderTodos();
     hideAddTodoInput();
 };
 
 // 切换待办事项完成状态
-window.toggleTodo = async function(index) {
+window.toggleTodo = async function (index) {
     // 验证索引有效性
     if (index < 0 || index >= todosList.length) {
         console.error('[toggleTodo] Invalid index:', index, 'todosList length:', todosList.length);
         return;
     }
-    
+
     const todo = todosList[index];
     if (!todo) {
         console.error('[toggleTodo] Todo not found at index:', index);
         return;
     }
-    
+
     const wasCompleted = todo.completed;
-    
+
     // 切换完成状态
     todo.completed = !todo.completed;
-    
+
     // 分离未完成和已完成的待办项（不包括当前待办项）
     const incompleteTodos = todosList.filter((t, i) => i !== index && !t.completed);
     const completedTodos = todosList.filter((t, i) => i !== index && t.completed);
-    
+
     if (todo.completed) {
         // 如果完成，移动到已完成部分的末尾
         completedTodos.push(todo);
@@ -1845,10 +1845,10 @@ window.toggleTodo = async function(index) {
             // 如果原始索引无效或超出范围，添加到未完成部分的末尾
             incompleteTodos.push(todo);
         }
-        
+
         todosList.length = 0;
         todosList.push(...incompleteTodos, ...completedTodos);
-        
+
         // 更新未完成待办项的原始索引
         todosList.forEach((t, i) => {
             if (!t.completed) {
@@ -1856,13 +1856,13 @@ window.toggleTodo = async function(index) {
             }
         });
     }
-    
+
     await saveTodos();
     await renderTodos();
 };
 
 // 删除待办事项
-window.deleteTodo = async function(index) {
+window.deleteTodo = async function (index) {
     if (index >= 0 && index < todosList.length) {
         todosList.splice(index, 1);
         await saveTodos();
@@ -1871,9 +1871,9 @@ window.deleteTodo = async function(index) {
 };
 
 // 编辑待办事项
-window.editTodo = function(index) {
+window.editTodo = function (index) {
     if (index < 0 || index >= todosList.length) return;
-    
+
     const todo = todosList[index];
     showTodoEditModal(todo, index);
 };
@@ -1909,14 +1909,14 @@ function showTodoEditModal(todo, index) {
             </div>
         `;
         document.body.appendChild(editModal);
-        
+
         // 绑定事件
         const closeBtn = document.getElementById('todo-edit-modal-close');
         const cancelBtn = document.getElementById('todo-edit-modal-cancel');
         const saveBtn = document.getElementById('todo-edit-modal-save');
         const textarea = document.getElementById('todo-edit-text');
         const removeImageBtn = document.getElementById('todo-edit-image-remove');
-        
+
         if (closeBtn) {
             closeBtn.addEventListener('click', hideTodoEditModal);
         }
@@ -1931,19 +1931,19 @@ function showTodoEditModal(todo, index) {
                 }
             });
         }
-        
+
         // 点击背景关闭
         editModal.addEventListener('click', (e) => {
             if (e.target === editModal) {
                 hideTodoEditModal();
             }
         });
-        
+
         // 支持粘贴图片
         if (textarea) {
             textarea.addEventListener('paste', handleTodoImagePaste);
         }
-        
+
         // 删除图片
         if (removeImageBtn) {
             removeImageBtn.addEventListener('click', () => {
@@ -1957,17 +1957,17 @@ function showTodoEditModal(todo, index) {
             });
         }
     }
-    
+
     // 填充数据
     const textarea = document.getElementById('todo-edit-text');
     const imagePreview = document.getElementById('todo-edit-image-preview');
     const imageDisplay = document.getElementById('todo-edit-image-display');
     const iconContainer = document.getElementById('todo-edit-image-icon-container');
-    
+
     if (textarea) {
         textarea.value = todo.text || '';
     }
-    
+
     if (todo.image && todo.image.trim() !== '') {
         if (imageDisplay) imageDisplay.src = todo.image;
         if (imagePreview) imagePreview.style.display = 'block';
@@ -1978,10 +1978,10 @@ function showTodoEditModal(todo, index) {
         if (iconContainer) iconContainer.style.display = 'none';
         editModal.dataset.todoImage = '';
     }
-    
+
     editModal.dataset.todoIndex = index;
     editModal.style.display = 'flex';
-    
+
     // 聚焦文本框
     if (textarea) {
         setTimeout(() => textarea.focus(), 100);
@@ -2010,7 +2010,7 @@ function handleTodoImagePaste(e) {
                 const imagePreview = document.getElementById('todo-edit-image-preview');
                 const imageDisplay = document.getElementById('todo-edit-image-display');
                 const iconContainer = document.getElementById('todo-edit-image-icon-container');
-                
+
                 if (editModal) {
                     editModal.dataset.todoImage = imageData;
                 }
@@ -2034,31 +2034,31 @@ function handleTodoImagePaste(e) {
 async function saveTodoEdit(index) {
     const editModal = document.getElementById('todo-edit-modal');
     const textarea = document.getElementById('todo-edit-text');
-    
+
     if (!editModal || !textarea || index < 0 || index >= todosList.length) return;
-    
+
     const text = textarea.value.trim();
     if (!text && !editModal.dataset.todoImage) {
         alert('请输入待办事项内容或添加图片');
         return;
     }
-    
+
     const todo = todosList[index];
     todo.text = text || '';
     todo.image = editModal.dataset.todoImage || '';
-    
+
     await saveTodos();
     await renderTodos();
     hideTodoEditModal();
 }
 
 // 显示待办事项图片浮窗
-window.showTodoImageModal = function(index) {
+window.showTodoImageModal = function (index) {
     if (index < 0 || index >= todosList.length) return;
-    
+
     const todo = todosList[index];
     if (!todo.image || todo.image.trim() === '') return;
-    
+
     // 创建或获取图片浮窗
     let imageModal = document.getElementById('todo-image-modal');
     if (!imageModal) {
@@ -2072,7 +2072,7 @@ window.showTodoImageModal = function(index) {
             </div>
         `;
         document.body.appendChild(imageModal);
-        
+
         // 绑定关闭事件
         const closeBtn = document.getElementById('todo-image-modal-close');
         if (closeBtn) {
@@ -2080,14 +2080,14 @@ window.showTodoImageModal = function(index) {
                 if (imageModal) imageModal.style.display = 'none';
             });
         }
-        
+
         // 点击背景关闭
         imageModal.addEventListener('click', (e) => {
             if (e.target === imageModal) {
                 imageModal.style.display = 'none';
             }
         });
-        
+
         // ESC键关闭
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && imageModal && imageModal.style.display === 'flex') {
@@ -2095,42 +2095,42 @@ window.showTodoImageModal = function(index) {
             }
         });
     }
-    
+
     const imageDisplay = document.getElementById('todo-image-modal-display');
     if (imageDisplay) {
         imageDisplay.src = todo.image;
     }
-    
+
     imageModal.style.display = 'flex';
 };
 
 // 启用待办项拖拽功能
 function enableTodosDrag() {
     const todoItems = document.querySelectorAll('#todos-list .todo-item');
-    
+
     todoItems.forEach((item) => {
         // 移除旧的事件监听器
         item.removeEventListener('dragstart', handleTodoDragStart);
         item.removeEventListener('dragend', handleTodoDragEnd);
         item.removeEventListener('dragover', handleTodoDragOver);
         item.removeEventListener('drop', handleTodoDrop);
-        
+
         // 更新 data-todo-index（确保索引正确）
         const index = todosList.findIndex(t => (t.id || '') === (item.dataset.todoId || ''));
         if (index >= 0) {
             item.dataset.todoIndex = index;
         }
-        
+
         // 设置可拖拽
         item.setAttribute('draggable', 'true');
         item.style.cursor = 'move';
-        
+
         // 添加事件监听器
         item.addEventListener('dragstart', handleTodoDragStart);
         item.addEventListener('dragend', handleTodoDragEnd);
         item.addEventListener('dragover', handleTodoDragOver);
         item.addEventListener('drop', handleTodoDrop);
-        
+
         // 拖拽手柄点击时开始拖拽
         const dragHandle = item.querySelector('.todo-drag-handle');
         if (dragHandle) {
@@ -2153,18 +2153,18 @@ function handleTodoDragStart(e) {
         e.preventDefault();
         return false;
     }
-    
+
     draggedTodoItem = this;
     draggedTodoIndex = parseInt(this.dataset.todoIndex);
-    
+
     if (isNaN(draggedTodoIndex) || draggedTodoIndex < 0 || draggedTodoIndex >= todosList.length) {
         e.preventDefault();
         return false;
     }
-    
+
     this.style.opacity = '0.5';
     this.classList.add('dragging');
-    
+
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', draggedTodoIndex.toString());
 }
@@ -2177,7 +2177,7 @@ function handleTodoDragEnd(e) {
     }
     draggedTodoItem = null;
     draggedTodoIndex = -1;
-    
+
     // 移除所有拖拽悬停效果
     document.querySelectorAll('#todos-list .todo-item').forEach(item => {
         item.classList.remove('drag-over');
@@ -2188,7 +2188,7 @@ function handleTodoDragEnd(e) {
 function handleTodoDragOver(e) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (draggedTodoItem && this !== draggedTodoItem) {
         this.classList.add('drag-over');
     }
@@ -2198,33 +2198,33 @@ function handleTodoDragOver(e) {
 async function handleTodoDrop(e) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!draggedTodoItem || this === draggedTodoItem) {
         return;
     }
-    
+
     const targetIndex = parseInt(this.dataset.todoIndex);
     const sourceIndex = draggedTodoIndex;
-    
-    if (isNaN(sourceIndex) || isNaN(targetIndex) || 
-        sourceIndex === targetIndex || 
-        sourceIndex < 0 || targetIndex < 0 || 
+
+    if (isNaN(sourceIndex) || isNaN(targetIndex) ||
+        sourceIndex === targetIndex ||
+        sourceIndex < 0 || targetIndex < 0 ||
         sourceIndex >= todosList.length || targetIndex >= todosList.length) {
         return;
     }
-    
+
     // 移动待办项
     const draggedTodo = todosList[sourceIndex];
     todosList.splice(sourceIndex, 1);
-    
+
     // 计算插入位置（如果源索引小于目标索引，目标索引需要减1，因为已经移除了源项）
     let insertIndex = targetIndex;
     if (sourceIndex < targetIndex) {
         insertIndex = targetIndex; // 索引不变（因为已经移除了一项）
     }
-    
+
     todosList.splice(insertIndex, 0, draggedTodo);
-    
+
     // 更新未完成待办项的原始索引
     const incompleteCount = todosList.filter(t => !t.completed).length;
     todosList.forEach((todo, index) => {
@@ -2232,7 +2232,7 @@ async function handleTodoDrop(e) {
             todo.originalIndex = index;
         }
     });
-    
+
     // 保存并重新渲染
     await saveTodos();
     await renderTodos();
@@ -2265,7 +2265,7 @@ async function saveTodos() {
             name: error.name,
             stack: error.stack
         });
-        
+
         // 提供更详细的错误信息
         let errorMessage = '保存待办事项失败';
         if (error.message) {
@@ -2291,15 +2291,15 @@ function escapeHtml(text) {
 // 绑定favicon图片的错误处理（符合CSP，不使用内联事件处理器）
 function bindFaviconErrorHandlers(container) {
     if (!container) return;
-    
+
     // 查找所有favicon图片（包括Google的各种favicon服务）
     const faviconImgs = container.querySelectorAll('img[src*="favicon"], img[src*="google.com/s2"], img[src*="gstatic.com"], img[src*="faviconV2"]');
-    
+
     faviconImgs.forEach(img => {
         // 如果已经绑定过，跳过
         if (img.dataset.faviconBound === 'true') return;
         img.dataset.faviconBound = 'true';
-        
+
         // 查找fallback图标
         let fallbackSpan = img.nextElementSibling;
         if (!fallbackSpan || fallbackSpan.tagName !== 'SPAN') {
@@ -2309,9 +2309,9 @@ function bindFaviconErrorHandlers(container) {
             fallbackSpan.style.display = 'none';
             img.parentNode.insertBefore(fallbackSpan, img.nextSibling);
         }
-        
+
         // 绑定错误处理（静默处理，不显示错误）
-        img.addEventListener('error', function(e) {
+        img.addEventListener('error', function (e) {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
@@ -2322,9 +2322,9 @@ function bindFaviconErrorHandlers(container) {
             // 阻止默认的错误行为
             return false;
         }, true);
-        
+
         // 绑定加载检查
-        img.addEventListener('load', function() {
+        img.addEventListener('load', function () {
             if (this.naturalWidth === 0 || this.naturalHeight === 0) {
                 this.dispatchEvent(new Event('error'));
             }
@@ -2338,7 +2338,7 @@ async function loadFrequentBookmarks() {
         const topBookmarks = await dataManager.getTopBookmarks(10);
         const container = document.getElementById('frequent-bookmarks-list');
         const section = document.getElementById('frequent-bookmarks-bar');
-        
+
         if (!container || !section) return;
 
         // 检查登录状态，未登录时不显示
@@ -2361,7 +2361,7 @@ async function loadFrequentBookmarks() {
         topBookmarks.forEach((bookmark) => {
             // 严格限制为10个字符，超出截断
             const displayName = bookmark.name.length > 10 ? bookmark.name.substring(0, 10) : bookmark.name;
-            
+
             // 使用保存的logo或默认图标（不使用内联事件处理器）
             // 兼容旧数据：如果logo来自 gstatic/faviconV2，改用当前的 getFaviconUrl 或回退到emoji
             let logoUrl = bookmark.logo || '';
@@ -2369,7 +2369,7 @@ async function loadFrequentBookmarks() {
                 const fixedUrl = getFaviconUrl(bookmark.url);
                 logoUrl = fixedUrl || '';
             }
-            
+
             const iconHtml = logoUrl
                 ? `<img src="${escapeHtml(logoUrl)}" width="16" height="16" style="vertical-align: middle;">`
                 : '';
@@ -2383,12 +2383,12 @@ async function loadFrequentBookmarks() {
         });
 
         container.innerHTML = html;
-        
+
         // 绑定favicon错误处理（符合CSP）
         setTimeout(() => {
             bindFaviconErrorHandlers(container);
         }, 0);
-        
+
         // 上帝的指引标题颜色固定为紫色渐变，不再跟随卡片主题色
         // updateFrequentHeaderColor(); // 已禁用，使用固定的紫色渐变
     } catch (error) {
@@ -2421,12 +2421,12 @@ function isLocalUrl(url) {
     try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
-        return domain === 'localhost' || 
-               domain === '127.0.0.1' || 
-               domain.startsWith('192.168.') || 
-               domain.startsWith('10.') || 
-               domain.startsWith('172.') ||
-               domain === '0.0.0.0';
+        return domain === 'localhost' ||
+            domain === '127.0.0.1' ||
+            domain.startsWith('192.168.') ||
+            domain.startsWith('10.') ||
+            domain.startsWith('172.') ||
+            domain === '0.0.0.0';
     } catch (e) {
         return false;
     }
@@ -2437,12 +2437,12 @@ function getFaviconUrl(url) {
     try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
-        
+
         // 跳过本地URL（localhost、127.0.0.1、本地IP等）
         if (isLocalUrl(url)) {
             return null;
         }
-        
+
         // 使用Google的favicon服务
         return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
     } catch (e) {
@@ -2459,13 +2459,13 @@ async function updateBookmarkLogo(url, name, catIndex, itemIndex) {
         const bookmarks = await dataManager.getBookmarks();
         if (bookmarks && bookmarks[catIndex] && bookmarks[catIndex].items[itemIndex]) {
             const bookmark = bookmarks[catIndex].items[itemIndex];
-            
+
             // 如果logo已存在且相同，不更新
             if (bookmark.logo === faviconUrl) return;
-            
+
             // 更新logo
             bookmark.logo = faviconUrl;
-            
+
             // 如果icon是emoji，保留；如果是img标签，更新src（不使用内联事件处理器）
             if (bookmark.icon && bookmark.icon.includes('<img')) {
                 // 更新img标签的src
@@ -2474,10 +2474,10 @@ async function updateBookmarkLogo(url, name, catIndex, itemIndex) {
                 // 如果icon是emoji，添加logo但保留emoji作为fallback
                 bookmark.icon = `<img src="${faviconUrl}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${bookmark.icon || '🔗'}</span>`;
             }
-            
+
             // 保存更新
             await dataManager.saveBookmarks(bookmarks);
-            
+
             // 重新加载书签显示
             loadBookmarks();
         }
@@ -2497,12 +2497,12 @@ async function loadBookmarks() {
     try {
         let bookmarksData = null;
         let isAdmin = false;
-        
+
         try {
             console.log('[loadBookmarks] Fetching bookmarks from API...');
             bookmarksData = await dataManager.getBookmarks();
             console.log('[loadBookmarks] Bookmarks loaded:', bookmarksData?.length || 0, 'categories');
-            
+
             // 如果没有数据，使用空数组而不是 null
             if (!bookmarksData) {
                 console.warn('[loadBookmarks] No bookmarks data, using empty array');
@@ -2547,22 +2547,22 @@ async function loadBookmarks() {
         }
 
         if (bookmarksData) {
-        // 获取配置以检查隐藏和折叠状态
-        let bookmarkLayoutConfig = [];
-        try {
-            const config = await dataManager.getDashboardConfig();
-            bookmarkLayoutConfig = config.bookmarkLayout || [];
-        } catch (error) {
-            console.error('获取书签布局配置失败:', error);
-        }
-        
-        bookmarksData.forEach((cat, catIndex) => {
-            // 查找该分类的配置
-            const layoutItem = bookmarkLayoutConfig.find(item => item.category === cat.category);
-            const isHidden = layoutItem?.hidden === true;
-            const isCollapsed = layoutItem?.collapsed === true;
-            
-            html += `
+            // 获取配置以检查隐藏和折叠状态
+            let bookmarkLayoutConfig = [];
+            try {
+                const config = await dataManager.getDashboardConfig();
+                bookmarkLayoutConfig = config.bookmarkLayout || [];
+            } catch (error) {
+                console.error('获取书签布局配置失败:', error);
+            }
+
+            bookmarksData.forEach((cat, catIndex) => {
+                // 查找该分类的配置
+                const layoutItem = bookmarkLayoutConfig.find(item => item.category === cat.category);
+                const isHidden = layoutItem?.hidden === true;
+                const isCollapsed = layoutItem?.collapsed === true;
+
+                html += `
                 <div class="glass-card bookmark-card ${isCollapsed ? 'bookmark-card-collapsed' : ''}" 
                      data-category="${cat.category}" 
                      style="${isHidden ? 'display: none !important;' : ''}">
@@ -2594,37 +2594,37 @@ async function loadBookmarks() {
                     </div>
                     <div class="bookmark-grid ${isCollapsed ? 'bookmark-grid-collapsed' : ''}" style="display: ${isCollapsed ? 'none' : 'grid'}; justify-content: center; gap: 0.75rem; transition: all 0.3s ease;">
                         ${cat.items.map((item, itemIndex) => {
-                            // 限制名称显示为10个字符
-                            const displayName = item.name.length > 10 ? item.name.substring(0, 10) : item.name;
-                            // 优先使用保存的logo，如果没有则使用icon
-                            let iconDisplay = '';
-                            
-                            // 兼容旧数据：如果logo来自 gstatic/faviconV2，改用当前的 getFaviconUrl 或回退到emoji
-                            let logoUrl = item.logo || '';
-                            if (logoUrl && (logoUrl.includes('gstatic.com') || logoUrl.includes('faviconV2'))) {
-                                const fixedUrl = getFaviconUrl(item.url);
-                                logoUrl = fixedUrl || '';
-                            }
-                            
-                            if (logoUrl) {
-                                // 如果有有效的logo，使用img标签，emoji作为fallback（不使用内联事件处理器）
-                                const fallbackIcon = item.icon && !item.icon.includes('<img') ? item.icon : '🔗';
-                                iconDisplay = `<img src="${logoUrl}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${fallbackIcon}</span>`;
-                            } else if (item.icon && item.icon.includes('<img')) {
-                                // 如果icon已经是img标签，移除内联事件处理器；若仍包含 gstatic/faviconV2，则直接使用默认图标
-                                let cleanedIcon = item.icon
-                                    .replace(/onerror="[^"]*"/g, '')
-                                    .replace(/onload="[^"]*"/g, '');
-                                if (cleanedIcon.includes('gstatic.com') || cleanedIcon.includes('faviconV2')) {
-                                    iconDisplay = '🔗';
-                                } else {
-                                    iconDisplay = cleanedIcon;
-                                }
-                            } else {
-                                // 使用emoji图标
-                                iconDisplay = item.icon || '🔗';
-                            }
-                            return `
+                    // 限制名称显示为10个字符
+                    const displayName = item.name.length > 10 ? item.name.substring(0, 10) : item.name;
+                    // 优先使用保存的logo，如果没有则使用icon
+                    let iconDisplay = '';
+
+                    // 兼容旧数据：如果logo来自 gstatic/faviconV2，改用当前的 getFaviconUrl 或回退到emoji
+                    let logoUrl = item.logo || '';
+                    if (logoUrl && (logoUrl.includes('gstatic.com') || logoUrl.includes('faviconV2'))) {
+                        const fixedUrl = getFaviconUrl(item.url);
+                        logoUrl = fixedUrl || '';
+                    }
+
+                    if (logoUrl) {
+                        // 如果有有效的logo，使用img标签，emoji作为fallback（不使用内联事件处理器）
+                        const fallbackIcon = item.icon && !item.icon.includes('<img') ? item.icon : '🔗';
+                        iconDisplay = `<img src="${logoUrl}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${fallbackIcon}</span>`;
+                    } else if (item.icon && item.icon.includes('<img')) {
+                        // 如果icon已经是img标签，移除内联事件处理器；若仍包含 gstatic/faviconV2，则直接使用默认图标
+                        let cleanedIcon = item.icon
+                            .replace(/onerror="[^"]*"/g, '')
+                            .replace(/onload="[^"]*"/g, '');
+                        if (cleanedIcon.includes('gstatic.com') || cleanedIcon.includes('faviconV2')) {
+                            iconDisplay = '🔗';
+                        } else {
+                            iconDisplay = cleanedIcon;
+                        }
+                    } else {
+                        // 使用emoji图标
+                        iconDisplay = item.icon || '🔗';
+                    }
+                    return `
                             <div class="bookmark-item-wrapper" style="position: relative;">
                                 <a href="${escapeHtml(item.url)}" target="_blank" class="bookmark-item" 
                                    data-cat-index="${catIndex}" data-item-index="${itemIndex}"
@@ -2634,7 +2634,7 @@ async function loadBookmarks() {
                                 </a>
                             </div>
                             `;
-                        }).join('')}
+                }).join('')}
                     </div>
                     <!-- 添加书签 (均需要管理员权限 + 添加权限) -->
                     ${isAdmin ? `
@@ -2642,8 +2642,8 @@ async function loadBookmarks() {
                     ` : ''}
                 </div>
             `;
-        });
-    }
+            });
+        }
 
         // Add empty state
         if ((!bookmarksData || bookmarksData.length === 0) && !isAdmin) {
@@ -2651,7 +2651,7 @@ async function loadBookmarks() {
         }
 
         container.innerHTML = html;
-        
+
         // 绑定favicon错误处理（符合CSP）
         bindFaviconErrorHandlers(container);
 
@@ -2673,7 +2673,7 @@ async function loadBookmarks() {
                 }
             });
         });
-        
+
         // 绑定分类名称输入框和添加书签按钮事件（符合CSP）
         container.querySelectorAll('.category-name-input').forEach(input => {
             const catIndex = parseInt(input.getAttribute('data-category-index'));
@@ -2689,7 +2689,7 @@ async function loadBookmarks() {
                 });
             }
         });
-        
+
         container.querySelectorAll('.add-bookmark-btn').forEach(btn => {
             const catIndex = parseInt(btn.getAttribute('data-category-index'));
             if (!isNaN(catIndex) && window.openAddBookmarkModal) {
@@ -2730,7 +2730,7 @@ async function loadBookmarks() {
                     const categoryName = titleElement.textContent.trim();
                     const catIndex = parseInt(titleElement.getAttribute('data-category-index'));
                     const parent = titleElement.parentElement;
-                    
+
                     // 创建输入框
                     const input = document.createElement('input');
                     input.type = 'text';
@@ -2739,25 +2739,25 @@ async function loadBookmarks() {
                     input.setAttribute('data-category-index', catIndex.toString());
                     input.setAttribute('aria-label', '分类名称');
                     input.style.cssText = 'background: rgba(255,255,255,0.1); border: 1px solid var(--accent-color); color: var(--accent-color); font-size: 1.1rem; font-weight: bold; width: 100%; border-radius: 4px; padding: 2px 5px; flex: 1; min-width: 0;';
-                    
+
                     // 替换标题为输入框
                     parent.replaceChild(input, titleElement);
-                    
+
                     // 聚焦并选中文本
                     input.focus();
                     input.select();
-                    
+
                     // 保存修改
                     const saveEdit = async () => {
                         const newValue = input.value.trim();
                         const finalValue = newValue || categoryName;
-                        
+
                         if (newValue && newValue !== categoryName) {
                             if (window.renameCategory) {
                                 await window.renameCategory(catIndex, finalValue);
                             }
                         }
-                        
+
                         // 恢复为标题
                         const newTitle = document.createElement('h3');
                         newTitle.className = 'bookmark-card-title-editable';
@@ -2767,11 +2767,11 @@ async function loadBookmarks() {
                         newTitle.style.cssText = 'color: var(--accent-color); user-select: none; cursor: pointer; flex: 1; min-width: 0;';
                         newTitle.title = '点击编辑名称';
                         parent.replaceChild(newTitle, input);
-                        
+
                         // 重新绑定事件
                         makeTitleEditable(newTitle);
                     };
-                    
+
                     // 取消编辑
                     const cancelEdit = () => {
                         const newTitle = document.createElement('h3');
@@ -2782,13 +2782,13 @@ async function loadBookmarks() {
                         newTitle.style.cssText = 'color: var(--accent-color); user-select: none; cursor: pointer; flex: 1; min-width: 0;';
                         newTitle.title = '点击编辑名称';
                         parent.replaceChild(newTitle, input);
-                        
+
                         // 重新绑定事件
                         makeTitleEditable(newTitle);
                     };
-                    
+
                     input.addEventListener('blur', saveEdit);
-                    
+
                     // 回车保存，ESC取消
                     input.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter') {
@@ -2801,7 +2801,7 @@ async function loadBookmarks() {
                     });
                 });
             }
-            
+
             // 为所有可编辑标题绑定事件
             container.querySelectorAll('.bookmark-card-title-editable').forEach(title => {
                 makeTitleEditable(title);
@@ -2831,12 +2831,12 @@ async function loadBookmarks() {
             if (typeof window.setBookmarkCategoryIndexes === 'function') {
                 window.setBookmarkCategoryIndexes();
             }
-            
+
             // 如果登录状态，启用书签拖拽功能
             if (isAdmin) {
                 enableBookmarkDragAndDrop();
             }
-            
+
             // 如果设置已打开，为书签卡片添加右边和下边的resize handles
             if (document.body.classList.contains('sidebar-open')) {
                 const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
@@ -2844,7 +2844,7 @@ async function loadBookmarks() {
                     window.addBookmarkCardResizeHandles(card);
                 });
             }
-            
+
             // 检查并显示/隐藏滚动条
             updateBookmarkScrollbars();
         }, 100);
@@ -2860,7 +2860,7 @@ async function loadBookmarks() {
 }
 
 // 设置书签分类索引映射（供 dashboard-layout.js 使用）
-window.setBookmarkCategoryIndexes = async function() {
+window.setBookmarkCategoryIndexes = async function () {
     // 这个函数会在 loadBookmarks 后调用，确保分类索引映射是最新的
     // renderCardControls 会调用 getBookmarkCategoryIndex 来获取正确的索引
 };
@@ -2870,35 +2870,35 @@ function enableBookmarkDragAndDrop() {
     const bookmarkWrappers = document.querySelectorAll('#bookmarks-container .bookmark-item-wrapper');
     const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
     const bookmarkGrids = document.querySelectorAll('#bookmarks-container .bookmark-grid');
-    
+
     // 为每个书签项启用拖拽
     bookmarkWrappers.forEach(wrapper => {
         const bookmarkItem = wrapper.querySelector('.bookmark-item');
         if (!bookmarkItem) return;
-        
+
         // 从HTML中的data属性获取索引（注意：HTML中使用的是data-cat-index和data-item-index）
         const catIndex = parseInt(bookmarkItem.getAttribute('data-cat-index'));
         const itemIndex = parseInt(bookmarkItem.getAttribute('data-item-index'));
-        
+
         if (isNaN(catIndex) || isNaN(itemIndex)) return;
-        
+
         // 设置为可拖拽
         wrapper.setAttribute('draggable', 'true');
         wrapper.dataset.catIndex = catIndex;
         wrapper.dataset.itemIndex = itemIndex;
-        
+
         // 添加拖拽样式
         wrapper.classList.add('bookmark-draggable');
-        
+
         // 移除旧的事件监听器（如果存在）
         wrapper.removeEventListener('dragstart', handleBookmarkDragStart);
         wrapper.removeEventListener('dragend', handleBookmarkDragEnd);
-        
+
         // 添加拖拽事件监听器
         wrapper.addEventListener('dragstart', handleBookmarkDragStart);
         wrapper.addEventListener('dragend', handleBookmarkDragEnd);
     });
-    
+
     // 为每个分类卡片添加drop区域
     bookmarkCards.forEach(card => {
         // 使用新的监听器，使用 { capture: false } 确保事件冒泡
@@ -2906,14 +2906,14 @@ function enableBookmarkDragAndDrop() {
         card.addEventListener('drop', handleBookmarkDrop, { passive: false });
         card.addEventListener('dragleave', handleBookmarkDragLeave);
     });
-    
+
     // 为每个网格添加drop区域
     bookmarkGrids.forEach(grid => {
         grid.addEventListener('dragover', handleBookmarkDragOver, { passive: false });
         grid.addEventListener('drop', handleBookmarkDrop, { passive: false });
         grid.addEventListener('dragleave', handleBookmarkDragLeave);
     });
-    
+
     // 为每个书签项wrapper也添加drop事件（允许拖到其他书签上插入）
     bookmarkWrappers.forEach(wrapper => {
         wrapper.addEventListener('dragover', handleBookmarkDragOver, { passive: false });
@@ -2925,24 +2925,24 @@ function enableBookmarkDragAndDrop() {
 let draggedBookmark = null;
 function handleBookmarkDragStart(e) {
     console.log('[书签拖拽] dragstart事件触发', this);
-    
+
     const wrapper = this;
     const catIndex = parseInt(wrapper.dataset.catIndex);
     const itemIndex = parseInt(wrapper.dataset.itemIndex);
-    
+
     draggedBookmark = {
         wrapper: wrapper,
         catIndex: catIndex,
         itemIndex: itemIndex
     };
-    
+
     wrapper.classList.add('dragging');
     document.body.classList.add('is-dragging-bookmark');
-    
+
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.dropEffect = 'move';
     e.dataTransfer.setData('text/html', wrapper.innerHTML);
-    
+
     // 阻止链接的默认行为（导航）
     e.stopPropagation();
 }
@@ -2950,19 +2950,19 @@ function handleBookmarkDragStart(e) {
 // 书签拖拽结束
 function handleBookmarkDragEnd(e) {
     console.log('[书签拖拽] dragend事件触发', this);
-    
+
     // 清除样式，但不立即清空draggedBookmark（drop事件可能还未处理）
     if (draggedBookmark && draggedBookmark.wrapper) {
         draggedBookmark.wrapper.classList.remove('dragging');
     }
-    
+
     document.body.classList.remove('is-dragging-bookmark');
-    
+
     // 清除所有拖拽悬停样式
     document.querySelectorAll('.bookmark-card.drag-over, .bookmark-grid.drag-over').forEach(el => {
         el.classList.remove('drag-over');
     });
-    
+
     // 延迟清空draggedBookmark，确保drop事件能访问到数据
     // drop事件会在dragend之前或之后触发，但顺序不确定，所以延迟清空更安全
     setTimeout(() => {
@@ -2973,11 +2973,11 @@ function handleBookmarkDragEnd(e) {
 // 书签拖拽悬停
 function handleBookmarkDragOver(e) {
     if (!draggedBookmark) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    
+
     // 添加悬停样式
     const card = this.closest('.bookmark-card');
     const grid = this.closest('.bookmark-grid') || this;
@@ -3003,86 +3003,86 @@ async function handleBookmarkDrop(e) {
         currentTarget: e.currentTarget,
         draggedBookmark: draggedBookmark
     });
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     // 保存拖拽信息（因为dragend可能会清空draggedBookmark）
     const dragInfo = draggedBookmark;
     if (!dragInfo) {
         console.log('[书签拖拽] 没有拖拽中的书签，忽略drop');
         return;
     }
-    
+
     // 查找目标卡片 - 从事件目标开始向上查找
     let targetCard = e.target.closest('.bookmark-card');
     if (!targetCard) {
         // 如果从target找不到，尝试从this找
         targetCard = this.closest ? this.closest('.bookmark-card') : null;
     }
-    
+
     const targetGrid = targetCard ? targetCard.querySelector('.bookmark-grid') : null;
-    
+
     // 移除悬停样式
     document.querySelectorAll('.bookmark-card.drag-over, .bookmark-grid.drag-over').forEach(el => {
         el.classList.remove('drag-over');
     });
-    
+
     if (!targetCard) {
         console.log('[书签拖拽] 未找到目标卡片', e.target, this);
         return;
     }
-    
+
     const targetCategoryName = targetCard.dataset.category;
     if (!targetCategoryName) {
         console.log('[书签拖拽] 目标卡片缺少分类名称', targetCard);
         return;
     }
-    
+
     try {
         const bookmarks = await dataManager.getBookmarks();
-        
+
         // 获取源分类和目标分类（使用保存的dragInfo）
         const srcCatIndex = dragInfo.catIndex;
         const srcItemIndex = dragInfo.itemIndex;
         const targetCatIndex = bookmarks.findIndex(cat => cat.category === targetCategoryName);
-        
+
         if (targetCatIndex === -1) {
             console.error('[书签拖拽] 未找到目标分类:', targetCategoryName);
             return;
         }
-        
+
         if (srcCatIndex < 0 || srcCatIndex >= bookmarks.length) {
             console.error('[书签拖拽] 源分类索引无效:', srcCatIndex);
             return;
         }
-        
+
         if (srcItemIndex < 0 || srcItemIndex >= bookmarks[srcCatIndex].items.length) {
             console.error('[书签拖拽] 源书签索引无效:', srcItemIndex);
             return;
         }
-        
+
         // 获取要移动的书签数据
         const itemData = bookmarks[srcCatIndex].items[srcItemIndex];
-        
+
         // 确定插入位置
         let insertIndex = bookmarks[targetCatIndex].items.length; // 默认追加到尾部
-        
+
         // 检查是否拖到了某个书签项上
         let targetBookmarkWrapper = e.target.closest('.bookmark-item-wrapper');
-        
+
         // 如果target是bookmark-item，向上查找wrapper
         if (!targetBookmarkWrapper && e.target.classList.contains('bookmark-item')) {
             targetBookmarkWrapper = e.target.closest('.bookmark-item-wrapper');
         }
-        
+
         if (targetBookmarkWrapper && targetGrid && targetGrid.contains(targetBookmarkWrapper)) {
             // 拖到了其他书签上，插入到该位置
             const targetItem = targetBookmarkWrapper.querySelector('.bookmark-item');
             if (targetItem) {
                 const targetCatIdx = parseInt(targetItem.getAttribute('data-cat-index'));
                 const targetItemIdx = parseInt(targetItem.getAttribute('data-item-index'));
-                
+
                 if (!isNaN(targetCatIdx) && !isNaN(targetItemIdx) && targetCatIdx === targetCatIndex) {
                     // 如果是在同一分类内移动，需要调整索引
                     if (srcCatIndex === targetCatIndex && srcItemIndex < targetItemIdx) {
@@ -3101,21 +3101,21 @@ async function handleBookmarkDrop(e) {
         } else {
             console.log('[书签拖拽] 拖到空白处，追加到尾部');
         }
-        
+
         // 从源分类移除
         bookmarks[srcCatIndex].items.splice(srcItemIndex, 1);
-        
+
         // 插入到目标位置
         bookmarks[targetCatIndex].items.splice(insertIndex, 0, itemData);
-        
+
         // 保存并重新加载
         await dataManager.saveBookmarks(bookmarks);
-        
+
         // 同步书签位置到浏览器
         await syncBookmarkMoveToBrowser(itemData.url, targetCategoryName, insertIndex);
-        
+
         loadBookmarks();
-        
+
     } catch (error) {
         console.error('[书签拖拽] 保存失败:', error);
         console.error('[书签拖拽] 错误详情:', error.stack);
@@ -3133,7 +3133,7 @@ async function handleBookmarkDrop(e) {
 }
 
 // Right Navigation（暴露到全局供其他模块调用）
-window.renderRightNav = function() {
+window.renderRightNav = function () {
     renderRightNavInternal();
 };
 
@@ -3166,10 +3166,10 @@ function renderRightNavInternal() {
     // Find all cards in the bookmarks container (按照DOM中的实际显示顺序)
     const bookmarksContainer = document.getElementById('bookmarks-container');
     if (!bookmarksContainer) return;
-    
+
     // 按照DOM中的实际顺序获取卡片（即用户看到的顺序）
     const cards = Array.from(bookmarksContainer.querySelectorAll('.glass-card.bookmark-card'));
-    
+
     cards.forEach((card, index) => {
         const catName = card.dataset.category;
         // 获取对应卡片的颜色
@@ -3183,7 +3183,7 @@ function renderRightNavInternal() {
             // 找到卡片在所有卡片中的索引
             const allCards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
             const cardIndex = Array.from(allCards).indexOf(card);
-            
+
             if (cardIndex >= 0) {
                 // 使用 highlightCardControl 函数，右侧设置卡片高亮不居中，左侧对应的书签卡片居中高亮，只有左侧卡片滚动
                 if (window.highlightCardControl && typeof window.highlightCardControl === 'function') {
@@ -3193,7 +3193,7 @@ function renderRightNavInternal() {
                 // 如果找不到索引，使用原来的滚动方式
                 card.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
-            
+
             // Update active state
             document.querySelectorAll('.nav-dot-wrapper').forEach(d => d.classList.remove('active'));
             wrapper.classList.add('active');
@@ -3212,7 +3212,7 @@ function renderRightNavInternal() {
         wrapper.appendChild(label);
         navContainer.appendChild(wrapper);
     });
-    
+
     // 初始化右侧导航的滚动显示/隐藏功能
     initRightNavScroll();
 }
@@ -3327,7 +3327,7 @@ window.saveCategoryFromModal = async function () {
     const bookmarks = await dataManager.getBookmarks();
     bookmarks.push({ category: name, items: [] });
     await dataManager.saveBookmarks(bookmarks);
-    
+
     // 同步创建浏览器文件夹
     await syncAddFolderToBrowser(name);
 
@@ -3342,15 +3342,15 @@ window.showCustomAlert = function (message, title = '提示', type = 'success') 
         const modalOverlay = document.createElement('div');
         modalOverlay.className = 'custom-modal-overlay';
         modalOverlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 10000; display: flex; align-items: center; justify-content: center;';
-        
+
         const modal = document.createElement('div');
         modal.className = 'custom-modal';
         modal.style.cssText = 'max-width: 450px; background: var(--card-bg, #1e293b); border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1)); border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);';
-        
+
         // 根据类型设置图标和颜色
         const iconColor = type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#8b5cf6';
         const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
-        
+
         modal.innerHTML = `
             <div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
                 <div style="width: 64px; height: 64px; border-radius: 50%; background: ${iconColor}20; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;">
@@ -3361,10 +3361,10 @@ window.showCustomAlert = function (message, title = '提示', type = 'success') 
                 <button class="btn" id="custom-alert-ok" style="background: ${iconColor}; color: white; border: none; padding: 0.5rem 2rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.95rem;">确定</button>
             </div>
         `;
-        
+
         modalOverlay.appendChild(modal);
         document.body.appendChild(modalOverlay);
-        
+
         // 关闭函数
         const closeModal = () => {
             if (modalOverlay.parentNode) {
@@ -3372,21 +3372,21 @@ window.showCustomAlert = function (message, title = '提示', type = 'success') 
             }
             resolve();
         };
-        
+
         // 绑定关闭事件
         const okBtn = modal.querySelector('#custom-alert-ok');
         okBtn.onclick = (e) => {
             e.stopPropagation(); // 阻止事件冒泡
             closeModal();
         };
-        
+
         // 点击背景关闭
         modalOverlay.onclick = (e) => {
             if (e.target === modalOverlay) {
                 closeModal();
             }
         };
-        
+
         // 点击弹窗内容区域也关闭（但不包括按钮，因为按钮有自己的点击事件）
         modal.onclick = (e) => {
             // 如果点击的不是按钮，则关闭
@@ -3394,7 +3394,7 @@ window.showCustomAlert = function (message, title = '提示', type = 'success') 
                 closeModal();
             }
         };
-        
+
         // ESC键关闭
         const keyHandler = (e) => {
             if (e.key === 'Escape') {
@@ -3403,7 +3403,7 @@ window.showCustomAlert = function (message, title = '提示', type = 'success') 
             }
         };
         document.addEventListener('keydown', keyHandler);
-        
+
         // 自动关闭（3秒后）
         setTimeout(() => {
             if (modalOverlay.parentNode) {
@@ -3484,7 +3484,7 @@ window.showCustomConfirm = function (message, title = '确认操作') {
             }
         };
         document.addEventListener('keydown', keyHandler);
-        
+
         // 聚焦确定按钮，方便回车键操作
         setTimeout(() => {
             if (okBtn) {
@@ -3495,41 +3495,41 @@ window.showCustomConfirm = function (message, title = '确认操作') {
 }
 
 // 获取书签分类索引（通过分类名称）
-window.getBookmarkCategoryIndex = async function(categoryName) {
+window.getBookmarkCategoryIndex = async function (categoryName) {
     const bookmarks = await dataManager.getBookmarks();
     return bookmarks.findIndex(cat => cat.category === categoryName);
 };
 
 // 通过分类名称删除分类（更可靠的方式）
-window.deleteCategoryByName = async function(categoryName) {
+window.deleteCategoryByName = async function (categoryName) {
     const result = await showCustomConfirm("确定删除该分类吗?");
     if (!result) return;
 
     const bookmarks = await dataManager.getBookmarks();
     const categoryIndex = bookmarks.findIndex(cat => cat.category === categoryName);
-    
+
     if (categoryIndex === -1) {
         alert('❌ 未找到该分类，无法删除');
         console.error('Category not found:', categoryName);
         return;
     }
-    
+
     bookmarks.splice(categoryIndex, 1);
     await dataManager.saveBookmarks(bookmarks);
-    
+
     // 同步删除浏览器文件夹
     await syncDeleteFolderToBrowser(categoryName);
-    
+
     // 清理布局配置中已删除分类的数据
     const config = await dataManager.getDashboardConfig();
     if (config && config.bookmarkLayout) {
         config.bookmarkLayout = config.bookmarkLayout.filter(item => item.category !== categoryName);
         await dataManager.saveDashboardConfig(config);
     }
-    
+
     // 重新加载书签
     await loadBookmarks();
-    
+
     // 等待书签加载完成后再重新渲染布局设置面板
     // 使用 setTimeout 确保 DOM 已完全更新
     setTimeout(async () => {
@@ -3549,33 +3549,33 @@ window.deleteCategory = async function (categoryIndex) {
     if (!result) return;
 
     const bookmarks = await dataManager.getBookmarks();
-    
+
     // 验证索引有效性
     if (categoryIndex < 0 || categoryIndex >= bookmarks.length) {
         alert('❌ 分类索引无效，无法删除');
         console.error('Invalid category index:', categoryIndex, 'Total categories:', bookmarks.length);
         return;
     }
-    
+
     // 获取要删除的分类名称
     const categoryName = bookmarks[categoryIndex].category;
-    
+
     bookmarks.splice(categoryIndex, 1);
     await dataManager.saveBookmarks(bookmarks);
-    
+
     // 同步删除浏览器文件夹
     await syncDeleteFolderToBrowser(categoryName);
-    
+
     // 清理布局配置中已删除分类的数据
     const config = await dataManager.getDashboardConfig();
     if (config && config.bookmarkLayout) {
         config.bookmarkLayout = config.bookmarkLayout.filter(item => item.category !== categoryName);
         await dataManager.saveDashboardConfig(config);
     }
-    
+
     // 重新加载书签
     await loadBookmarks();
-    
+
     // 等待书签加载完成后再重新渲染布局设置面板
     // 使用 setTimeout 确保 DOM 已完全更新
     setTimeout(async () => {
@@ -3648,27 +3648,27 @@ window.saveBookmarkFromModal = async function () {
     if (currentModalState.type === 'add_bookmark') {
         const categoryName = bookmarks[currentModalState.catIndex].category;
         const insertIndex = bookmarks[currentModalState.catIndex].items.length;
-        
+
         bookmarks[currentModalState.catIndex].items.push({
             name,
             url,
             icon: iconHtml
         });
         await dataManager.saveBookmarks(bookmarks);
-        
+
         // 同步添加书签到浏览器
         await syncBookmarkAddToBrowser(url, name, categoryName, insertIndex);
     } else if (currentModalState.type === 'edit_bookmark') {
         const item = bookmarks[currentModalState.catIndex].items[currentModalState.itemIndex];
         const oldUrl = item.url;
         const oldName = item.name;
-        
+
         item.name = name;
         item.url = url;
         item.icon = iconHtml; // Update icon as well
-        
+
         await dataManager.saveBookmarks(bookmarks);
-        
+
         // 如果URL或名称改变了，同步到浏览器
         if (oldUrl !== url || oldName !== name) {
             await syncBookmarkUpdateToBrowser(oldUrl, url, name);
@@ -3756,7 +3756,7 @@ window.handleBookmarkClick = async function (event, catIndex, itemIndex) {
                 return false;
             }
         }
-        
+
         // 在设置模式下，点击书签项时防止链接跳转，改为打开编辑
         if (event.target.closest('.bookmark-item')) {
             event.preventDefault();
@@ -3770,15 +3770,15 @@ window.handleBookmarkClick = async function (event, catIndex, itemIndex) {
         const bookmarks = await dataManager.getBookmarks();
         if (bookmarks && bookmarks[catIndex] && bookmarks[catIndex].items[itemIndex]) {
             const bookmark = bookmarks[catIndex].items[itemIndex];
-            
+
             // 记录点击统计
-            dataManager.recordBookmarkClick(bookmark.url, bookmark.name, bookmark.icon).catch(() => {});
-            
+            dataManager.recordBookmarkClick(bookmark.url, bookmark.name, bookmark.icon).catch(() => { });
+
             // 自动获取并更新logo（如果还没有logo）
             if (!bookmark.logo) {
-                updateBookmarkLogo(bookmark.url, bookmark.name, catIndex, itemIndex).catch(() => {});
+                updateBookmarkLogo(bookmark.url, bookmark.name, catIndex, itemIndex).catch(() => { });
             }
-            
+
             // 更新常用标签栏（延迟更新，不阻塞页面）
             setTimeout(() => {
                 loadFrequentBookmarks();
@@ -3815,16 +3815,16 @@ window.deleteBookmark = async function (catIndex, itemIndex) {
     // So we can remove the check inside.
 
     const bookmarks = await dataManager.getBookmarks();
-    
+
     // 获取要删除的书签信息（用于同步到浏览器）
     const bookmarkToDelete = bookmarks[catIndex].items[itemIndex];
     const bookmarkUrl = bookmarkToDelete?.url;
-    
+
     // 从网站删除书签
     bookmarks[catIndex].items.splice(itemIndex, 1);
     await dataManager.saveBookmarks(bookmarks);
     loadBookmarks();
-    
+
     // 同步删除浏览器书签
     if (bookmarkUrl) {
         syncDeleteToBrowser(bookmarkUrl).catch(error => {
@@ -3843,14 +3843,14 @@ async function syncDeleteToBrowser(url) {
             window.godsBookmarkExtension.deleteBookmark(url);
             return;
         }
-        
+
         // 方法2: 使用 window.postMessage 发送消息给content script
         console.log('[书签删除] 通过postMessage删除浏览器书签:', url);
         window.postMessage({
             type: 'DELETE_BOOKMARK',
             url: url
         }, '*');
-        
+
     } catch (error) {
         // 扩展可能未安装，这是正常的
         console.log('[书签删除] 无法同步到浏览器（扩展可能未安装）:', error.message);
@@ -3861,14 +3861,14 @@ async function syncDeleteToBrowser(url) {
 async function syncBookmarkMoveToBrowser(url, targetCategory, index) {
     try {
         console.log('[书签同步] 同步书签位置到浏览器:', { url, targetCategory, index });
-        
+
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.moveBookmark === 'function') {
             console.log('[书签同步] 通过扩展API移动浏览器书签:', url);
             window.godsBookmarkExtension.moveBookmark(url, targetCategory, index);
             return;
         }
-        
+
         // 方法2: 使用 window.postMessage 发送消息给content script
         console.log('[书签同步] 通过postMessage移动浏览器书签:', url);
         window.postMessage({
@@ -3877,7 +3877,7 @@ async function syncBookmarkMoveToBrowser(url, targetCategory, index) {
             targetCategory: targetCategory,
             index: index
         }, '*');
-        
+
     } catch (error) {
         // 扩展可能未安装，这是正常的
         console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
@@ -3888,14 +3888,14 @@ async function syncBookmarkMoveToBrowser(url, targetCategory, index) {
 async function syncBookmarkUpdateToBrowser(oldUrl, newUrl, newName) {
     try {
         console.log('[书签同步] 同步书签更新到浏览器:', { oldUrl, newUrl, newName });
-        
+
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.updateBookmark === 'function') {
             console.log('[书签同步] 通过扩展API更新浏览器书签:', oldUrl);
             window.godsBookmarkExtension.updateBookmark(oldUrl, newUrl, newName);
             return;
         }
-        
+
         // 方法2: 使用 window.postMessage 发送消息给content script
         console.log('[书签同步] 通过postMessage更新浏览器书签:', oldUrl);
         window.postMessage({
@@ -3904,7 +3904,7 @@ async function syncBookmarkUpdateToBrowser(oldUrl, newUrl, newName) {
             newUrl: newUrl,
             newName: newName
         }, '*');
-        
+
     } catch (error) {
         // 扩展可能未安装，这是正常的
         console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
@@ -3915,14 +3915,14 @@ async function syncBookmarkUpdateToBrowser(oldUrl, newUrl, newName) {
 async function syncBookmarkAddToBrowser(url, name, category, index) {
     try {
         console.log('[书签同步] 同步添加书签到浏览器:', { url, name, category, index });
-        
+
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.addBookmark === 'function') {
             console.log('[书签同步] 通过扩展API添加浏览器书签:', url);
             window.godsBookmarkExtension.addBookmark(url, name, category, index);
             return;
         }
-        
+
         // 方法2: 使用 window.postMessage 发送消息给content script
         console.log('[书签同步] 通过postMessage添加浏览器书签:', url);
         window.postMessage({
@@ -3932,7 +3932,7 @@ async function syncBookmarkAddToBrowser(url, name, category, index) {
             category: category,
             index: index
         }, '*');
-        
+
     } catch (error) {
         // 扩展可能未安装，这是正常的
         console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
@@ -3943,21 +3943,21 @@ async function syncBookmarkAddToBrowser(url, name, category, index) {
 async function syncDeleteFolderToBrowser(folderName) {
     try {
         console.log('[书签同步] 同步删除文件夹到浏览器:', folderName);
-        
+
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.deleteFolder === 'function') {
             console.log('[书签同步] 通过扩展API删除浏览器文件夹:', folderName);
             window.godsBookmarkExtension.deleteFolder(folderName);
             return;
         }
-        
+
         // 方法2: 使用 window.postMessage 发送消息给content script
         console.log('[书签同步] 通过postMessage删除浏览器文件夹:', folderName);
         window.postMessage({
             type: 'DELETE_FOLDER',
             folderName: folderName
         }, '*');
-        
+
     } catch (error) {
         // 扩展可能未安装，这是正常的
         console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
@@ -3968,21 +3968,21 @@ async function syncDeleteFolderToBrowser(folderName) {
 async function syncAddFolderToBrowser(folderName) {
     try {
         console.log('[书签同步] 同步添加文件夹到浏览器:', folderName);
-        
+
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.addFolder === 'function') {
             console.log('[书签同步] 通过扩展API添加浏览器文件夹:', folderName);
             window.godsBookmarkExtension.addFolder(folderName);
             return;
         }
-        
+
         // 方法2: 使用 window.postMessage 发送消息给content script
         console.log('[书签同步] 通过postMessage添加浏览器文件夹:', folderName);
         window.postMessage({
             type: 'ADD_FOLDER',
             folderName: folderName
         }, '*');
-        
+
     } catch (error) {
         // 扩展可能未安装，这是正常的
         console.log('[书签同步] 无法同步到浏览器（扩展可能未安装）:', error.message);
@@ -4014,14 +4014,14 @@ async function restoreBookmarkStyles() {
         card.style.width = '';
         card.style.height = '';
     });
-    
+
     // 第一步：根据配置恢复所有卡片的样式和尺寸
     const sortedCards = [];
-    
+
     config.bookmarkLayout.forEach(item => {
         const categoryName = item.category.trim();
         const card = cardMap.get(categoryName);
-        
+
         console.log('[恢复样式] 处理配置项:', categoryName, 'width:', item.width, 'height:', item.height, 'card存在:', !!card);
 
         if (card) {
@@ -4046,7 +4046,7 @@ async function restoreBookmarkStyles() {
                     grid.classList.add('bookmark-grid-collapsed');
                     grid.style.display = 'none';
                 }
-                
+
                 // 如果卡片是折叠状态，保存原始宽高（如果配置中有），然后设置折叠尺寸
                 if (item.width !== undefined && item.width !== null) {
                     const w = typeof item.width === 'number' ? item.width + 'px' : String(item.width);
@@ -4056,7 +4056,7 @@ async function restoreBookmarkStyles() {
                     const h = typeof item.height === 'number' ? item.height + 'px' : String(item.height);
                     card.dataset.originalHeight = h;
                 }
-                
+
                 // 设置折叠后的固定尺寸
                 card.style.width = '100px';
                 card.style.height = '70px';
@@ -4128,17 +4128,17 @@ async function restoreBookmarkStyles() {
     sortedCards.forEach(({ card }) => {
         container.appendChild(card);
     });
-    
+
     // 卡片重新排序后，更新右侧导航栏（按照实际显示顺序）
     if (typeof window.renderRightNav === 'function') {
         setTimeout(() => {
             window.renderRightNav();
         }, 100);
     }
-    
+
     // 上帝的指引标题颜色固定为紫色渐变，不再跟随卡片主题色
     // updateFrequentHeaderColor(); // 已禁用
-    
+
     // 恢复样式后更新滚动条状态
     setTimeout(() => {
         updateBookmarkScrollbars();
@@ -4155,7 +4155,7 @@ window.handleBookmarkImport = async function (input) {
         reader.onload = async function (e) {
             try {
                 const htmlContent = e.target.result;
-                
+
                 // 检查是否是有效的 HTML 书签文件
                 if (!htmlContent.includes('<DT>') && !htmlContent.includes('<H3>') && !htmlContent.includes('<DL>')) {
                     alert('无法识别的书签文件格式。请使用浏览器导出的 HTML 格式书签文件。');
@@ -4165,7 +4165,7 @@ window.handleBookmarkImport = async function (input) {
 
                 // 使用正则表达式解析，因为浏览器导出的HTML可能不标准
                 const bookmarkData = parseBookmarkHTML(htmlContent);
-                
+
                 if (bookmarkData.length === 0) {
                     alert('未找到有效的书签数据。请确保书签文件格式正确。');
                     input.value = '';
@@ -4183,13 +4183,13 @@ window.handleBookmarkImport = async function (input) {
                     input.value = '';
                     return;
                 }
-                
+
                 if (!isLoggedIn) {
                     alert('❌ 需要登录才能导入书签。\n请先登录管理员账户（密码: admin）');
                     input.value = '';
                     return;
                 }
-                
+
                 console.log('[导入] 已登录，继续导入流程');
 
                 // 获取当前书签数据（保持布局状态）
@@ -4200,25 +4200,25 @@ window.handleBookmarkImport = async function (input) {
                     console.error('获取书签数据失败:', error);
                     currentData = [];
                 }
-                
+
                 // 合并到现有分类，而不是替换
                 const merged = mergeBookmarks(currentData, bookmarkData);
-                
+
                 // 保存书签
                 try {
                     const totalBookmarks = merged.reduce((sum, cat) => sum + cat.items.length, 0);
                     console.log('[导入] 准备保存书签，数据量:', merged.length, '个分类，共', totalBookmarks, '个书签');
                     console.log('[导入] 数据大小估算:', JSON.stringify(merged).length, '字符');
-                    
+
                     await dataManager.saveBookmarks(merged);
                     console.log('[导入] 书签保存成功');
                 } catch (error) {
                     console.error('保存书签失败:', error);
                     console.error('错误详情:', error.message, error.name);
-                    
+
                     // 提供详细的诊断信息
                     let errorMsg = '❌ 保存失败: ' + error.message;
-                    
+
                     if (error.message.includes('413') || error.message.includes('Payload Too Large')) {
                         errorMsg = '❌ 数据过大，无法保存\n\n' +
                             '原因：导入的书签数据量太大（超过服务器限制）\n\n' +
@@ -4226,8 +4226,8 @@ window.handleBookmarkImport = async function (input) {
                             '1. 分批导入：将书签文件分成多个小文件分别导入\n' +
                             '2. 服务器已自动调整限制，请刷新页面后重试\n' +
                             '3. 如果问题仍然存在，请联系管理员';
-                    } else if (error.message.includes('无法连接到服务器') || 
-                        error.message.includes('Failed to fetch') || 
+                    } else if (error.message.includes('无法连接到服务器') ||
+                        error.message.includes('Failed to fetch') ||
                         error.message.includes('Network')) {
                         errorMsg = '❌ 无法连接到服务器\n\n' +
                             '请检查：\n' +
@@ -4238,15 +4238,15 @@ window.handleBookmarkImport = async function (input) {
                     } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
                         errorMsg = '❌ 未登录或会话已过期\n请先登录管理员账户后再导入书签。';
                     }
-                    
+
                     alert(errorMsg);
                     input.value = '';
                     return;
                 }
-                
+
                 // 重新加载书签，但保持当前布局状态
                 await loadBookmarks();
-                
+
                 // 延迟恢复布局状态，确保DOM已更新
                 setTimeout(() => {
                     restoreBookmarkStyles();
@@ -4255,10 +4255,10 @@ window.handleBookmarkImport = async function (input) {
                         window.enableLayoutEditing();
                     }
                 }, 200);
-                
+
                 const totalItems = bookmarkData.reduce((sum, cat) => sum + cat.items.length, 0);
                 alert(`✅ 成功导入 ${bookmarkData.length} 个分类，共 ${totalItems} 个书签！\n书签已合并到现有分类中。`);
-                
+
                 input.value = '';
             } catch (error) {
                 console.error('导入错误:', error);
@@ -4272,7 +4272,7 @@ window.handleBookmarkImport = async function (input) {
             }
         };
 
-        reader.onerror = function() {
+        reader.onerror = function () {
             alert('文件读取失败，请重试。');
             input.value = '';
         };
@@ -4288,44 +4288,44 @@ window.handleBookmarkImport = async function (input) {
 // 解析书签HTML文件（完整解析所有分类和书签，包括嵌套文件夹）
 function parseBookmarkHTML(html) {
     const categories = [];
-    
+
     // 使用 DOMParser 更准确地解析
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
-    
+
     // 查找根 DL 元素
     const rootDl = doc.querySelector('body > dl, html > body > dl, dl');
     if (!rootDl) {
         // 如果找不到，尝试用正则解析
         return parseBookmarkHTMLRegex(html);
     }
-    
+
     // 递归处理所有 DT 元素
     function processDl(dl) {
         const result = [];
-        
+
         Array.from(dl.children).forEach(dt => {
             if (dt.tagName !== 'DT') return;
-            
+
             const h3 = dt.querySelector('h3');
             const link = dt.querySelector('a');
-            
+
             if (h3) {
                 // 这是一个文件夹
                 const folderName = h3.textContent.trim();
                 const subDl = dt.querySelector('dl');
-                
+
                 if (subDl && folderName) {
                     const folderItems = [];
                     const subFolders = [];
-                    
+
                     // 处理该文件夹下的所有元素
                     Array.from(subDl.children).forEach(subDt => {
                         if (subDt.tagName !== 'DT') return;
-                        
+
                         const subH3 = subDt.querySelector('h3');
                         const subLink = subDt.querySelector('a');
-                        
+
                         if (subH3) {
                             // 子文件夹，递归处理
                             const subFolderName = subH3.textContent.trim();
@@ -4339,7 +4339,7 @@ function parseBookmarkHTML(html) {
                             // 书签
                             const url = subLink.getAttribute('href') || subLink.href;
                             const name = subLink.textContent.trim();
-                            
+
                             if (name && url) {
                                 try {
                                     if (isLocalUrl(url)) {
@@ -4355,12 +4355,12 @@ function parseBookmarkHTML(html) {
                             }
                         }
                     });
-                    
+
                     // 如果该文件夹有书签，添加该分类
                     if (folderItems.length > 0) {
                         result.push({ category: folderName, items: folderItems });
                     }
-                    
+
                     // 添加所有子文件夹分类
                     result.push(...subFolders);
                 }
@@ -4368,7 +4368,7 @@ function parseBookmarkHTML(html) {
                 // 这是一个书签（根级别的）
                 const url = link.getAttribute('href') || link.href;
                 const name = link.textContent.trim();
-                
+
                 if (name && url) {
                     try {
                         let icon;
@@ -4396,44 +4396,44 @@ function parseBookmarkHTML(html) {
                 }
             }
         });
-        
+
         return result;
     }
-    
+
     const result = processDl(rootDl);
     categories.push(...result);
-    
+
     // 如果没有解析到任何内容，尝试正则方式
     if (categories.length === 0) {
         return parseBookmarkHTMLRegex(html);
     }
-    
+
     return categories;
 }
 
 // 备用：使用正则表达式解析（用于处理非标准HTML）
 function parseBookmarkHTMLRegex(html) {
     const categories = [];
-    
+
     // 匹配 <DT><H3>文件夹名</H3><DL>...</DL></DT> 结构
     const folderRegex = /<DT><H3[^>]*>(.*?)<\/H3>\s*<DL[^>]*>(.*?)<\/DL><\/DT>/gs;
-    
+
     // 匹配 <DT><A HREF="url">名称</A></DT> 结构
     const bookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
-    
+
     // 提取所有文件夹
     let folderMatch;
     const processedFolders = new Set();
-    
+
     while ((folderMatch = folderRegex.exec(html)) !== null) {
         const folderName = folderMatch[1].trim();
         const folderContent = folderMatch[2];
-        
+
         if (processedFolders.has(folderName)) continue;
         processedFolders.add(folderName);
-        
+
         const items = [];
-        
+
         // 提取该文件夹下的直接书签（不包含子文件夹中的）
         const directBookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
         let bookmarkMatch;
@@ -4442,7 +4442,7 @@ function parseBookmarkHTMLRegex(html) {
             let name = bookmarkMatch[2];
             // 移除HTML标签
             name = name.replace(/<[^>]+>/g, '').trim();
-            
+
             if (name && url) {
                 try {
                     let icon;
@@ -4458,7 +4458,7 @@ function parseBookmarkHTMLRegex(html) {
                 }
             }
         }
-        
+
         // 递归处理子文件夹
         const subFolders = parseSubFolders(folderContent);
         subFolders.forEach(subFolder => {
@@ -4466,12 +4466,12 @@ function parseBookmarkHTMLRegex(html) {
                 categories.push(subFolder);
             }
         });
-        
+
         if (items.length > 0) {
             categories.push({ category: folderName, items });
         }
     }
-    
+
     // 提取根级别的书签（不在任何文件夹中的）
     const rootBookmarks = [];
     // 移除所有文件夹内容
@@ -4481,7 +4481,7 @@ function parseBookmarkHTMLRegex(html) {
         const url = rootMatch[1].trim();
         let name = rootMatch[2];
         name = name.replace(/<[^>]+>/g, '').trim();
-        
+
         if (name && url) {
             try {
                 const domain = new URL(url).hostname;
@@ -4492,11 +4492,11 @@ function parseBookmarkHTMLRegex(html) {
             }
         }
     }
-    
+
     if (rootBookmarks.length > 0) {
         categories.push({ category: '导入书签', items: rootBookmarks });
     }
-    
+
     return categories;
 }
 
@@ -4504,20 +4504,20 @@ function parseBookmarkHTMLRegex(html) {
 function parseSubFolders(html) {
     const subFolders = [];
     const folderRegex = /<DT><H3[^>]*>(.*?)<\/H3>\s*<DL[^>]*>(.*?)<\/DL><\/DT>/gs;
-    
+
     let match;
     while ((match = folderRegex.exec(html)) !== null) {
         const folderName = match[1].trim();
         const folderContent = match[2];
-        
+
         const items = [];
         const bookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
         let bookmarkMatch;
-        
+
         while ((bookmarkMatch = bookmarkRegex.exec(folderContent)) !== null) {
             const url = bookmarkMatch[1].trim();
             const name = bookmarkMatch[2].replace(/<[^>]+>/g, '').trim();
-            
+
             if (name && url) {
                 try {
                     let icon;
@@ -4533,32 +4533,32 @@ function parseSubFolders(html) {
                 }
             }
         }
-        
+
         // 递归处理嵌套子文件夹
         const nested = parseSubFolders(folderContent);
         subFolders.push(...nested);
-        
+
         if (items.length > 0) {
             subFolders.push({ category: folderName, items });
         }
     }
-    
+
     return subFolders;
 }
 
 // 合并书签到现有分类
 function mergeBookmarks(currentData, newData) {
     const result = [...currentData];
-    
+
     newData.forEach(newCategory => {
         // 查找是否已存在同名分类
         const existingIndex = result.findIndex(cat => cat.category === newCategory.category);
-        
+
         if (existingIndex >= 0) {
             // 合并到现有分类
             const existingItems = result[existingIndex].items;
             const existingUrls = new Set(existingItems.map(item => item.url));
-            
+
             // 只添加不重复的书签
             newCategory.items.forEach(item => {
                 if (!existingUrls.has(item.url)) {
@@ -4570,7 +4570,7 @@ function mergeBookmarks(currentData, newData) {
             result.push(newCategory);
         }
     });
-    
+
     return result;
 }
 
@@ -4579,7 +4579,7 @@ window.renderTodos = renderTodos;
 window.updateTodosConfigCache = updateTodosConfigCache;
 
 // 书签导出功能（导出为HTML格式，包含分类信息）
-window.exportBookmarks = async function() {
+window.exportBookmarks = async function () {
     try {
         // 检查是否登录
         const isLoggedIn = await dataManager.isLoggedIn();
@@ -4590,7 +4590,7 @@ window.exportBookmarks = async function() {
 
         // 获取书签数据
         const bookmarks = await dataManager.getBookmarks();
-        
+
         if (!bookmarks || bookmarks.length === 0) {
             alert('暂无书签可导出。');
             return;
@@ -4612,16 +4612,16 @@ window.exportBookmarks = async function() {
             // 添加分类标题
             htmlContent += `    <DT><H3 ADD_DATE="${Date.now()}" LAST_MODIFIED="${Date.now()}">${escapeHtml(category.category)}</H3>\n`;
             htmlContent += `    <DL><p>\n`;
-            
+
             // 添加该分类下的所有书签
             category.items.forEach(item => {
                 const url = item.url || '#';
                 const name = item.name || 'Untitled';
                 const addDate = Date.now(); // 可以使用item的创建时间如果有的话
-                
+
                 htmlContent += `        <DT><A HREF="${escapeHtml(url)}" ADD_DATE="${addDate}">${escapeHtml(name)}</A></DT>\n`;
             });
-            
+
             htmlContent += `    </DL><p>\n`;
         });
 
@@ -4632,24 +4632,24 @@ window.exportBookmarks = async function() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        
+
         // 生成文件名（带时间戳）
         const now = new Date();
         const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
         link.download = `bookmarks_${timestamp}.html`;
-        
+
         // 触发下载
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
+
         // 清理URL对象
         setTimeout(() => URL.revokeObjectURL(url), 100);
-        
+
         // 显示成功消息
         const totalBookmarks = bookmarks.reduce((sum, cat) => sum + cat.items.length, 0);
         alert(`✅ 成功导出 ${bookmarks.length} 个分类，共 ${totalBookmarks} 个书签！\n文件名: ${link.download}`);
-        
+
     } catch (error) {
         console.error('导出书签错误:', error);
         alert('❌ 导出失败: ' + error.message);
@@ -4737,10 +4737,10 @@ const functionItems = [
 async function initGlobalSearch() {
     // 加载书签缓存
     await refreshBookmarksCache();
-    
+
     // 加载搜索配置
     await loadSearchConfig();
-    
+
     // 监听来自扩展的消息（用于快捷键打开搜索浮窗）
     window.addEventListener('message', (event) => {
         // 验证消息来源（来自扩展的content script）
@@ -4750,14 +4750,14 @@ async function initGlobalSearch() {
             }
         }
     });
-    
+
     // 绑定搜索框事件
     const searchInput = document.getElementById('global-search-input');
     const modalInput = document.getElementById('global-search-modal-input');
     const searchModal = document.getElementById('global-search-modal');
     const inlineDropdown = document.getElementById('global-search-dropdown');
     const inlineDropdownResults = document.getElementById('global-search-dropdown-results');
-    
+
     if (searchInput) {
         // 输入事件：实时根据书签搜索，渲染网页内下拉结果（规则与浮窗搜索相同）
         searchInput.addEventListener('input', (e) => {
@@ -4768,11 +4768,11 @@ async function initGlobalSearch() {
             }
             handleSearch(query, false);
         });
-        
+
         // 键盘事件：与浮窗搜索规则保持一致
         searchInput.addEventListener('keydown', (e) => {
             const query = e.target.value.trim();
-            
+
             if (e.key === 'Enter') {
                 e.preventDefault();
                 if (query) {
@@ -4801,7 +4801,7 @@ async function initGlobalSearch() {
                 hideInlineSearchDropdown();
             }
         });
-        
+
         // 失焦时稍后隐藏（避免点击结果被打断）
         searchInput.addEventListener('blur', () => {
             setTimeout(() => {
@@ -4809,7 +4809,7 @@ async function initGlobalSearch() {
             }, 200);
         });
     }
-    
+
     if (modalInput) {
         modalInput.addEventListener('input', async (e) => {
             // 确保缓存已加载
@@ -4845,7 +4845,7 @@ async function initGlobalSearch() {
             }
         });
     }
-    
+
     // 点击浮窗外部关闭
     if (searchModal) {
         searchModal.addEventListener('click', (e) => {
@@ -4854,7 +4854,7 @@ async function initGlobalSearch() {
             }
         });
     }
-    
+
     // 点击页面其它区域时，关闭网页内下拉结果
     document.addEventListener('click', (e) => {
         const searchWrapper = document.querySelector('.global-search-wrapper');
@@ -4863,7 +4863,7 @@ async function initGlobalSearch() {
             hideInlineSearchDropdown();
         }
     });
-    
+
     // 绑定快捷键
     document.addEventListener('keydown', handleSearchShortcut);
 }
@@ -4873,7 +4873,7 @@ function showInlineSearchDropdown(results) {
     const dropdown = document.getElementById('global-search-dropdown');
     const dropdownResults = document.getElementById('global-search-dropdown-results');
     if (!dropdown || !dropdownResults) return;
-    
+
     if (!results || results.length === 0) {
         dropdownResults.textContent = '';
         const emptyDiv = document.createElement('div');
@@ -4883,7 +4883,7 @@ function showInlineSearchDropdown(results) {
     } else {
         renderResultsToContainer(results, dropdownResults, 'global-search-result-item');
     }
-    
+
     dropdown.classList.add('show');
 }
 
@@ -4892,7 +4892,7 @@ function hideInlineSearchDropdown() {
     const dropdown = document.getElementById('global-search-dropdown');
     const dropdownResults = document.getElementById('global-search-dropdown-results');
     if (!dropdown || !dropdownResults) return;
-    
+
     dropdown.classList.remove('show');
     dropdownResults.textContent = '';
 }
@@ -4921,12 +4921,12 @@ async function refreshBookmarksCache() {
         console.log('[GlobalSearch] 开始刷新书签缓存...');
         const bookmarksData = await dataManager.getBookmarks();
         allBookmarksCache = [];
-        
+
         if (!bookmarksData || !Array.isArray(bookmarksData)) {
             console.warn('[GlobalSearch] 书签数据格式不正确:', typeof bookmarksData);
             return;
         }
-        
+
         bookmarksData.forEach((category, catIndex) => {
             if (category && category.items && Array.isArray(category.items)) {
                 category.items.forEach((item, itemIndex) => {
@@ -4943,20 +4943,28 @@ async function refreshBookmarksCache() {
                 });
             }
         });
-        
+
         console.log('[GlobalSearch] 已缓存', allBookmarksCache.length, '个书签');
-        
+
         // 同时刷新点击统计数据（失败不影响主流程）
         try {
             await refreshClickStatsCache();
         } catch (statsError) {
             console.warn('[GlobalSearch] 刷新点击统计失败，但不影响搜索功能:', statsError);
         }
-        
+
         const success = allBookmarksCache.length > 0;
         if (!success) {
             console.warn('[GlobalSearch] 缓存刷新完成，但书签数量为0');
         }
+
+        // 同步到Chrome扩展存储（用于跨页面搜索）
+        try {
+            await syncCacheToExtension();
+        } catch (syncError) {
+            console.warn('[GlobalSearch] 同步到扩展存储失败，但不影响当前页面搜索:', syncError);
+        }
+
         return success;
     } catch (error) {
         console.error('[GlobalSearch] 刷新书签缓存失败:', error);
@@ -4971,19 +4979,54 @@ async function refreshBookmarksCache() {
     }
 }
 
+// 将书签缓存同步到Chrome扩展存储（用于跨页面搜索）
+async function syncCacheToExtension() {
+    try {
+        // 准备要同步的数据
+        // 注意：functionItems 包含函数，无法通过 postMessage 传递，需要序列化
+        const serializedFunctionItems = functionItems.map(item => ({
+            id: item.id,
+            name: item.name,
+            keywords: item.keywords,
+            icon: item.icon,
+            type: item.type
+            // 不包含 action 函数
+        }));
+
+        const dataToSync = {
+            bookmarksCache: allBookmarksCache,
+            functionItems: serializedFunctionItems,
+            clickStatsCache: clickStatsCache,
+            lastUpdate: Date.now()
+        };
+
+        // 通过 postMessage 发送给 content script
+        // content script 会监听这个消息并写入 chrome.storage
+        window.postMessage({
+            type: 'SYNC_BOOKMARK_DATA',
+            data: dataToSync
+        }, '*');
+
+        console.log('[CacheSync] 已发送同步请求，数据量:', allBookmarksCache.length, '个书签');
+
+    } catch (error) {
+        console.error('[CacheSync] 同步到扩展存储失败:', error);
+    }
+}
+
 // 刷新点击统计数据缓存
 async function refreshClickStatsCache() {
     try {
         // 获取点击统计数据
         const topBookmarks = await dataManager.getTopBookmarks(1000); // 获取足够多的数据
         clickStatsCache = {};
-        
+
         topBookmarks.forEach(bookmark => {
             if (bookmark.url && bookmark.count) {
                 clickStatsCache[bookmark.url] = bookmark.count;
             }
         });
-        
+
         console.log('[GlobalSearch] 已缓存', Object.keys(clickStatsCache).length, '个点击统计');
     } catch (error) {
         console.error('[GlobalSearch] 刷新点击统计缓存失败:', error);
@@ -5001,7 +5044,7 @@ async function handleSearch(query, isModal = false) {
         }
         return;
     }
-    
+
     // 确保书签缓存已加载（如果缓存为空，先刷新）
     if (!allBookmarksCache || allBookmarksCache.length === 0) {
         console.log('[GlobalSearch] 搜索时发现缓存为空，正在刷新...');
@@ -5015,9 +5058,9 @@ async function handleSearch(query, isModal = false) {
             // 继续执行搜索，即使缓存刷新失败
         }
     }
-    
+
     const trimmedQuery = query.trim().toLowerCase();
-    
+
     // 搜索功能项（即使缓存失败也能搜索功能）
     let functionResults = [];
     try {
@@ -5026,7 +5069,7 @@ async function handleSearch(query, isModal = false) {
     } catch (funcError) {
         console.error('[GlobalSearch] 搜索功能项失败:', funcError);
     }
-    
+
     // 搜索书签（如果缓存可用）
     let bookmarkResults = [];
     if (allBookmarksCache && allBookmarksCache.length > 0) {
@@ -5039,7 +5082,7 @@ async function handleSearch(query, isModal = false) {
     } else {
         console.log('[GlobalSearch] 书签缓存为空，跳过书签搜索');
     }
-    
+
     // 合并结果，功能项优先显示（放在前面）
     const results = [...functionResults, ...bookmarkResults];
     console.log('[GlobalSearch] 总搜索结果:', results.length, '个（功能:', functionResults.length, '书签:', bookmarkResults.length, '）');
@@ -5051,16 +5094,16 @@ function searchFunctions(query) {
     if (!query || query.length === 0) {
         return [];
     }
-    
+
     // 确保 functionItems 已定义
     if (!functionItems || !Array.isArray(functionItems)) {
         console.warn('[GlobalSearch] 功能项列表未定义');
         return [];
     }
-    
+
     const results = [];
     const queryLower = query.toLowerCase();
-    
+
     functionItems.forEach(func => {
         // 确保 func 对象有效
         if (!func || !func.name) {
@@ -5068,7 +5111,7 @@ function searchFunctions(query) {
         }
         let score = 0;
         const nameLower = func.name.toLowerCase();
-        
+
         // 名称完全匹配
         if (nameLower === queryLower) {
             score += 100;
@@ -5081,7 +5124,7 @@ function searchFunctions(query) {
         else if (nameLower.includes(queryLower)) {
             score += 60;
         }
-        
+
         // 关键词匹配
         func.keywords.forEach(keyword => {
             const keywordLower = keyword.toLowerCase();
@@ -5093,7 +5136,7 @@ function searchFunctions(query) {
                 score += 30;
             }
         });
-        
+
         // 如果匹配，添加到结果
         if (score > 0) {
             results.push({
@@ -5106,7 +5149,7 @@ function searchFunctions(query) {
             });
         }
     });
-    
+
     // 按分数排序，取前3个
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, 3);
@@ -5117,16 +5160,16 @@ function searchBookmarks(query) {
     if (!query || query.length === 0) {
         return [];
     }
-    
+
     // 如果缓存为空，返回空结果
     if (!allBookmarksCache || !Array.isArray(allBookmarksCache) || allBookmarksCache.length === 0) {
         console.warn('[GlobalSearch] 书签缓存为空，无法搜索书签');
         return [];
     }
-    
+
     const results = [];
     const queryLower = query.toLowerCase();
-    
+
     // 计算相关度分数
     allBookmarksCache.forEach(bookmark => {
         // 确保 bookmark 对象有效
@@ -5136,9 +5179,9 @@ function searchBookmarks(query) {
         const nameLower = bookmark.name.toLowerCase();
         const urlLower = bookmark.url.toLowerCase();
         const categoryLower = bookmark.category.toLowerCase();
-        
+
         let score = 0;
-        
+
         // 名称完全匹配
         if (nameLower === queryLower) {
             score += 100;
@@ -5151,24 +5194,24 @@ function searchBookmarks(query) {
         else if (nameLower.includes(queryLower)) {
             score += 30;
         }
-        
+
         // URL包含
         if (urlLower.includes(queryLower)) {
             score += 20;
         }
-        
+
         // 分类匹配
         if (categoryLower.includes(queryLower)) {
             score += 10;
         }
-        
+
         // 如果匹配，添加到结果
         if (score > 0) {
             // 获取点击频率权重（高频置顶）
             const clickCount = clickStatsCache[bookmark.url] || 0;
             // 点击次数转换为权重分数（每10次点击增加1分，最高加50分）
             const frequencyScore = Math.min(clickCount / 10, 50);
-            
+
             results.push({
                 ...bookmark,
                 score: score + frequencyScore, // 基础分数 + 频率分数
@@ -5178,7 +5221,7 @@ function searchBookmarks(query) {
             });
         }
     });
-    
+
     // 按总分排序（基础分数 + 频率分数），取前5个
     results.sort((a, b) => {
         // 如果总分相同，优先显示点击次数多的
@@ -5194,7 +5237,7 @@ function searchBookmarks(query) {
 function renderSearchResults(results, isModal = false) {
     currentSearchResults = results;
     selectedResultIndex = -1;
-    
+
     if (isModal) {
         // 浮窗模式：渲染到浮窗中
         const resultsContainer = document.getElementById('global-search-results');
@@ -5218,31 +5261,31 @@ function renderResultsToContainer(results, container, itemClass) {
         container.appendChild(emptyDiv);
         return;
     }
-    
+
     // 清空容器
     container.textContent = '';
-    
+
     results.forEach((result, index) => {
         // 创建结果项元素
         const item = document.createElement('div');
         item.className = itemClass;
         item.setAttribute('data-index', index);
         item.setAttribute('data-result-index', index); // 使用索引而不是JSON字符串
-        
+
         // 获取图标HTML（可能是emoji或img标签）
         // 安全处理：如果包含HTML标签，使用textContent设置，否则直接使用
         let iconHtml = result.icon || '🔗';
-        
+
         // 创建图标容器
         const iconContainer = document.createElement('div');
         iconContainer.className = 'global-search-result-item-icon';
-        
+
         // 安全处理图标：使用DOMParser解析HTML，然后安全地插入
         if (iconHtml.includes('<')) {
             // 使用DOMParser安全解析HTML
             const parser = new DOMParser();
             const doc = parser.parseFromString(iconHtml, 'text/html');
-            
+
             // 获取body中的所有子节点
             const bodyNodes = Array.from(doc.body.childNodes);
             bodyNodes.forEach(node => {
@@ -5268,15 +5311,15 @@ function renderResultsToContainer(results, container, itemClass) {
         } else {
             iconContainer.textContent = iconHtml;
         }
-        
+
         // 创建内容容器
         const contentContainer = document.createElement('div');
         contentContainer.className = 'global-search-result-item-content';
-        
+
         const titleDiv = document.createElement('div');
         titleDiv.className = 'global-search-result-item-title';
         titleDiv.textContent = result.name || '';
-        
+
         // 根据类型显示不同的内容
         if (result.type === 'function') {
             // 功能项：只显示名称，不显示URL
@@ -5289,11 +5332,11 @@ function renderResultsToContainer(results, container, itemClass) {
             contentContainer.appendChild(titleDiv);
             contentContainer.appendChild(urlDiv);
         }
-        
+
         // 组装元素
         item.appendChild(iconContainer);
         item.appendChild(contentContainer);
-        
+
         // 如果是模态框模式，添加类型标签
         if (itemClass === 'global-search-result-item') {
             const typeDiv = document.createElement('div');
@@ -5301,29 +5344,29 @@ function renderResultsToContainer(results, container, itemClass) {
             typeDiv.textContent = result.type === 'function' ? '功能' : '书签';
             item.appendChild(typeDiv);
         }
-        
+
         // 绑定鼠标悬停事件
         item.addEventListener('mouseenter', () => {
             const isModal = itemClass === 'global-search-result-item';
             selectSearchResult(index, isModal);
         });
-        
+
         // 绑定点击事件
         item.addEventListener('click', () => {
             openSearchResult(result);
         });
-        
+
         container.appendChild(item);
     });
-    
+
     console.log('[Search] renderResultsToContainer completed, added', results.length, 'items to container');
     console.log('[Search] Container children count:', container.children.length);
 }
 
 // 选择搜索结果（浮窗与网页内下拉共用）
-window.selectSearchResult = function(index, isModal = false) {
+window.selectSearchResult = function (index, isModal = false) {
     selectedResultIndex = index;
-    
+
     document.querySelectorAll('.global-search-result-item').forEach((item, i) => {
         item.classList.toggle('selected', i === index);
     });
@@ -5332,16 +5375,16 @@ window.selectSearchResult = function(index, isModal = false) {
 // 导航搜索结果（浮窗与网页内下拉共用）
 function navigateResults(direction, isModal = false) {
     if (currentSearchResults.length === 0) return;
-    
+
     selectedResultIndex += direction;
     if (selectedResultIndex < 0) {
         selectedResultIndex = currentSearchResults.length - 1;
     } else if (selectedResultIndex >= currentSearchResults.length) {
         selectedResultIndex = 0;
     }
-    
+
     selectSearchResult(selectedResultIndex, isModal);
-    
+
     // 滚动到选中项（不区分浮窗/下拉，统一处理）
     const selector = `.global-search-result-item[data-index="${selectedResultIndex}"]`;
     const selectedItem = document.querySelector(selector);
@@ -5351,9 +5394,9 @@ function navigateResults(direction, isModal = false) {
 }
 
 // 打开搜索结果
-window.openSearchResult = function(result) {
+window.openSearchResult = function (result) {
     if (!result) return;
-    
+
     // 如果result是字符串，尝试解析
     if (typeof result === 'string') {
         try {
@@ -5363,11 +5406,11 @@ window.openSearchResult = function(result) {
             return;
         }
     }
-    
+
     // 关闭搜索模态框和下拉菜单
     closeSearchModal();
     hideInlineSearchDropdown();
-    
+
     if (result.type === 'function' && result.action) {
         // 功能项：执行对应的操作
         try {
@@ -5380,12 +5423,12 @@ window.openSearchResult = function(result) {
         // 书签：打开链接
         // 记录点击（用于高频置顶）
         if (dataManager && typeof dataManager.recordBookmarkClick === 'function') {
-            dataManager.recordBookmarkClick(result.url, result.name, result.icon).catch(() => {});
+            dataManager.recordBookmarkClick(result.url, result.name, result.icon).catch(() => { });
             // 更新本地缓存
             const currentCount = clickStatsCache[result.url] || 0;
             clickStatsCache[result.url] = currentCount + 1;
         }
-        
+
         window.open(result.url, '_blank');
     }
 }
@@ -5393,9 +5436,9 @@ window.openSearchResult = function(result) {
 // 执行搜索（网络搜索或打开书签）
 async function performSearch(query) {
     if (!query || query.trim() === '') return;
-    
+
     const trimmedQuery = query.trim();
-    
+
     // 先检查是否有匹配的书签
     const bookmarkResults = searchBookmarks(trimmedQuery.toLowerCase());
     if (bookmarkResults.length > 0 && bookmarkResults[0].score >= 30) {
@@ -5403,7 +5446,7 @@ async function performSearch(query) {
         openSearchResult(bookmarkResults[0]);
         return;
     }
-    
+
     // 否则进行网络搜索
     const searchEngine = window.searchConfig?.searchEngine || 'https://www.bing.com/search?q=';
     const searchUrl = searchEngine + encodeURIComponent(trimmedQuery);
@@ -5412,15 +5455,15 @@ async function performSearch(query) {
 }
 
 // 打开搜索浮窗
-window.openSearchModal = async function() {
+window.openSearchModal = async function () {
     const modal = document.getElementById('global-search-modal');
     const modalInput = document.getElementById('global-search-modal-input');
-    
+
     if (!modal || !modalInput) {
         console.error('[GlobalSearch] 搜索浮窗元素未找到');
         return;
     }
-    
+
     try {
         // 显示加载状态
         modal.style.display = 'flex';
@@ -5429,7 +5472,7 @@ window.openSearchModal = async function() {
         modalInput.placeholder = '正在加载书签缓存...';
         renderSearchResults([], true);
         selectedResultIndex = -1;
-        
+
         // 确保书签缓存已加载（如果缓存为空，先刷新）
         if (!allBookmarksCache || allBookmarksCache.length === 0) {
             console.log('[GlobalSearch] 缓存为空，正在刷新书签缓存...');
@@ -5453,12 +5496,12 @@ window.openSearchModal = async function() {
         } else {
             console.log('[GlobalSearch] 使用现有缓存，共', allBookmarksCache.length, '个书签');
         }
-        
+
         // 恢复输入框状态（无论缓存是否加载成功，都允许搜索功能）
         modalInput.disabled = false;
         modalInput.placeholder = '搜索书签、功能或使用搜索引擎...';
         modalInput.focus();
-        
+
         // 确保功能项列表已初始化
         if (!functionItems || !Array.isArray(functionItems) || functionItems.length === 0) {
             console.warn('[GlobalSearch] 功能项列表未初始化');
@@ -5491,23 +5534,23 @@ function handleSearchShortcut(e) {
     if (!shortcut) {
         shortcut = 'Ctrl+Space';
     }
-    
+
     // 解析快捷键（大小写不敏感）
     const parts = shortcut.split('+').map(s => s.trim()).filter(Boolean);
     const lowerParts = parts.map(p => p.toLowerCase());
-    
+
     const isCtrl = lowerParts.includes('ctrl');
     const isAlt = lowerParts.includes('alt');
     const isShift = lowerParts.includes('shift');
-    
+
     // 最后一个片段视为主键
     let keyToken = lowerParts[lowerParts.length - 1] || 'space';
-    
+
     // 检查是否匹配修饰键（需要什么就必须按下，不需要的就必须没按）
     if (isCtrl !== !!e.ctrlKey) return;
     if (isAlt !== !!e.altKey) return;
     if (isShift !== !!e.shiftKey) return;
-    
+
     // 检查按键匹配（支持 space / 字母键 等）
     let keyMatch = false;
     if (keyToken === 'space' && e.code === 'Space') {
@@ -5517,9 +5560,9 @@ function handleSearchShortcut(e) {
     } else if (keyToken.length === 1 && e.code === `Key${keyToken.toUpperCase()}`) {
         keyMatch = true;
     }
-    
+
     if (!keyMatch) return;
-    
+
     // 如果正在输入，不触发
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         // 但如果是搜索框本身，允许触发
@@ -5527,13 +5570,13 @@ function handleSearchShortcut(e) {
             return;
         }
     }
-    
+
     e.preventDefault();
     openSearchModal();
 }
 
 // 为书签卡片添加右边和下边的调整大小功能（已删除：不再提供手动调整左侧书签分类卡片大小）
-window.addBookmarkCardResizeHandles = function(card) {
+window.addBookmarkCardResizeHandles = function (card) {
     // 清理旧的 resize 手柄，避免影响显示
     const existingRightHandle = card.querySelector('.bookmark-resize-handle-right');
     const existingBottomHandle = card.querySelector('.bookmark-resize-handle-bottom');
@@ -5551,9 +5594,9 @@ async function saveBookmarkCardSize(categoryName, width, height) {
             return;
         }
 
-    if (!Array.isArray(config.bookmarkLayout)) {
-        config.bookmarkLayout = [];
-    }
+        if (!Array.isArray(config.bookmarkLayout)) {
+            config.bookmarkLayout = [];
+        }
 
         let item = config.bookmarkLayout.find(it => it.category === categoryName);
         if (!item) {
@@ -5593,7 +5636,7 @@ async function saveBookmarkCardSize(categoryName, width, height) {
         await dataManager.saveDashboardConfig(config);
         console.log('[调整大小] 已保存到配置:', categoryName, 'width:', item.width, 'height:', item.height);
         console.log('[调整大小] 配置项详情:', JSON.stringify(item));
-        
+
         // 保存后更新滚动条状态
         setTimeout(() => {
             updateBookmarkScrollbars();
@@ -5612,16 +5655,16 @@ window.updateBookmarkCardSize = function (categoryName, width, height) {
 // 如果书签数量超过卡片显示范围，显示滚动条；否则隐藏
 function updateBookmarkScrollbars() {
     const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
-    
+
     bookmarkCards.forEach(card => {
         const bookmarkGrid = card.querySelector('.bookmark-grid');
         if (!bookmarkGrid) return;
-        
+
         // 检查内容高度是否超过容器高度
         // scrollHeight: 内容的总高度（包括被滚动隐藏的部分）
         // clientHeight: 可见区域的高度
         const needsScrollbar = bookmarkGrid.scrollHeight > bookmarkGrid.clientHeight;
-        
+
         if (needsScrollbar) {
             bookmarkGrid.classList.add('show-scrollbar');
         } else {

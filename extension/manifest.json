@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "God's Bookmark 书签同步",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "自动将浏览器书签同步到 God's Bookmark 书签模块 (RC)",
   "permissions": [
     "bookmarks",
@@ -29,12 +29,18 @@
         "http://*/*",
         "https://*/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_end"
     },
     {
-      "matches": ["<all_urls>"],
-      "js": ["content-search.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content-search.js"
+      ],
       "run_at": "document_end",
       "all_frames": false
     }
