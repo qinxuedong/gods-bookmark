@@ -579,7 +579,7 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
 
 // 监听书签删除
 chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
-  console.log('[书签同步] 检测到书签删除');
+  console.log('[书签同步] 检测到书签删除事件, ID:', id, 'removeInfo:', removeInfo);
   const config = await getConfig();
 
   if (!config.enabled) {
@@ -587,12 +587,53 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
     return;
   }
 
-  if (!removeInfo.node) return;
+  // 检查是否是扩展自己删除的书签（避免循环同步）
+  try {
+    const skipFlag = await chrome.storage.local.get('skipNextBookmarkRemoveSync');
+    if (skipFlag.skipNextBookmarkRemoveSync) {
+      console.log('[书签同步] 跳过同步：这是扩展自己删除的书签，避免循环同步');
+      // 清除标记
+      await chrome.storage.local.remove('skipNextBookmarkRemoveSync');
+      return;
+    }
+  } catch (error) {
+    console.log('[书签同步] 检查同步标记失败，继续同步:', error.message);
+  }
+
+  // 获取被删除的书签节点信息
+  let deletedNode = removeInfo.node;
+  
+  // 如果 removeInfo.node 不存在，尝试通过 id 获取（虽然已删除，但Chrome可能仍保留信息）
+  if (!deletedNode) {
+    console.log('[书签同步] removeInfo.node 不存在，尝试通过ID获取书签信息:', id);
+    try {
+      // 注意：书签删除后，chrome.bookmarks.get 可能无法获取，但我们可以尝试
+      // 如果获取失败，这个删除事件就无法同步，这是Chrome API的限制
+      const nodes = await chrome.bookmarks.get(id);
+      if (nodes && nodes.length > 0) {
+        deletedNode = nodes[0];
+        console.log('[书签同步] 通过ID获取到书签信息:', deletedNode.title);
+      } else {
+        console.warn('[书签同步] 无法获取已删除书签的信息，ID:', id);
+        // 即使无法获取节点信息，也记录这个删除事件
+        console.log('[书签同步] 警告：删除事件无法同步，因为无法获取书签信息');
+        return;
+      }
+    } catch (error) {
+      console.error('[书签同步] 获取已删除书签信息失败:', error);
+      return;
+    }
+  }
+
+  if (!deletedNode) {
+    console.warn('[书签同步] 无法获取删除的书签节点信息，跳过同步');
+    return;
+  }
 
   // 如果是文件夹（没有URL），同步删除网站分类
-  if (!removeInfo.node.url) {
+  if (!deletedNode.url) {
     if (config.syncOnRemove) {
-      const folderName = removeInfo.node.title;
+      const folderName = deletedNode.title;
       console.log('[书签同步] 检测到文件夹删除:', folderName);
 
       // 获取当前登录用户ID
@@ -618,7 +659,8 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
           // 刷新服务器页面
           await refreshServerPage(config);
         } else {
-          console.error('[书签同步] 文件夹删除同步失败:', response.status);
+          const errorText = await response.text();
+          console.error('[书签同步] 文件夹删除同步失败:', response.status, response.statusText, errorText);
         }
       } catch (error) {
         console.error('[书签同步] 文件夹删除同步失败:', error);
@@ -628,14 +670,21 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
   }
 
   // 如果是书签（有URL），同步删除网站书签
-  if (config.syncOnRemove && removeInfo.node.url) {
+  if (config.syncOnRemove && deletedNode.url) {
+    console.log('[书签同步] 开始同步删除书签到服务器:', deletedNode.title, deletedNode.url);
+    
     // 获取当前登录用户ID
     const userId = await getCurrentUserId(config);
 
     // 删除操作：使用删除前的书签信息
     try {
-      const bookmarkData = convertBookmarkNode(removeInfo.node);
-      if (!bookmarkData) return;
+      const bookmarkData = convertBookmarkNode(deletedNode);
+      if (!bookmarkData) {
+        console.warn('[书签同步] 无法转换书签数据，跳过同步');
+        return;
+      }
+
+      console.log('[书签同步] 发送删除请求到服务器:', bookmarkData.url);
 
       const response = await fetch(`${config.serverUrl}/api/bookmark/sync`, {
         method: 'POST',
@@ -651,16 +700,35 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
 
       if (response.ok) {
         const result = await response.json();
-        console.log('[书签同步] 书签删除同步成功:', bookmarkData.name);
+        console.log('[书签同步] 书签删除同步成功:', bookmarkData.name, result);
 
         // 刷新服务器页面
         await refreshServerPage(config);
       } else {
-        console.log('[书签同步] 删除同步失败:', response.status);
+        const errorText = await response.text();
+        console.error('[书签同步] 删除同步失败:', response.status, response.statusText, errorText);
+        chrome.action.setBadgeText({ text: '!' });
+        chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+        setTimeout(() => {
+          chrome.action.setBadgeText({ text: '' });
+        }, 3000);
       }
     } catch (error) {
       console.error('[书签同步] 删除同步失败:', error);
+      console.error('[书签同步] 错误详情:', {
+        message: error.message,
+        stack: error.stack,
+        bookmarkId: id,
+        bookmarkUrl: deletedNode.url
+      });
+      chrome.action.setBadgeText({ text: '!' });
+      chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+      setTimeout(() => {
+        chrome.action.setBadgeText({ text: '' });
+      }, 3000);
     }
+  } else {
+    console.log('[书签同步] 删除同步已禁用，跳过同步');
   }
 });
 
@@ -1310,24 +1378,47 @@ async function deleteBrowserBookmark(url, skipConfigCheck = false) {
       return { found: false, message: '未找到匹配的书签' };
     }
 
-    // 删除所有匹配的书签（理论上一个URL应该只有一个书签）
-    const deletedIds = [];
-    for (const bookmark of bookmarks) {
-      if (bookmark.url === url) {
-        await chrome.bookmarks.remove(bookmark.id);
-        deletedIds.push(bookmark.id);
-        console.log('[书签同步] 已删除浏览器书签:', bookmark.title, bookmark.url);
-      }
-    }
+    // 设置跳过同步标记，避免删除事件触发循环同步
+    const skipFlag = `skip_remove_sync_${Date.now()}_${Math.random()}`;
+    await chrome.storage.local.set({ skipNextBookmarkRemoveSync: skipFlag });
+    console.log('[书签同步] 已设置跳过删除同步标记，避免循环同步');
 
-    return {
-      success: true,
-      deletedCount: deletedIds.length,
-      deletedIds: deletedIds
-    };
+    try {
+      // 删除所有匹配的书签（理论上一个URL应该只有一个书签）
+      const deletedIds = [];
+      for (const bookmark of bookmarks) {
+        if (bookmark.url === url) {
+          await chrome.bookmarks.remove(bookmark.id);
+          deletedIds.push(bookmark.id);
+          console.log('[书签同步] 已删除浏览器书签:', bookmark.title, bookmark.url);
+        }
+      }
+
+      // 延迟清除标记，确保删除事件监听器有机会检查
+      setTimeout(async () => {
+        await chrome.storage.local.remove('skipNextBookmarkRemoveSync');
+        console.log('[书签同步] 已清除跳过删除同步标记');
+      }, 1000);
+
+      return {
+        success: true,
+        deletedCount: deletedIds.length,
+        deletedIds: deletedIds
+      };
+    } catch (deleteError) {
+      // 如果删除失败，清除标记
+      await chrome.storage.local.remove('skipNextBookmarkRemoveSync');
+      throw deleteError;
+    }
 
   } catch (error) {
     console.error('[书签同步] 删除浏览器书签错误:', error);
+    // 确保清除标记
+    try {
+      await chrome.storage.local.remove('skipNextBookmarkRemoveSync');
+    } catch (e) {
+      // 忽略清除标记的错误
+    }
     throw error;
   }
 }
