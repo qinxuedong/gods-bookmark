@@ -317,7 +317,7 @@
             // 方法2: 如果cookie中没有，尝试调用API
             if (!userId) {
               try {
-                const response = await fetch('/api/check-auth', {
+                const response = await fetch('/api/users/check-auth', {
                   method: 'GET',
                   credentials: 'include'
                 });

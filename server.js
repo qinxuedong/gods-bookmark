@@ -168,6 +168,51 @@ function requireAdmin(req, res, next) {
     }
 }
 
+const ALLOWED_USER_ROLES = new Set(['admin', 'user']);
+const MIN_PASSWORD_LENGTH = 6;
+const MAX_PASSWORD_LENGTH = 128;
+const MIN_USERNAME_LENGTH = 3;
+const MAX_USERNAME_LENGTH = 32;
+
+function normalizeUsername(username) {
+    return typeof username === 'string' ? username.trim() : '';
+}
+
+function parsePositiveInteger(value) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function validateUsername(username) {
+    if (!username) {
+        return 'Username is required';
+    }
+    if (username.length < MIN_USERNAME_LENGTH || username.length > MAX_USERNAME_LENGTH) {
+        return `Username must be ${MIN_USERNAME_LENGTH}-${MAX_USERNAME_LENGTH} characters`;
+    }
+    if (/\s/.test(username)) {
+        return 'Username cannot contain spaces';
+    }
+    return null;
+}
+
+function validatePassword(password) {
+    if (typeof password !== 'string' || password.length === 0) {
+        return 'Password is required';
+    }
+    if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
+        return `Password must be ${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters`;
+    }
+    return null;
+}
+
+function validateRole(role) {
+    if (!ALLOWED_USER_ROLES.has(role)) {
+        return 'Invalid role';
+    }
+    return null;
+}
+
 // --- API Routes --- (必须在静态文件服务之前定义)
 
 // 1. Auth
@@ -178,11 +223,12 @@ function requireAdmin(req, res, next) {
 app.post('/api/users/login', async (req, res) => {
     try {
         console.log('[USER LOGIN] ========== Login attempt received ==========');
-        const { username, password } = req.body;
+        const username = normalizeUsername(req.body?.username);
+        const password = req.body?.password;
         console.log('[USER LOGIN] Username:', username);
         console.log('[USER LOGIN] Password provided:', password ? 'yes' : 'no');
         
-        if (!username || !password) {
+        if (!username || typeof password !== 'string' || password.length === 0) {
             console.log('[USER LOGIN] Missing username or password');
             return res.status(400).json({ error: 'Username and password required' });
         }
@@ -194,7 +240,7 @@ app.post('/api/users/login', async (req, res) => {
             // 检查数据库中是否有任何用户
             const userCount = await db.get("SELECT COUNT(*) as count FROM users");
             console.log('[USER LOGIN] Total users in database:', userCount ? userCount.count : 0);
-            return res.status(401).json({ error: 'Invalid credentials', details: 'User not found' });
+            return res.status(401).json({ error: 'Invalid credentials' });
         }
         
         console.log('[USER LOGIN] User found, checking password...');
@@ -204,7 +250,7 @@ app.post('/api/users/login', async (req, res) => {
         if (!isValid) {
             console.log('[USER LOGIN] Invalid password for user:', username);
             console.log('[USER LOGIN] Password hash in DB:', user.password_hash.substring(0, 20) + '...');
-            return res.status(401).json({ error: 'Invalid credentials', details: 'Password mismatch' });
+            return res.status(401).json({ error: 'Invalid credentials' });
         }
         
         console.log('[USER LOGIN] Password valid, creating session...');
@@ -279,7 +325,7 @@ app.post('/api/users/logout', async (req, res) => {
 });
 
 // 调试接口：检查数据库用户（仅用于调试，生产环境应删除）
-app.get('/api/debug/users', async (req, res) => {
+app.get('/api/debug/users', requireAuth, requireAdmin, async (req, res) => {
     try {
         const users = await db.all("SELECT id, username, role, created_at FROM users");
         const userCount = await db.get("SELECT COUNT(*) as count FROM users");
@@ -347,10 +393,23 @@ app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
 // 创建用户（仅管理员）
 app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
     try {
-        const { username, password, role = 'user' } = req.body;
-        
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password required' });
+        const username = normalizeUsername(req.body?.username);
+        const password = req.body?.password;
+        const role = req.body?.role || 'user';
+
+        const usernameError = validateUsername(username);
+        if (usernameError) {
+            return res.status(400).json({ error: usernameError });
+        }
+
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+            return res.status(400).json({ error: passwordError });
+        }
+
+        const roleError = validateRole(role);
+        if (roleError) {
+            return res.status(400).json({ error: roleError });
         }
         
         // 检查用户名是否已存在
@@ -385,10 +444,14 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
 // 更新用户（管理员可以更新任何用户，普通用户只能更新自己的密码）
 app.put('/api/users/:id', requireAuth, async (req, res) => {
     try {
-        const targetUserId = parseInt(req.params.id);
+        const targetUserId = parsePositiveInteger(req.params.id);
         const currentUserId = req.userId || 0;
         const isAdmin = req.user && req.user.role === 'admin';
-        const { username, password, role } = req.body;
+        const { username, password, role, oldPassword } = req.body;
+
+        if (!targetUserId) {
+            return res.status(400).json({ error: 'Invalid user id' });
+        }
         
         // 权限检查：普通用户只能修改自己的密码，管理员可以修改任何用户
         if (!isAdmin && targetUserId !== currentUserId) {
@@ -404,27 +467,57 @@ app.put('/api/users/:id', requireAuth, async (req, res) => {
                 return res.status(400).json({ error: 'Password is required' });
             }
         }
+
+        const targetUser = await db.get("SELECT id, password_hash FROM users WHERE id = ?", [targetUserId]);
+        if (!targetUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const isSelfPasswordChange = targetUserId === currentUserId && !!password;
+        if (isSelfPasswordChange) {
+            if (!oldPassword) {
+                return res.status(400).json({ error: 'Current password is required' });
+            }
+
+            const isCurrentPasswordValid = await bcrypt.compare(oldPassword, targetUser.password_hash);
+            if (!isCurrentPasswordValid) {
+                return res.status(400).json({ error: 'Current password is incorrect' });
+            }
+        }
         
         let updateFields = [];
         let params = [];
         
         if (username && isAdmin) {
+            const normalizedUsername = normalizeUsername(username);
+            const usernameError = validateUsername(normalizedUsername);
+            if (usernameError) {
+                return res.status(400).json({ error: usernameError });
+            }
             // 检查用户名是否已被其他用户使用
-            const existingUser = await db.get("SELECT id FROM users WHERE username = ? AND id != ?", [username, targetUserId]);
+            const existingUser = await db.get("SELECT id FROM users WHERE username = ? AND id != ?", [normalizedUsername, targetUserId]);
             if (existingUser) {
                 return res.status(400).json({ error: 'Username already exists' });
             }
             updateFields.push("username = ?");
-            params.push(username);
+            params.push(normalizedUsername);
         }
         
         if (password) {
+            const passwordError = validatePassword(password);
+            if (passwordError) {
+                return res.status(400).json({ error: passwordError });
+            }
             const passwordHash = await bcrypt.hash(password, 10);
             updateFields.push("password_hash = ?");
             params.push(passwordHash);
         }
         
         if (role && isAdmin) {
+            const roleError = validateRole(role);
+            if (roleError) {
+                return res.status(400).json({ error: roleError });
+            }
             updateFields.push("role = ?");
             params.push(role);
         }
@@ -452,14 +545,21 @@ app.put('/api/users/:id', requireAuth, async (req, res) => {
 // 删除用户（仅管理员）
 app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
     try {
-        const userId = req.params.id;
+        const userId = parsePositiveInteger(req.params.id);
+
+        if (!userId) {
+            return res.status(400).json({ error: 'Invalid user id' });
+        }
         
         // 不能删除自己
-        if (parseInt(userId) === req.user.id) {
+        if (userId === req.user.id) {
             return res.status(400).json({ error: 'Cannot delete yourself' });
         }
         
-        await db.run("DELETE FROM users WHERE id = ?", [userId]);
+        const result = await db.run("DELETE FROM users WHERE id = ?", [userId]);
+        if (!result.changes) {
+            return res.status(404).json({ error: 'User not found' });
+        }
         res.json({ success: true });
     } catch (err) {
         console.error('[DELETE USER] Error:', err);
@@ -614,24 +714,16 @@ app.post('/api/bookmark/click', requireAuth, async (req, res) => {
 });
 
 // 6. 书签同步API（用于浏览器扩展）
-app.post('/api/bookmark/sync', async (req, res) => {
+app.post('/api/bookmark/sync', requireAuth, async (req, res) => {
     try {
-        const { category, bookmark, action, userId } = req.body;
+        const { category, bookmark, action } = req.body;
         
         if (!bookmark || !bookmark.url) {
             return res.status(400).json({ error: 'Invalid bookmark data' });
         }
         
         // 确定用户ID（优先使用请求中的userId，否则从session获取，最后默认为0）
-        let targetUserId = userId;
-        if (!targetUserId) {
-            const sessionUserId = await getUserIdFromSession(req);
-            if (sessionUserId !== null) {
-                targetUserId = sessionUserId;
-            } else {
-                targetUserId = 0; // 默认用户（向后兼容）
-            }
-        }
+        const targetUserId = req.userId;
         
         // 获取当前用户的书签数据（优先从user_data表）
         let bookmarks = [];
@@ -763,24 +855,16 @@ app.post('/api/bookmark/sync', async (req, res) => {
 });
 
 // 7. 批量同步所有书签API（用于初始同步）
-app.post('/api/bookmark/sync-all', async (req, res) => {
+app.post('/api/bookmark/sync-all', requireAuth, async (req, res) => {
     try {
-        const { bookmarks: bookmarksByCategory, userId } = req.body;
+        const { bookmarks: bookmarksByCategory } = req.body;
         
         if (!bookmarksByCategory || typeof bookmarksByCategory !== 'object') {
             return res.status(400).json({ error: 'Invalid bookmarks data format' });
         }
         
         // 确定用户ID（优先使用请求中的userId，否则从session获取，最后默认为0）
-        let targetUserId = userId;
-        if (!targetUserId) {
-            const sessionUserId = await getUserIdFromSession(req);
-            if (sessionUserId !== null) {
-                targetUserId = sessionUserId;
-            } else {
-                targetUserId = 0; // 默认用户（向后兼容）
-            }
-        }
+        const targetUserId = req.userId;
         
         // 获取当前用户的书签数据（优先从user_data表）
         let existingBookmarks = [];
@@ -884,24 +968,16 @@ app.post('/api/bookmark/sync-all', async (req, res) => {
 });
 
 // 8. 同步文件夹操作API（用于浏览器扩展删除/创建文件夹）
-app.post('/api/bookmark/sync-folder', async (req, res) => {
+app.post('/api/bookmark/sync-folder', requireAuth, async (req, res) => {
     try {
-        const { action, folderName, userId } = req.body;
+        const { action, folderName } = req.body;
         
         if (!folderName) {
             return res.status(400).json({ error: '文件夹名称不能为空' });
         }
         
         // 确定用户ID（优先使用请求中的userId，否则从session获取，最后默认为0）
-        let targetUserId = userId;
-        if (!targetUserId) {
-            const sessionUserId = await getUserIdFromSession(req);
-            if (sessionUserId !== null) {
-                targetUserId = sessionUserId;
-            } else {
-                targetUserId = 0; // 默认用户（向后兼容）
-            }
-        }
+        const targetUserId = req.userId;
         
         if (action === 'created') {
             // 创建文件夹时，在网站创建分类（可能包含书签）
@@ -1014,24 +1090,16 @@ app.post('/api/bookmark/sync-folder', async (req, res) => {
 });
 
 // 9. 检查书签是否存在API（用于同步前校验）
-app.get('/api/bookmark/check-exists', async (req, res) => {
+app.get('/api/bookmark/check-exists', requireAuth, async (req, res) => {
     try {
-        const { userId: userIdParam, category, url } = req.query;
+        const { category, url } = req.query;
         
         if (!category || !url) {
             return res.status(400).json({ error: '分类和URL参数不能为空' });
         }
         
         // 确定用户ID（优先使用请求中的userId，否则从session获取，最后默认为0）
-        let targetUserId = userIdParam ? parseInt(userIdParam) : null;
-        if (!targetUserId) {
-            const sessionUserId = await getUserIdFromSession(req);
-            if (sessionUserId !== null) {
-                targetUserId = sessionUserId;
-            } else {
-                targetUserId = 0; // 默认用户（向后兼容）
-            }
-        }
+        const targetUserId = req.userId;
         
         // 获取当前用户的书签数据（优先从user_data表）
         let bookmarks = [];
@@ -1073,18 +1141,10 @@ app.get('/api/bookmark/check-exists', async (req, res) => {
 });
 
 // 10. 获取所有书签API（用于浏览器扩展同步，不需要认证）
-app.get('/api/bookmark/get-all', async (req, res) => {
+app.get('/api/bookmark/get-all', requireAuth, async (req, res) => {
     try {
         // 从查询参数或session获取userId
-        let targetUserId = req.query.userId ? parseInt(req.query.userId) : null;
-        if (!targetUserId) {
-            const sessionUserId = await getUserIdFromSession(req);
-            if (sessionUserId !== null) {
-                targetUserId = sessionUserId;
-            } else {
-                targetUserId = 0; // 默认用户（向后兼容）
-            }
-        }
+        const targetUserId = req.userId;
         
         // 优先从user_data表获取书签
         let bookmarks = [];

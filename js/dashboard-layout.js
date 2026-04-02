@@ -4208,18 +4208,6 @@ function bindUserAndBackupEvents() {
             }
             
             try {
-                // 验证当前密码（通过重新登录验证）
-                const verifyResult = await window.userManager.login(
-                    window.userManager.currentUser.username,
-                    oldPassword
-                );
-                
-                if (!verifyResult || !verifyResult.success) {
-                    alert('当前密码不正确');
-                    return;
-                }
-                
-                // 修改密码
                 const result = await window.userManager.changePassword(
                     window.userManager.currentUser.id,
                     oldPassword,

@@ -318,6 +318,7 @@ async function syncBookmarkToServer(bookmarkId, action = 'created') {
       headers: {
         'Content-Type': 'application/json'
       },
+      credentials: 'include',
       body: JSON.stringify({
         category: categoryName,
         bookmark: bookmarkData,
@@ -428,10 +429,11 @@ async function syncFolderToServer(folderId, action = 'created') {
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           action: 'created',
           folderName: folderName,
-          bookmarks: bookmarks, // 包含文件夹内的书签
+          bookmarks: bookmarks, // Include bookmarks inside the folder?
           userId: userId
         })
       });
@@ -559,6 +561,7 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           action: 'moved',
           bookmark: bookmarkData,
@@ -645,6 +648,7 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
           headers: {
             'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({
             action: 'removed',
             folderName: folderName,
@@ -691,6 +695,7 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           action: 'removed',
           bookmark: bookmarkData,
@@ -847,6 +852,7 @@ async function syncBrowserToServer() {
       headers: {
         'Content-Type': 'application/json'
       },
+      credentials: 'include',
       body: JSON.stringify({
         bookmarks: bookmarksByCategory,
         userId: userId

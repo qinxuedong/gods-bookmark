@@ -131,8 +131,8 @@ class UserManager {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                // 服务器只需要 password 字段；oldPassword 仅用于前端校验
-                body: JSON.stringify({ password: newPassword })
+                // Server validates oldPassword when changing the current user's password
+                body: JSON.stringify({ password: newPassword, oldPassword })
             });
 
             const data = await response.json();
