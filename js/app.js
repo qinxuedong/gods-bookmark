@@ -192,12 +192,7 @@ function bindInlineEventHandlers() {
     const addTodoImageRemove = document.getElementById('add-todo-image-remove');
     if (addTodoImageRemove) {
         addTodoImageRemove.addEventListener('click', () => {
-            const modal = document.getElementById('add-todo-modal');
-            const imagePreview = document.getElementById('add-todo-image-preview');
-            const imageDisplay = document.getElementById('add-todo-image-display');
-            if (imagePreview) imagePreview.style.display = 'none';
-            if (imageDisplay) imageDisplay.src = '';
-            if (modal) modal.dataset.todoImage = '';
+            setAddTodoImageState('');
         });
     }
 
@@ -309,6 +304,53 @@ function bindInlineEventHandlers() {
             }
         });
     }
+}
+
+function getAddTodoModalElements() {
+    return {
+        modal: document.getElementById('add-todo-modal'),
+        input: document.getElementById('new-todo-input'),
+        imagePreview: document.getElementById('add-todo-image-preview'),
+        imageDisplay: document.getElementById('add-todo-image-display'),
+    };
+}
+
+function setAddTodoImageState(imageData) {
+    const {
+        modal,
+        imagePreview,
+        imageDisplay,
+    } = getAddTodoModalElements();
+
+    if (!modal) {
+        return;
+    }
+
+    const hasImage = !!(imageData && imageData.trim() !== '');
+    modal.dataset.todoImage = hasImage ? imageData : '';
+
+    if (imageDisplay) {
+        imageDisplay.src = hasImage ? imageData : '';
+    }
+    if (imagePreview) {
+        imagePreview.style.display = hasImage ? 'block' : 'none';
+    }
+}
+
+function bindAddTodoModalEvents() {
+    const { modal, input } = getAddTodoModalElements();
+    if (!modal || !input || modal.dataset.eventsBound === 'true') {
+        return;
+    }
+
+    input.addEventListener('paste', handleAddTodoImagePaste);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            hideAddTodoInput();
+        }
+    });
+
+    modal.dataset.eventsBound = 'true';
 }
 
 function bindReplacingEventHandler(element, eventName, handler) {
@@ -1672,58 +1714,26 @@ function initRightNavScroll() {
 
 // 显示添加待办输入框（中心弹窗）
 window.showAddTodoInput = function () {
-    const modal = document.getElementById('add-todo-modal');
-    const input = document.getElementById('new-todo-input');
-    const imagePreview = document.getElementById('add-todo-image-preview');
-    const imageDisplay = document.getElementById('add-todo-image-display');
+    const { modal, input } = getAddTodoModalElements();
 
     if (modal && input) {
+        bindAddTodoModalEvents();
         modal.style.display = 'flex';
         input.focus();
-
-        // 清除之前的图片预览
-        if (imagePreview) imagePreview.style.display = 'none';
-        if (imageDisplay) imageDisplay.src = '';
-        if (modal.dataset) modal.dataset.todoImage = '';
-
-        // 绑定图片粘贴事件
-        if (input) {
-            input.addEventListener('paste', handleAddTodoImagePaste, { once: false });
-        }
-
-        // 点击背景关闭弹窗
-        modal.addEventListener('click', function (e) {
-            if (e.target === modal) {
-                hideAddTodoInput();
-            }
-        }, { once: true });
+        setAddTodoImageState('');
     }
 };
 
-// 隐藏添加待办输入框（中心弹窗）
 window.hideAddTodoInput = function () {
-    const modal = document.getElementById('add-todo-modal');
-    const input = document.getElementById('new-todo-input');
-    const imagePreview = document.getElementById('add-todo-image-preview');
-    const imageDisplay = document.getElementById('add-todo-image-display');
+    const { modal, input } = getAddTodoModalElements();
 
     if (modal && input) {
         modal.style.display = 'none';
         input.value = '';
-
-        // 清除图片预览
-        if (imagePreview) imagePreview.style.display = 'none';
-        if (imageDisplay) imageDisplay.src = '';
-        if (modal.dataset) modal.dataset.todoImage = '';
-
-        // 移除粘贴事件监听器
-        if (input) {
-            input.removeEventListener('paste', handleAddTodoImagePaste);
-        }
+        setAddTodoImageState('');
     }
 };
 
-// 处理输入框按键
 window.handleTodoInputKeydown = function (event) {
     if (event.key === 'Enter') {
         addTodo();
@@ -1742,19 +1752,7 @@ function handleAddTodoImagePaste(e) {
             const reader = new FileReader();
             reader.onload = (event) => {
                 const imageData = event.target.result;
-                const modal = document.getElementById('add-todo-modal');
-                const imagePreview = document.getElementById('add-todo-image-preview');
-                const imageDisplay = document.getElementById('add-todo-image-display');
-
-                if (modal) {
-                    modal.dataset.todoImage = imageData;
-                }
-                if (imageDisplay) {
-                    imageDisplay.src = imageData;
-                }
-                if (imagePreview) {
-                    imagePreview.style.display = 'block';
-                }
+                setAddTodoImageState(imageData);
             };
             reader.readAsDataURL(file);
             break;
@@ -1764,8 +1762,7 @@ function handleAddTodoImagePaste(e) {
 
 // 添加待办事项
 window.addTodo = async function () {
-    const input = document.getElementById('new-todo-input');
-    const modal = document.getElementById('add-todo-modal');
+    const { input, modal } = getAddTodoModalElements();
     if (!input || !modal) return;
 
     const text = input.value.trim();
@@ -1880,118 +1877,159 @@ window.editTodo = function (index) {
 };
 
 // 显示待办事项编辑模态框
-function showTodoEditModal(todo, index) {
-    // 创建或获取编辑模态框
-    let editModal = document.getElementById('todo-edit-modal');
+function getTodoEditModalElements() {
+    return {
+        editModal: document.getElementById('todo-edit-modal'),
+        textarea: document.getElementById('todo-edit-text'),
+        closeBtn: document.getElementById('todo-edit-modal-close'),
+        cancelBtn: document.getElementById('todo-edit-modal-cancel'),
+        saveBtn: document.getElementById('todo-edit-modal-save'),
+        imagePreview: document.getElementById('todo-edit-image-preview'),
+        imageDisplay: document.getElementById('todo-edit-image-display'),
+        iconContainer: document.getElementById('todo-edit-image-icon-container'),
+        removeImageBtn: document.getElementById('todo-edit-image-remove'),
+    };
+}
+
+function setTodoEditImageState(imageData) {
+    const {
+        editModal,
+        imagePreview,
+        imageDisplay,
+        iconContainer,
+    } = getTodoEditModalElements();
+
     if (!editModal) {
-        editModal = document.createElement('div');
-        editModal.id = 'todo-edit-modal';
-        editModal.className = 'todo-edit-modal';
-        editModal.innerHTML = `
-            <div class="todo-edit-modal-content">
-                <div class="todo-edit-modal-header">
-                    <h3>编辑待办事项</h3>
-                    <button class="todo-edit-modal-close" id="todo-edit-modal-close">×</button>
-                </div>
-                <div class="todo-edit-modal-body">
-                    <textarea id="todo-edit-text" class="todo-edit-text" placeholder="输入待办事项内容..." rows="4"></textarea>
-                    <div class="todo-edit-image-preview" id="todo-edit-image-preview" style="display: none;">
-                        <img id="todo-edit-image-display" src="" alt="预览图片" style="max-width: 100%; max-height: 200px; border-radius: 0.375rem; margin-top: 0.5rem;">
-                        <button class="todo-edit-image-remove" id="todo-edit-image-remove" style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">删除图片</button>
-                    </div>
-                    <div class="todo-edit-image-icon-container" id="todo-edit-image-icon-container" style="display: none;">
-                        <span style="color: var(--accent-color); font-size: 0.875rem;">🖼️ 已添加图片</span>
-                    </div>
-                </div>
-                <div class="todo-edit-modal-footer">
-                    <button class="todo-edit-modal-save" id="todo-edit-modal-save">保存</button>
-                    <button class="todo-edit-modal-cancel" id="todo-edit-modal-cancel">取消</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(editModal);
-
-        // 绑定事件
-        const closeBtn = document.getElementById('todo-edit-modal-close');
-        const cancelBtn = document.getElementById('todo-edit-modal-cancel');
-        const saveBtn = document.getElementById('todo-edit-modal-save');
-        const textarea = document.getElementById('todo-edit-text');
-        const removeImageBtn = document.getElementById('todo-edit-image-remove');
-
-        if (closeBtn) {
-            closeBtn.addEventListener('click', hideTodoEditModal);
-        }
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', hideTodoEditModal);
-        }
-        if (saveBtn) {
-            saveBtn.addEventListener('click', () => {
-                const currentIndex = parseInt(editModal.dataset.todoIndex);
-                if (!isNaN(currentIndex)) {
-                    saveTodoEdit(currentIndex);
-                }
-            });
-        }
-
-        // 点击背景关闭
-        editModal.addEventListener('click', (e) => {
-            if (e.target === editModal) {
-                hideTodoEditModal();
-            }
-        });
-
-        // 支持粘贴图片
-        if (textarea) {
-            textarea.addEventListener('paste', handleTodoImagePaste);
-        }
-
-        // 删除图片
-        if (removeImageBtn) {
-            removeImageBtn.addEventListener('click', () => {
-                const preview = document.getElementById('todo-edit-image-preview');
-                const iconContainer = document.getElementById('todo-edit-image-icon-container');
-                const imageDisplay = document.getElementById('todo-edit-image-display');
-                if (preview) preview.style.display = 'none';
-                if (iconContainer) iconContainer.style.display = 'none';
-                if (imageDisplay) imageDisplay.src = '';
-                editModal.dataset.todoImage = '';
-            });
-        }
+        return;
     }
 
-    // 填充数据
-    const textarea = document.getElementById('todo-edit-text');
-    const imagePreview = document.getElementById('todo-edit-image-preview');
-    const imageDisplay = document.getElementById('todo-edit-image-display');
-    const iconContainer = document.getElementById('todo-edit-image-icon-container');
+    const hasImage = !!(imageData && imageData.trim() !== '');
+    editModal.dataset.todoImage = hasImage ? imageData : '';
 
-    if (textarea) {
-        textarea.value = todo.text || '';
+    if (imageDisplay) {
+        imageDisplay.src = hasImage ? imageData : '';
     }
-
-    if (todo.image && todo.image.trim() !== '') {
-        if (imageDisplay) imageDisplay.src = todo.image;
-        if (imagePreview) imagePreview.style.display = 'block';
-        if (iconContainer) iconContainer.style.display = 'block';
-        editModal.dataset.todoImage = todo.image;
-    } else {
-        if (imagePreview) imagePreview.style.display = 'none';
-        if (iconContainer) iconContainer.style.display = 'none';
-        editModal.dataset.todoImage = '';
+    if (imagePreview) {
+        imagePreview.style.display = hasImage ? 'block' : 'none';
     }
+    if (iconContainer) {
+        iconContainer.style.display = hasImage ? 'block' : 'none';
+    }
+}
 
-    editModal.dataset.todoIndex = index;
-    editModal.style.display = 'flex';
+function getTodoEditState() {
+    const { editModal, textarea } = getTodoEditModalElements();
+    const currentIndex = editModal ? Number.parseInt(editModal.dataset.todoIndex, 10) : NaN;
 
-    // 聚焦文本框
+    return {
+        editModal,
+        textarea,
+        currentIndex,
+    };
+}
+
+function focusTodoEditTextarea() {
+    const { textarea } = getTodoEditModalElements();
     if (textarea) {
         setTimeout(() => textarea.focus(), 100);
     }
 }
 
+function bindTodoEditModalEvents(editModal) {
+    const {
+        closeBtn,
+        cancelBtn,
+        saveBtn,
+        textarea,
+        removeImageBtn,
+    } = getTodoEditModalElements();
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', hideTodoEditModal);
+    }
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', hideTodoEditModal);
+    }
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+            saveTodoEdit();
+        });
+    }
+
+    editModal.addEventListener('click', (e) => {
+        if (e.target === editModal) {
+            hideTodoEditModal();
+        }
+    });
+
+    if (textarea) {
+        textarea.addEventListener('paste', handleTodoImagePaste);
+    }
+
+    if (removeImageBtn) {
+        removeImageBtn.addEventListener('click', () => {
+            setTodoEditImageState('');
+        });
+    }
+}
+
+// 显示待办事项编辑模态框
+function ensureTodoEditModal() {
+    const { editModal } = getTodoEditModalElements();
+    if (editModal) {
+        return editModal;
+    }
+
+    const createdModal = document.createElement('div');
+    createdModal.id = 'todo-edit-modal';
+    createdModal.className = 'todo-edit-modal';
+    createdModal.innerHTML = `
+        <div class="todo-edit-modal-content">
+            <div class="todo-edit-modal-header">
+                <h3>\u7f16\u8f91\u5f85\u529e\u4e8b\u9879</h3>
+                <button class="todo-edit-modal-close" id="todo-edit-modal-close">\u00d7</button>
+            </div>
+            <div class="todo-edit-modal-body">
+                <textarea id="todo-edit-text" class="todo-edit-text" placeholder="\u8f93\u5165\u5f85\u529e\u4e8b\u9879\u5185\u5bb9..." rows="4"></textarea>
+                <div class="todo-edit-image-preview" id="todo-edit-image-preview" style="display: none;">
+                    <img id="todo-edit-image-display" src="" alt="\u9884\u89c8\u56fe\u7247" style="max-width: 100%; max-height: 200px; border-radius: 0.375rem; margin-top: 0.5rem;">
+                    <button class="todo-edit-image-remove" id="todo-edit-image-remove" style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; background: #ef4444; color: white; border: none; border-radius: 0.375rem; cursor: pointer; font-size: 0.75rem;">\u5220\u9664\u56fe\u7247</button>
+                </div>
+                <div class="todo-edit-image-icon-container" id="todo-edit-image-icon-container" style="display: none;">
+                    <span style="color: var(--accent-color); font-size: 0.875rem;">\u5df2\u6dfb\u52a0\u56fe\u7247</span>
+                </div>
+            </div>
+            <div class="todo-edit-modal-footer">
+                <button class="todo-edit-modal-save" id="todo-edit-modal-save">\u4fdd\u5b58</button>
+                <button class="todo-edit-modal-cancel" id="todo-edit-modal-cancel">\u53d6\u6d88</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(createdModal);
+    bindTodoEditModalEvents(createdModal);
+
+    return createdModal;
+}
+
+function showTodoEditModal(todo, index) {
+    const editModal = ensureTodoEditModal();
+
+    const { textarea } = getTodoEditState();
+
+    if (textarea) {
+        textarea.value = todo.text || '';
+    }
+
+    setTodoEditImageState(todo.image || '');
+
+    editModal.dataset.todoIndex = index;
+    editModal.style.display = 'flex';
+    focusTodoEditTextarea();
+}
+
 // 隐藏待办事项编辑模态框
 function hideTodoEditModal() {
-    const editModal = document.getElementById('todo-edit-modal');
+    const { editModal } = getTodoEditModalElements();
     if (editModal) {
         editModal.style.display = 'none';
     }
@@ -2007,23 +2045,7 @@ function handleTodoImagePaste(e) {
             const reader = new FileReader();
             reader.onload = (event) => {
                 const imageData = event.target.result;
-                const editModal = document.getElementById('todo-edit-modal');
-                const imagePreview = document.getElementById('todo-edit-image-preview');
-                const imageDisplay = document.getElementById('todo-edit-image-display');
-                const iconContainer = document.getElementById('todo-edit-image-icon-container');
-
-                if (editModal) {
-                    editModal.dataset.todoImage = imageData;
-                }
-                if (imageDisplay) {
-                    imageDisplay.src = imageData;
-                }
-                if (imagePreview) {
-                    imagePreview.style.display = 'block';
-                }
-                if (iconContainer) {
-                    iconContainer.style.display = 'block';
-                }
+                setTodoEditImageState(imageData);
             };
             reader.readAsDataURL(file);
             break;
@@ -2032,11 +2054,10 @@ function handleTodoImagePaste(e) {
 }
 
 // 保存待办事项编辑
-async function saveTodoEdit(index) {
-    const editModal = document.getElementById('todo-edit-modal');
-    const textarea = document.getElementById('todo-edit-text');
+async function saveTodoEdit() {
+    const { editModal, textarea, currentIndex } = getTodoEditState();
 
-    if (!editModal || !textarea || index < 0 || index >= todosList.length) return;
+    if (!editModal || !textarea || Number.isNaN(currentIndex) || currentIndex < 0 || currentIndex >= todosList.length) return;
 
     const text = textarea.value.trim();
     if (!text && !editModal.dataset.todoImage) {
@@ -2044,7 +2065,7 @@ async function saveTodoEdit(index) {
         return;
     }
 
-    const todo = todosList[index];
+    const todo = todosList[currentIndex];
     todo.text = text || '';
     todo.image = editModal.dataset.todoImage || '';
 
@@ -5503,47 +5524,70 @@ function bindTodosTitleDoubleClickImpl() {
     updateTodosPinTooltip();
 }
 
+function getTodoImageModalElements() {
+    return {
+        imageModal: document.getElementById('todo-image-modal'),
+        closeBtn: document.getElementById('todo-image-modal-close'),
+        imageDisplay: document.getElementById('todo-image-modal-display'),
+    };
+}
+
+function hideTodoImageModal() {
+    const { imageModal } = getTodoImageModalElements();
+    if (imageModal) {
+        imageModal.style.display = 'none';
+    }
+}
+
+function ensureTodoImageModal() {
+    const { imageModal } = getTodoImageModalElements();
+    if (imageModal) {
+        return imageModal;
+    }
+
+    const createdModal = document.createElement('div');
+    createdModal.id = 'todo-image-modal';
+    createdModal.className = 'todo-image-modal';
+    createdModal.innerHTML = `
+        <div class="todo-image-modal-content">
+            <button class="todo-image-modal-close" id="todo-image-modal-close">\u00d7</button>
+            <img id="todo-image-modal-display" src="" alt="\u5f85\u529e\u4e8b\u9879\u56fe\u7247" style="max-width: 90vw; max-height: 90vh; border-radius: 0.5rem;">
+        </div>
+    `;
+    document.body.appendChild(createdModal);
+
+    const { closeBtn } = getTodoImageModalElements();
+    if (closeBtn) {
+        closeBtn.addEventListener('click', hideTodoImageModal);
+    }
+
+    createdModal.addEventListener('click', (e) => {
+        if (e.target === createdModal) {
+            hideTodoImageModal();
+        }
+    });
+
+    if (!todoImageModalKeyHandler) {
+        todoImageModalKeyHandler = (e) => {
+            const { imageModal: currentModal } = getTodoImageModalElements();
+            if (e.key === 'Escape' && currentModal && currentModal.style.display === 'flex') {
+                hideTodoImageModal();
+            }
+        };
+        document.addEventListener('keydown', todoImageModalKeyHandler);
+    }
+
+    return createdModal;
+}
+
 function showTodoImageModalImpl(index) {
     if (index < 0 || index >= todosList.length) return;
 
     const todo = todosList[index];
     if (!todo.image || todo.image.trim() === '') return;
 
-    let imageModal = document.getElementById('todo-image-modal');
-    if (!imageModal) {
-        imageModal = document.createElement('div');
-        imageModal.id = 'todo-image-modal';
-        imageModal.className = 'todo-image-modal';
-        imageModal.innerHTML = `
-            <div class="todo-image-modal-content">
-                <button class="todo-image-modal-close" id="todo-image-modal-close">x</button>
-                <img id="todo-image-modal-display" src="" alt="\u5f85\u529e\u4e8b\u9879\u56fe\u7247" style="max-width: 90vw; max-height: 90vh; border-radius: 0.5rem;">
-            </div>
-        `;
-        document.body.appendChild(imageModal);
-
-        const closeBtn = document.getElementById('todo-image-modal-close');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                if (imageModal) imageModal.style.display = 'none';
-            });
-        }
-
-        imageModal.addEventListener('click', (e) => {
-            if (e.target === imageModal) {
-                imageModal.style.display = 'none';
-            }
-        });
-
-        todoImageModalKeyHandler = (e) => {
-            if (e.key === 'Escape' && imageModal && imageModal.style.display === 'flex') {
-                imageModal.style.display = 'none';
-            }
-        };
-        document.addEventListener('keydown', todoImageModalKeyHandler);
-    }
-
-    const imageDisplay = document.getElementById('todo-image-modal-display');
+    const imageModal = ensureTodoImageModal();
+    const { imageDisplay } = getTodoImageModalElements();
     if (imageDisplay) {
         imageDisplay.src = todo.image;
     }
