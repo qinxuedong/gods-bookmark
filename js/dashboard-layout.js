@@ -2711,8 +2711,6 @@ window.bindUserAndBackupEvents = bindUserAndBackupEvents;
 window.showUserManagementModal = showUserManagementModal;
 window.hideUserManagementModal = hideUserManagementModal;
 window.showBackupManagementModal = showBackupManagementModal;
-window.showUserProfileModal = showUserProfileModal;
-window.hideUserProfileModal = hideUserProfileModal;
 window.hideBackupManagementModal = hideBackupManagementModal;
 window.showUserProfileModal = showUserProfileModal;
 window.hideUserProfileModal = hideUserProfileModal;
@@ -3273,9 +3271,7 @@ function bindManagementButtons() {
     // 用户管理按钮
     const userManagementBtn = document.getElementById('user-management-btn');
     if (userManagementBtn) {
-        const newBtn = userManagementBtn.cloneNode(true);
-        userManagementBtn.parentNode.replaceChild(newBtn, userManagementBtn);
-        newBtn.addEventListener('click', (e) => {
+        bindReplacingClickHandler(userManagementBtn, (e) => {
             e.preventDefault();
             e.stopPropagation();
             showUserManagementModal();
@@ -3287,9 +3283,7 @@ function bindManagementButtons() {
     // 备份管理按钮
     const backupManagementBtn = document.getElementById('backup-management-btn');
     if (backupManagementBtn) {
-        const newBtn = backupManagementBtn.cloneNode(true);
-        backupManagementBtn.parentNode.replaceChild(newBtn, backupManagementBtn);
-        newBtn.addEventListener('click', (e) => {
+        bindReplacingClickHandler(backupManagementBtn, (e) => {
             e.preventDefault();
             e.stopPropagation();
             showBackupManagementModal();
@@ -3301,9 +3295,7 @@ function bindManagementButtons() {
     // 修改密码按钮
     const changePasswordBtn = document.getElementById('change-password-btn');
     if (changePasswordBtn) {
-        const newBtn = changePasswordBtn.cloneNode(true);
-        changePasswordBtn.parentNode.replaceChild(newBtn, changePasswordBtn);
-        newBtn.addEventListener('click', (e) => {
+        bindReplacingClickHandler(changePasswordBtn, (e) => {
             e.preventDefault();
             e.stopPropagation();
             showUserProfileModal();
@@ -3374,6 +3366,17 @@ function hideUserProfileModal() {
 }
 
 // ===== 加载用户列表 =====
+function bindReplacingClickHandler(element, handler) {
+    if (!element || !element.parentNode) {
+        return null;
+    }
+
+    const nextElement = element.cloneNode(true);
+    element.parentNode.replaceChild(nextElement, element);
+    nextElement.onclick = handler;
+    return nextElement;
+}
+
 async function loadUsersList() {
     try {
         if (!window.userManager) {
@@ -3565,22 +3568,22 @@ function bindUserAndBackupEvents() {
     // 用户管理模态框关闭按钮
     const userManagementClose = document.getElementById('user-management-close');
     if (userManagementClose) {
-        userManagementClose.onclick = hideUserManagementModal;
+        bindReplacingClickHandler(userManagementClose, hideUserManagementModal);
     }
     
     // 备份管理模态框关闭按钮
     const backupManagementClose = document.getElementById('backup-management-close');
     if (backupManagementClose) {
-        backupManagementClose.onclick = hideBackupManagementModal;
+        bindReplacingClickHandler(backupManagementClose, hideBackupManagementModal);
     }
     
     // 导入备份按钮
     const importBackupBtn = document.getElementById('import-backup-btn');
     const importBackupFile = document.getElementById('import-backup-file');
     if (importBackupBtn && importBackupFile) {
-        importBackupBtn.onclick = () => {
+        bindReplacingClickHandler(importBackupBtn, () => {
             importBackupFile.click();
-        };
+        });
         
         importBackupFile.onchange = async (e) => {
             const file = e.target.files[0];
@@ -3720,7 +3723,7 @@ function bindUserAndBackupEvents() {
     // 添加用户按钮
     const addUserBtn = document.getElementById('add-user-btn');
     if (addUserBtn) {
-        addUserBtn.onclick = () => {
+        bindReplacingClickHandler(addUserBtn, () => {
             // 打开用户编辑模态框（添加模式）
             const editModal = document.getElementById('user-edit-modal');
             const title = document.getElementById('user-edit-title');
@@ -3738,13 +3741,13 @@ function bindUserAndBackupEvents() {
                     deleteBtn.style.display = 'none';
                 }
             }
-        };
+        });
     }
     
     
     // 编辑用户按钮（事件委托）
     document.querySelectorAll('.edit-user-btn').forEach(btn => {
-        btn.onclick = async () => {
+        bindReplacingClickHandler(btn, async () => {
             const userId = parseInt(btn.getAttribute('data-user-id'));
             if (!isNaN(userId) && window.userManager) {
                 const resp = await window.userManager.listUsers();
@@ -3769,7 +3772,7 @@ function bindUserAndBackupEvents() {
                     }
                 }
             }
-        };
+        });
     });
     
     // 辅助函数：根据类型构建备份配置表单
@@ -3904,16 +3907,16 @@ function bindUserAndBackupEvents() {
     // 添加备份配置按钮
     const addBackupConfigBtn = document.getElementById('add-backup-config-btn');
     if (addBackupConfigBtn) {
-        addBackupConfigBtn.onclick = () => {
+        bindReplacingClickHandler(addBackupConfigBtn, () => {
             // 打开备份配置编辑模态框（添加模式）
             openBackupConfigEditModal(null);
-        };
+        });
     }
     
 
     // 编辑备份配置按钮
     document.querySelectorAll('.edit-backup-config-btn').forEach(btn => {
-        btn.onclick = () => {
+        bindReplacingClickHandler(btn, () => {
             const id = parseInt(btn.getAttribute('data-config-id'));
             if (!isNaN(id)) {
                 const cfg = lastBackupConfigs.find(c => c.id === id);
@@ -3921,12 +3924,12 @@ function bindUserAndBackupEvents() {
                     openBackupConfigEditModal(cfg);
                 }
             }
-        };
+        });
     });
     
     // 手动备份按钮
     document.querySelectorAll('.manual-backup-btn').forEach(btn => {
-        btn.onclick = async () => {
+        bindReplacingClickHandler(btn, async () => {
             const configId = parseInt(btn.getAttribute('data-config-id'));
             if (isNaN(configId)) return;
             
@@ -4096,7 +4099,7 @@ function bindUserAndBackupEvents() {
                     );
                 }
             }
-        };
+        });
     });
     
     // 用户编辑模态框保存和取消按钮
@@ -4104,7 +4107,7 @@ function bindUserAndBackupEvents() {
     const userEditCancel = document.getElementById('user-edit-cancel');
     const userEditDelete = document.getElementById('user-edit-delete');
     if (userEditSave) {
-        userEditSave.onclick = async () => {
+        bindReplacingClickHandler(userEditSave, async () => {
             const editModal = document.getElementById('user-edit-modal');
             const userId = editModal.dataset.userId;
             const username = document.getElementById('user-edit-username').value;
@@ -4134,10 +4137,10 @@ function bindUserAndBackupEvents() {
                 console.error('[保存用户] 失败:', error);
                 alert('保存失败: ' + (error.message || '未知错误'));
             }
-        };
+        });
     }
     if (userEditDelete) {
-        userEditDelete.onclick = async () => {
+        bindReplacingClickHandler(userEditDelete, async () => {
             const editModal = document.getElementById('user-edit-modal');
             const userId = editModal.dataset.userId;
             if (!userId) {
@@ -4170,12 +4173,12 @@ function bindUserAndBackupEvents() {
                 console.error('[删除用户] 失败:', error);
                 alert('删除失败: ' + (error.message || '未知错误'));
             }
-        };
+        });
     }
     if (userEditCancel) {
-        userEditCancel.onclick = () => {
+        bindReplacingClickHandler(userEditCancel, () => {
             document.getElementById('user-edit-modal').style.display = 'none';
-        };
+        });
     }
     
     // 用户资料模态框保存和取消按钮（修改密码）
@@ -4184,26 +4187,23 @@ function bindUserAndBackupEvents() {
     const userProfileClose = document.getElementById('user-profile-close');
     
     if (userProfileSave) {
-        // 移除旧的事件监听器（如果存在）
-        const newSaveBtn = userProfileSave.cloneNode(true);
-        userProfileSave.parentNode.replaceChild(newSaveBtn, userProfileSave);
-        newSaveBtn.onclick = async () => {
+        bindReplacingClickHandler(userProfileSave, async () => {
             const oldPassword = document.getElementById('user-profile-old-password').value;
             const newPassword = document.getElementById('user-profile-new-password').value;
             const confirmPassword = document.getElementById('user-profile-confirm-password').value;
             
             if (!oldPassword || !newPassword || !confirmPassword) {
-                alert('请填写所有字段');
+                alert('Please fill in all fields');
                 return;
             }
             
             if (newPassword !== confirmPassword) {
-                alert('新密码和确认密码不一致');
+                alert('New passwords do not match');
                 return;
             }
             
             if (!window.userManager || !window.userManager.currentUser) {
-                alert('用户信息不可用，请重新登录');
+                alert('User session is unavailable. Please sign in again');
                 return;
             }
             
@@ -4215,33 +4215,27 @@ function bindUserAndBackupEvents() {
                 );
                 
                 if (result && result.success) {
-                    alert('密码修改成功');
+                    alert('Password updated successfully');
                     hideUserProfileModal();
                 } else {
-                    const errorMsg = result && result.error ? result.error : '修改失败';
-                    alert('修改失败: ' + errorMsg);
+                    const errorMsg = result && result.error ? result.error : 'Update failed';
+                    alert('Update failed: ' + errorMsg);
                 }
             } catch (error) {
-                console.error('[修改密码] 失败:', error);
-                alert('修改失败: ' + (error.message || '未知错误'));
+                console.error('[changePassword] Failed:', error);
+                alert('Update failed: ' + (error.message || 'Unknown error'));
             }
-        };
+        });
     }
     if (userProfileCancel) {
-        // 移除旧的事件监听器（如果存在）
-        const newCancelBtn = userProfileCancel.cloneNode(true);
-        userProfileCancel.parentNode.replaceChild(newCancelBtn, userProfileCancel);
-        newCancelBtn.onclick = () => {
+        bindReplacingClickHandler(userProfileCancel, () => {
             hideUserProfileModal();
-        };
+        });
     }
     if (userProfileClose) {
-        // 移除旧的事件监听器（如果存在）
-        const newCloseBtn = userProfileClose.cloneNode(true);
-        userProfileClose.parentNode.replaceChild(newCloseBtn, userProfileClose);
-        newCloseBtn.onclick = () => {
+        bindReplacingClickHandler(userProfileClose, () => {
             hideUserProfileModal();
-        };
+        });
     }
 
     // 备份配置类型切换
@@ -4270,7 +4264,7 @@ function bindUserAndBackupEvents() {
     
     // 删除备份配置按钮
     if (backupEditDelete) {
-        backupEditDelete.onclick = async () => {
+        bindReplacingClickHandler(backupEditDelete, async () => {
             const modal = document.getElementById('backup-config-edit-modal');
             if (!modal) return;
             const configId = modal.dataset.configId;
@@ -4317,11 +4311,11 @@ function bindUserAndBackupEvents() {
                     'error'
                 );
             }
-        };
+        });
     }
     
     if (backupEditSave) {
-        backupEditSave.onclick = async () => {
+        bindReplacingClickHandler(backupEditSave, async () => {
             const modal = document.getElementById('backup-config-edit-modal');
             if (!modal) return;
             const configId = modal.dataset.configId;
@@ -4374,12 +4368,12 @@ function bindUserAndBackupEvents() {
                     'error'
                 );
             }
-        };
+        });
     }
     if (backupEditCancel) {
-        backupEditCancel.onclick = () => {
+        bindReplacingClickHandler(backupEditCancel, () => {
             const modal = document.getElementById('backup-config-edit-modal');
             if (modal) modal.style.display = 'none';
-        };
+        });
     }
 }

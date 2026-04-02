@@ -311,15 +311,23 @@ function bindInlineEventHandlers() {
     }
 }
 
+function bindReplacingEventHandler(element, eventName, handler) {
+    if (!element || !element.parentNode) {
+        return null;
+    }
+
+    const nextElement = element.cloneNode(true);
+    element.parentNode.replaceChild(nextElement, element);
+    nextElement.addEventListener(eventName, handler);
+    return nextElement;
+}
+
 async function initGlobalUI() {
     // 绑定设置侧边栏关闭按钮事件
     const closeBtn = document.getElementById('admin-sidebar-close-btn');
     if (closeBtn) {
         // 移除旧的事件监听器（如果存在）
-        const newCloseBtn = closeBtn.cloneNode(true);
-        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-
-        newCloseBtn.addEventListener('click', (e) => {
+        bindReplacingEventHandler(closeBtn, 'click', (e) => {
             e.stopPropagation();
             e.preventDefault();
             // 直接操作DOM关闭设置面板
@@ -5682,3 +5690,226 @@ if (typeof initDashboard === 'function') {
     // 如果initDashboard已经定义，我们需要在它执行后初始化搜索
     // 这会在后面处理
 }
+
+let todoImageModalKeyHandler = null;
+
+window.bindTodosTitleDoubleClick = function () {
+    const todosTitleElement = document.getElementById('todos-title');
+    if (!todosTitleElement) return;
+
+    const titleElement = bindReplacingEventHandler(todosTitleElement, 'dblclick', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTodosPin();
+    });
+    if (!titleElement) return;
+
+    titleElement.style.cursor = 'pointer';
+    updateTodosPinTooltip();
+};
+
+window.showTodoImageModal = function (index) {
+    if (index < 0 || index >= todosList.length) return;
+
+    const todo = todosList[index];
+    if (!todo.image || todo.image.trim() === '') return;
+
+    let imageModal = document.getElementById('todo-image-modal');
+    if (!imageModal) {
+        imageModal = document.createElement('div');
+        imageModal.id = 'todo-image-modal';
+        imageModal.className = 'todo-image-modal';
+        imageModal.innerHTML = `
+            <div class="todo-image-modal-content">
+                <button class="todo-image-modal-close" id="todo-image-modal-close">x</button>
+                <img id="todo-image-modal-display" src="" alt="Todo image" style="max-width: 90vw; max-height: 90vh; border-radius: 0.5rem;">
+            </div>
+        `;
+        document.body.appendChild(imageModal);
+
+        const closeBtn = document.getElementById('todo-image-modal-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                if (imageModal) imageModal.style.display = 'none';
+            });
+        }
+
+        imageModal.addEventListener('click', (e) => {
+            if (e.target === imageModal) {
+                imageModal.style.display = 'none';
+            }
+        });
+
+        todoImageModalKeyHandler = (e) => {
+            if (e.key === 'Escape' && imageModal && imageModal.style.display === 'flex') {
+                imageModal.style.display = 'none';
+            }
+        };
+        document.addEventListener('keydown', todoImageModalKeyHandler);
+    }
+
+    const imageDisplay = document.getElementById('todo-image-modal-display');
+    if (imageDisplay) {
+        imageDisplay.src = todo.image;
+    }
+
+    imageModal.style.display = 'flex';
+};
+
+window.showCustomAlert = function (message, title = 'Notice', type = 'success') {
+    return new Promise((resolve) => {
+        let isClosed = false;
+        let autoCloseTimer = null;
+        let keyHandler = null;
+
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'custom-modal-overlay';
+        modalOverlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+        const modal = document.createElement('div');
+        modal.className = 'custom-modal';
+        modal.style.cssText = 'max-width: 450px; background: var(--card-bg, #1e293b); border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1)); border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);';
+
+        const iconColor = type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#8b5cf6';
+        const icon = type === 'success' ? 'OK' : type === 'error' ? '!' : 'i';
+
+        modal.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: ${iconColor}20; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;">
+                    <span style="font-size: 2rem; color: ${iconColor}; font-weight: bold;">${icon}</span>
+                </div>
+                <h3 style="margin: 0 0 0.75rem 0; color: var(--text-primary, #f1f5f9); font-size: 1.25rem;">${title}</h3>
+                <p style="margin: 0 0 1.5rem 0; color: var(--text-secondary, #94a3b8); font-size: 0.95rem; line-height: 1.6; white-space: pre-line;">${message}</p>
+                <button class="btn" id="custom-alert-ok" style="background: ${iconColor}; color: white; border: none; padding: 0.5rem 2rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.95rem;">OK</button>
+            </div>
+        `;
+
+        modalOverlay.appendChild(modal);
+        document.body.appendChild(modalOverlay);
+
+        const closeModal = () => {
+            if (isClosed) {
+                return false;
+            }
+
+            isClosed = true;
+            if (autoCloseTimer) {
+                clearTimeout(autoCloseTimer);
+            }
+            if (keyHandler) {
+                document.removeEventListener('keydown', keyHandler);
+            }
+            if (modalOverlay.parentNode) {
+                document.body.removeChild(modalOverlay);
+            }
+            resolve();
+            return true;
+        };
+
+        const okBtn = modal.querySelector('#custom-alert-ok');
+        okBtn.onclick = (e) => {
+            e.stopPropagation();
+            closeModal();
+        };
+
+        modalOverlay.onclick = (e) => {
+            if (e.target === modalOverlay) {
+                closeModal();
+            }
+        };
+
+        modal.onclick = (e) => {
+            if (e.target !== okBtn && !okBtn.contains(e.target)) {
+                closeModal();
+            }
+        };
+
+        keyHandler = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        };
+        document.addEventListener('keydown', keyHandler);
+
+        autoCloseTimer = setTimeout(() => {
+            if (modalOverlay.parentNode) {
+                closeModal();
+            }
+        }, 3000);
+    });
+};
+
+window.showCustomConfirm = function (message, title = 'Confirm Action') {
+    return new Promise((resolve) => {
+        let isSettled = false;
+        let keyHandler = null;
+
+        const modal = document.getElementById('custom-confirm-modal');
+        const msgEl = document.getElementById('custom-confirm-message');
+        const titleEl = document.getElementById('custom-confirm-title');
+        const okBtn = document.getElementById('custom-confirm-ok');
+        const cancelBtn = document.getElementById('custom-confirm-cancel');
+
+        if (!modal || !msgEl || !okBtn || !cancelBtn) {
+            resolve(confirm(message));
+            return;
+        }
+
+        msgEl.innerText = message;
+        if (titleEl) titleEl.innerText = title;
+
+        modal.classList.add('show');
+
+        const cleanup = (result) => {
+            if (isSettled) {
+                return false;
+            }
+
+            isSettled = true;
+            modal.classList.remove('show');
+            okBtn.onclick = null;
+            cancelBtn.onclick = null;
+            modal.onclick = null;
+            if (keyHandler) {
+                document.removeEventListener('keydown', keyHandler);
+            }
+            resolve(result);
+            return true;
+        };
+
+        okBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            cleanup(true);
+        };
+
+        cancelBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            cleanup(false);
+        };
+
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                cleanup(false);
+            }
+        };
+
+        keyHandler = (e) => {
+            if (e.key === 'Escape') {
+                cleanup(false);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                cleanup(true);
+            }
+        };
+        document.addEventListener('keydown', keyHandler);
+
+        setTimeout(() => {
+            if (okBtn) {
+                okBtn.focus();
+            }
+        }, 100);
+    });
+};
