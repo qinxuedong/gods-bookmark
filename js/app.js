@@ -677,6 +677,104 @@ async function updateControlCenterMenu(isLoggedIn) {
 
 // 绑定控制中心菜单项的事件（使用事件委托，避免重复绑定）
 let controlCenterMenuHandler = null;
+let controlCenterOutsideClickHandler = null;
+const CONTROL_CENTER_DELAY_MS = 100;
+
+function runAfterControlCenterClose(callback) {
+    setTimeout(callback, CONTROL_CENTER_DELAY_MS);
+}
+
+function executeAfterClosingControlCenter(callback) {
+    closeControlCenter();
+    runAfterControlCenterClose(callback);
+}
+
+function clearControlCenterOutsideClickHandler() {
+    if (controlCenterOutsideClickHandler) {
+        document.removeEventListener('click', controlCenterOutsideClickHandler);
+        controlCenterOutsideClickHandler = null;
+    }
+}
+
+async function openSettingsSidebarFromControlCenter() {
+    const sidebar = document.getElementById('admin-sidebar');
+    if (!sidebar) {
+        console.error('[bindControlCenterMenuEvents] admin-sidebar element not found!');
+        return;
+    }
+
+    sidebar.classList.add('open');
+    document.body.classList.add('sidebar-open');
+
+    let retries = 0;
+    const maxRetries = 5;
+    const tryRenderCardControls = async () => {
+        if (typeof window.renderCardControls === 'function') {
+            try {
+                await window.renderCardControls();
+                console.log('[bindControlCenterMenuEvents] renderCardControls called successfully');
+            } catch (error) {
+                console.error('[bindControlCenterMenuEvents] renderCardControls error:', error);
+            }
+            return;
+        }
+
+        retries++;
+        if (retries < maxRetries) {
+            console.log(`[bindControlCenterMenuEvents] renderCardControls not found, retrying... (${retries}/${maxRetries})`);
+            setTimeout(tryRenderCardControls, 200);
+            return;
+        }
+
+        console.error('[bindControlCenterMenuEvents] renderCardControls is not a function after', maxRetries, 'retries!');
+        console.error('[bindControlCenterMenuEvents] Available window functions:', Object.keys(window).filter(k => k.includes('render') || k.includes('Card') || k.includes('Settings')));
+    };
+
+    await tryRenderCardControls();
+}
+
+async function logoutFromControlCenter() {
+    try {
+        if (typeof dataManager !== 'undefined' && typeof dataManager.logout === 'function') {
+            console.log('[bindControlCenterMenuEvents] Calling dataManager.logout()...');
+            await dataManager.logout();
+            return;
+        }
+
+        console.error('[bindControlCenterMenuEvents] dataManager.logout not found!', typeof dataManager, dataManager);
+        await fetch('/api/users/logout', { method: 'POST', credentials: 'include' });
+        window.location.reload();
+    } catch (error) {
+        console.error('[bindControlCenterMenuEvents] Logout error:', error);
+        window.location.reload();
+    }
+}
+
+function openAddCategoryFromControlCenter() {
+    if (typeof window.openAddCategoryModal === 'function') {
+        window.openAddCategoryModal();
+        return;
+    }
+
+    console.error('[bindControlCenterMenuEvents] openAddCategoryModal is not a function!', typeof window.openAddCategoryModal);
+}
+
+function triggerImportFromControlCenter() {
+    const importFile = document.getElementById('import-file');
+    if (importFile) {
+        importFile.click();
+    }
+}
+
+async function exportFromControlCenter() {
+    if (typeof window.exportBookmarks === 'function') {
+        await window.exportBookmarks();
+    }
+}
+
+function openLoginFromControlCenter() {
+    window.location.href = 'login.html';
+}
 
 function bindControlCenterMenuEvents() {
     const menu = document.getElementById('control-center-menu');
@@ -703,99 +801,34 @@ function bindControlCenterMenuEvents() {
         switch (action) {
             case 'settings':
                 console.log('[bindControlCenterMenuEvents] Opening settings sidebar...');
-                closeControlCenter();
-                // 延迟执行，确保菜单已关闭
-                setTimeout(async () => {
-                    // 直接操作DOM打开设置面板
-                    const sidebar = document.getElementById('admin-sidebar');
-                    if (sidebar) {
-                        sidebar.classList.add('open');
-                        document.body.classList.add('sidebar-open');
-
-                        // 尝试调用renderCardControls，多次重试
-                        let retries = 0;
-                        const maxRetries = 5;
-                        const tryRenderCardControls = async () => {
-                            if (typeof window.renderCardControls === 'function') {
-                                try {
-                                    await window.renderCardControls();
-                                    console.log('[bindControlCenterMenuEvents] renderCardControls called successfully');
-                                } catch (error) {
-                                    console.error('[bindControlCenterMenuEvents] renderCardControls error:', error);
-                                }
-                            } else {
-                                retries++;
-                                if (retries < maxRetries) {
-                                    console.log(`[bindControlCenterMenuEvents] renderCardControls not found, retrying... (${retries}/${maxRetries})`);
-                                    setTimeout(tryRenderCardControls, 200);
-                                } else {
-                                    console.error('[bindControlCenterMenuEvents] renderCardControls is not a function after', maxRetries, 'retries!');
-                                    console.error('[bindControlCenterMenuEvents] Available window functions:', Object.keys(window).filter(k => k.includes('render') || k.includes('Card') || k.includes('Settings')));
-                                }
-                            }
-                        };
-                        tryRenderCardControls();
-                    } else {
-                        console.error('[bindControlCenterMenuEvents] admin-sidebar element not found!');
-                    }
-                }, 100);
+                executeAfterClosingControlCenter(async () => {
+                    await openSettingsSidebarFromControlCenter();
+                });
                 break;
             case 'add-category':
                 console.log('[bindControlCenterMenuEvents] Opening add category modal...');
-                closeControlCenter();
-                setTimeout(() => {
-                    if (typeof window.openAddCategoryModal === 'function') {
-                        window.openAddCategoryModal();
-                    } else {
-                        console.error('[bindControlCenterMenuEvents] openAddCategoryModal is not a function!', typeof window.openAddCategoryModal);
-                    }
-                }, 100);
+                executeAfterClosingControlCenter(() => {
+                    openAddCategoryFromControlCenter();
+                });
                 break;
             case 'import':
-                closeControlCenter();
-                setTimeout(() => {
-                    const importFile = document.getElementById('import-file');
-                    if (importFile) {
-                        importFile.click();
-                    }
-                }, 100);
+                executeAfterClosingControlCenter(() => {
+                    triggerImportFromControlCenter();
+                });
                 break;
             case 'export':
-                closeControlCenter();
-                setTimeout(async () => {
-                    if (typeof window.exportBookmarks === 'function') {
-                        await window.exportBookmarks();
-                    }
-                }, 100);
+                executeAfterClosingControlCenter(async () => {
+                    await exportFromControlCenter();
+                });
                 break;
             case 'logout':
                 console.log('[bindControlCenterMenuEvents] Logging out...');
                 closeControlCenter();
-                try {
-                    // 使用全局的 dataManager 变量（在 data-manager.js 中定义）
-                    if (typeof dataManager !== 'undefined' && typeof dataManager.logout === 'function') {
-                        console.log('[bindControlCenterMenuEvents] Calling dataManager.logout()...');
-                        // logout 函数内部会调用 window.location.reload()，不需要手动刷新
-                        await dataManager.logout();
-                    } else {
-                        console.error('[bindControlCenterMenuEvents] dataManager.logout not found!', typeof dataManager, dataManager);
-                        // 尝试直接调用 API 登出
-                        try {
-                            await fetch('/api/users/logout', { method: 'POST', credentials: 'include' });
-                            window.location.reload();
-                        } catch (fetchError) {
-                            console.error('[bindControlCenterMenuEvents] Failed to logout via API:', fetchError);
-                        }
-                    }
-                } catch (error) {
-                    console.error('[bindControlCenterMenuEvents] Logout error:', error);
-                    // 即使出错也尝试刷新页面
-                    window.location.reload();
-                }
+                await logoutFromControlCenter();
                 break;
             case 'login':
                 // 直接跳转到登录页面
-                window.location.href = 'login.html';
+                openLoginFromControlCenter();
                 break;
             default:
                 console.warn('[bindControlCenterMenuEvents] Unknown action:', action);
@@ -825,7 +858,6 @@ window.toggleControlCenter = async function (event) {
         const isLoggedIn = await dataManager.isLoggedIn().catch(() => false);
         await updateControlCenterMenu(isLoggedIn);
         // 确保事件已绑定
-        bindControlCenterMenuEvents();
         // 打开菜单
         openControlCenter();
     }
@@ -834,7 +866,6 @@ window.toggleControlCenter = async function (event) {
 window.openControlCenter = function () {
     const menu = document.getElementById('control-center-menu');
     const btn = document.getElementById('control-center-btn');
-    const frequentBar = document.getElementById('frequent-bookmarks-bar');
 
     if (menu && btn) {
         // 获取按钮位置用于设置菜单的top
@@ -874,10 +905,7 @@ window.closeControlCenter = function () {
     const menu = document.getElementById('control-center-menu');
 
     // 移除点击空白处关闭的事件监听器
-    if (controlCenterOutsideClickHandler) {
-        document.removeEventListener('click', controlCenterOutsideClickHandler);
-        controlCenterOutsideClickHandler = null;
-    }
+    clearControlCenterOutsideClickHandler();
 
     if (menu) {
         // 移除 open class 触发动画
@@ -891,27 +919,17 @@ window.closeControlCenter = function () {
 };
 
 // 点击空白处关闭控制中心菜单
-let controlCenterOutsideClickHandler = null;
-
 function setupControlCenterOutsideClick() {
-    // 移除旧的事件监听器（如果存在）
-    if (controlCenterOutsideClickHandler) {
-        document.removeEventListener('click', controlCenterOutsideClickHandler);
-        controlCenterOutsideClickHandler = null;
-    }
-
-    // 延迟添加事件监听器，避免立即触发（因为打开菜单的点击事件可能还在冒泡）
-    setTimeout(() => {
+    clearControlCenterOutsideClickHandler();
+    // Delay listener registration so the opening click does not immediately close the menu.
+    runAfterControlCenterClose(() => {
         controlCenterOutsideClickHandler = function (event) {
             const menu = document.getElementById('control-center-menu');
             const btn = document.getElementById('control-center-btn');
 
             if (!menu || !menu.classList.contains('open')) {
                 // 菜单未打开，移除监听器
-                if (controlCenterOutsideClickHandler) {
-                    document.removeEventListener('click', controlCenterOutsideClickHandler);
-                    controlCenterOutsideClickHandler = null;
-                }
+                clearControlCenterOutsideClickHandler();
                 return;
             }
 
@@ -922,17 +940,12 @@ function setupControlCenterOutsideClick() {
             // 如果点击的是外部（既不是菜单也不是按钮），则关闭菜单
             if (!isClickInsideMenu && !isClickOnButton) {
                 closeControlCenter();
-                // 移除事件监听器
-                if (controlCenterOutsideClickHandler) {
-                    document.removeEventListener('click', controlCenterOutsideClickHandler);
-                    controlCenterOutsideClickHandler = null;
-                }
             }
         };
 
         // 添加事件监听器
         document.addEventListener('click', controlCenterOutsideClickHandler);
-    }, 100);
+    });
 }
 
 /* --- Dashboard Logic --- */
@@ -1162,27 +1175,7 @@ async function initTodos() {
 
 // 绑定便签待办标题的双击事件（钉住/取消固定）
 window.bindTodosTitleDoubleClick = function () {
-    const todosTitleElement = document.getElementById('todos-title');
-    if (!todosTitleElement) return;
-
-    // 移除旧的事件监听器（通过克隆节点）
-    const newTitle = todosTitleElement.cloneNode(true);
-    todosTitleElement.parentNode.replaceChild(newTitle, todosTitleElement);
-
-    // 获取新的标题元素
-    const titleElement = document.getElementById('todos-title');
-    if (!titleElement) return;
-
-    // 添加双击事件
-    titleElement.addEventListener('dblclick', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleTodosPin();
-    });
-
-    // 添加样式提示（鼠标悬停时显示可双击）
-    titleElement.style.cursor = 'pointer';
-    updateTodosPinTooltip();
+    return bindTodosTitleDoubleClickImpl();
 }
 
 // 切换便签待办面板的完全折叠状态（已废弃，保留用于兼容）
@@ -2062,54 +2055,7 @@ async function saveTodoEdit(index) {
 
 // 显示待办事项图片浮窗
 window.showTodoImageModal = function (index) {
-    if (index < 0 || index >= todosList.length) return;
-
-    const todo = todosList[index];
-    if (!todo.image || todo.image.trim() === '') return;
-
-    // 创建或获取图片浮窗
-    let imageModal = document.getElementById('todo-image-modal');
-    if (!imageModal) {
-        imageModal = document.createElement('div');
-        imageModal.id = 'todo-image-modal';
-        imageModal.className = 'todo-image-modal';
-        imageModal.innerHTML = `
-            <div class="todo-image-modal-content">
-                <button class="todo-image-modal-close" id="todo-image-modal-close">×</button>
-                <img id="todo-image-modal-display" src="" alt="待办事项图片" style="max-width: 90vw; max-height: 90vh; border-radius: 0.5rem;">
-            </div>
-        `;
-        document.body.appendChild(imageModal);
-
-        // 绑定关闭事件
-        const closeBtn = document.getElementById('todo-image-modal-close');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                if (imageModal) imageModal.style.display = 'none';
-            });
-        }
-
-        // 点击背景关闭
-        imageModal.addEventListener('click', (e) => {
-            if (e.target === imageModal) {
-                imageModal.style.display = 'none';
-            }
-        });
-
-        // ESC键关闭
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && imageModal && imageModal.style.display === 'flex') {
-                imageModal.style.display = 'none';
-            }
-        });
-    }
-
-    const imageDisplay = document.getElementById('todo-image-modal-display');
-    if (imageDisplay) {
-        imageDisplay.src = todo.image;
-    }
-
-    imageModal.style.display = 'flex';
+    return showTodoImageModalImpl(index);
 };
 
 // 启用待办项拖拽功能
@@ -3343,165 +3289,14 @@ window.saveCategoryFromModal = async function () {
     loadBookmarks();
 }
 
-// Global Custom Alert (成功提示，无需确认)
-window.showCustomAlert = function (message, title = '提示', type = 'success') {
-    return new Promise((resolve) => {
-        // 创建模态框元素
-        const modalOverlay = document.createElement('div');
-        modalOverlay.className = 'custom-modal-overlay';
-        modalOverlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 10000; display: flex; align-items: center; justify-content: center;';
-
-        const modal = document.createElement('div');
-        modal.className = 'custom-modal';
-        modal.style.cssText = 'max-width: 450px; background: var(--card-bg, #1e293b); border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1)); border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);';
-
-        // 根据类型设置图标和颜色
-        const iconColor = type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#8b5cf6';
-        const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
-
-        modal.innerHTML = `
-            <div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
-                <div style="width: 64px; height: 64px; border-radius: 50%; background: ${iconColor}20; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem;">
-                    <span style="font-size: 2rem; color: ${iconColor}; font-weight: bold;">${icon}</span>
-                </div>
-                <h3 style="margin: 0 0 0.75rem 0; color: var(--text-primary, #f1f5f9); font-size: 1.25rem;">${title}</h3>
-                <p style="margin: 0 0 1.5rem 0; color: var(--text-secondary, #94a3b8); font-size: 0.95rem; line-height: 1.6; white-space: pre-line;">${message}</p>
-                <button class="btn" id="custom-alert-ok" style="background: ${iconColor}; color: white; border: none; padding: 0.5rem 2rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.95rem;">确定</button>
-            </div>
-        `;
-
-        modalOverlay.appendChild(modal);
-        document.body.appendChild(modalOverlay);
-
-        // 关闭函数
-        const closeModal = () => {
-            if (modalOverlay.parentNode) {
-                document.body.removeChild(modalOverlay);
-            }
-            resolve();
-        };
-
-        // 绑定关闭事件
-        const okBtn = modal.querySelector('#custom-alert-ok');
-        okBtn.onclick = (e) => {
-            e.stopPropagation(); // 阻止事件冒泡
-            closeModal();
-        };
-
-        // 点击背景关闭
-        modalOverlay.onclick = (e) => {
-            if (e.target === modalOverlay) {
-                closeModal();
-            }
-        };
-
-        // 点击弹窗内容区域也关闭（但不包括按钮，因为按钮有自己的点击事件）
-        modal.onclick = (e) => {
-            // 如果点击的不是按钮，则关闭
-            if (e.target !== okBtn && !okBtn.contains(e.target)) {
-                closeModal();
-            }
-        };
-
-        // ESC键关闭
-        const keyHandler = (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-                document.removeEventListener('keydown', keyHandler);
-            }
-        };
-        document.addEventListener('keydown', keyHandler);
-
-        // 自动关闭（3秒后）
-        setTimeout(() => {
-            if (modalOverlay.parentNode) {
-                closeModal();
-            }
-        }, 3000);
-    });
+// Global Custom Alert (shared wrapper)
+window.showCustomAlert = function (message, title = '\u63d0\u793a', type = 'success') {
+    return showCustomAlertImpl(message, title, type);
 };
-
 // Global Custom Confirm
-window.showCustomConfirm = function (message, title = '确认操作') {
-    return new Promise((resolve) => {
-        const modal = document.getElementById('custom-confirm-modal');
-        const msgEl = document.getElementById('custom-confirm-message');
-        const titleEl = document.getElementById('custom-confirm-title');
-        const okBtn = document.getElementById('custom-confirm-ok');
-        const cancelBtn = document.getElementById('custom-confirm-cancel');
-
-        if (!modal || !msgEl || !okBtn || !cancelBtn) {
-            // 如果元素不存在，使用原生 confirm
-            resolve(confirm(message));
-            return;
-        }
-
-        // 设置消息和标题
-        msgEl.innerText = message;
-        if (titleEl) titleEl.innerText = title;
-
-        // 显示模态框
-        modal.classList.add('show');
-
-        // 清理函数
-        const cleanup = () => {
-            modal.classList.remove('show');
-            // 移除所有事件监听器
-            const newOkBtn = okBtn.cloneNode(true);
-            const newCancelBtn = cancelBtn.cloneNode(true);
-            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-            cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-        };
-
-        // 绑定确定按钮事件
-        okBtn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            cleanup();
-            resolve(true);
-        };
-
-        // 绑定取消按钮事件
-        cancelBtn.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            cleanup();
-            resolve(false);
-        };
-
-        // 点击遮罩层关闭（可选）
-        modal.onclick = (e) => {
-            if (e.target === modal) {
-                cleanup();
-                resolve(false);
-            }
-        };
-
-        // ESC 键取消，回车键确认
-        const keyHandler = (e) => {
-            if (e.key === 'Escape') {
-                cleanup();
-                document.removeEventListener('keydown', keyHandler);
-                resolve(false);
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                e.stopPropagation();
-                cleanup();
-                document.removeEventListener('keydown', keyHandler);
-                resolve(true);
-            }
-        };
-        document.addEventListener('keydown', keyHandler);
-
-        // 聚焦确定按钮，方便回车键操作
-        setTimeout(() => {
-            if (okBtn) {
-                okBtn.focus();
-            }
-        }, 100);
-    });
+window.showCustomConfirm = function (message, title = '\u786e\u8ba4\u64cd\u4f5c') {
+    return showCustomConfirmImpl(message, title);
 }
-
 // 获取书签分类索引（通过分类名称）
 window.getBookmarkCategoryIndex = async function (categoryName) {
     const bookmarks = await dataManager.getBookmarks();
@@ -5693,7 +5488,7 @@ if (typeof initDashboard === 'function') {
 
 let todoImageModalKeyHandler = null;
 
-window.bindTodosTitleDoubleClick = function () {
+function bindTodosTitleDoubleClickImpl() {
     const todosTitleElement = document.getElementById('todos-title');
     if (!todosTitleElement) return;
 
@@ -5706,9 +5501,9 @@ window.bindTodosTitleDoubleClick = function () {
 
     titleElement.style.cursor = 'pointer';
     updateTodosPinTooltip();
-};
+}
 
-window.showTodoImageModal = function (index) {
+function showTodoImageModalImpl(index) {
     if (index < 0 || index >= todosList.length) return;
 
     const todo = todosList[index];
@@ -5722,7 +5517,7 @@ window.showTodoImageModal = function (index) {
         imageModal.innerHTML = `
             <div class="todo-image-modal-content">
                 <button class="todo-image-modal-close" id="todo-image-modal-close">x</button>
-                <img id="todo-image-modal-display" src="" alt="Todo image" style="max-width: 90vw; max-height: 90vh; border-radius: 0.5rem;">
+                <img id="todo-image-modal-display" src="" alt="\u5f85\u529e\u4e8b\u9879\u56fe\u7247" style="max-width: 90vw; max-height: 90vh; border-radius: 0.5rem;">
             </div>
         `;
         document.body.appendChild(imageModal);
@@ -5754,9 +5549,9 @@ window.showTodoImageModal = function (index) {
     }
 
     imageModal.style.display = 'flex';
-};
+}
 
-window.showCustomAlert = function (message, title = 'Notice', type = 'success') {
+function showCustomAlertImpl(message, title = '\u63d0\u793a', type = 'success') {
     return new Promise((resolve) => {
         let isClosed = false;
         let autoCloseTimer = null;
@@ -5772,6 +5567,7 @@ window.showCustomAlert = function (message, title = 'Notice', type = 'success') 
 
         const iconColor = type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#8b5cf6';
         const icon = type === 'success' ? 'OK' : type === 'error' ? '!' : 'i';
+        const okLabel = '\u786e\u5b9a';
 
         modal.innerHTML = `
             <div style="display: flex; flex-direction: column; align-items: center; text-align: center;">
@@ -5780,7 +5576,7 @@ window.showCustomAlert = function (message, title = 'Notice', type = 'success') 
                 </div>
                 <h3 style="margin: 0 0 0.75rem 0; color: var(--text-primary, #f1f5f9); font-size: 1.25rem;">${title}</h3>
                 <p style="margin: 0 0 1.5rem 0; color: var(--text-secondary, #94a3b8); font-size: 0.95rem; line-height: 1.6; white-space: pre-line;">${message}</p>
-                <button class="btn" id="custom-alert-ok" style="background: ${iconColor}; color: white; border: none; padding: 0.5rem 2rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.95rem;">OK</button>
+                <button class="btn" id="custom-alert-ok" style="background: ${iconColor}; color: white; border: none; padding: 0.5rem 2rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.95rem;">${okLabel}</button>
             </div>
         `;
 
@@ -5837,9 +5633,9 @@ window.showCustomAlert = function (message, title = 'Notice', type = 'success') 
             }
         }, 3000);
     });
-};
+}
 
-window.showCustomConfirm = function (message, title = 'Confirm Action') {
+function showCustomConfirmImpl(message, title = '\u786e\u8ba4\u64cd\u4f5c') {
     return new Promise((resolve) => {
         let isSettled = false;
         let keyHandler = null;
@@ -5912,4 +5708,4 @@ window.showCustomConfirm = function (message, title = 'Confirm Action') {
             }
         }, 100);
     });
-};
+}
