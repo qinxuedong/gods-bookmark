@@ -739,6 +739,15 @@ function clearControlCenterOutsideClickHandler() {
 }
 
 async function openSettingsSidebarFromControlCenter() {
+    if (typeof window.openSettingsSidebar === 'function') {
+        try {
+            await window.openSettingsSidebar();
+            return;
+        } catch (error) {
+            console.error('[bindControlCenterMenuEvents] window.openSettingsSidebar failed, falling back:', error);
+        }
+    }
+
     const sidebar = document.getElementById('admin-sidebar');
     if (!sidebar) {
         console.error('[bindControlCenterMenuEvents] admin-sidebar element not found!');
@@ -990,6 +999,114 @@ function setupControlCenterOutsideClick() {
     });
 }
 
+let bookmarksRealtimeSource = null;
+let bookmarksRealtimeRefreshTimer = null;
+
+async function refreshBookmarksFromRealtime(changeType) {
+    if (bookmarksRealtimeRefreshTimer) {
+        clearTimeout(bookmarksRealtimeRefreshTimer);
+    }
+
+    bookmarksRealtimeRefreshTimer = window.setTimeout(async () => {
+        bookmarksRealtimeRefreshTimer = null;
+
+        try {
+            console.log('[RealtimeSync] Refreshing bookmarks after change:', changeType);
+            await loadBookmarks();
+
+            if (typeof refreshBookmarksCache === 'function') {
+                await refreshBookmarksCache();
+            }
+        } catch (error) {
+            console.error('[RealtimeSync] Failed to refresh bookmarks after realtime change:', error);
+        }
+    }, 120);
+}
+
+async function syncRealtimeChangeToBrowser(change) {
+    if (!change || !change.type) {
+        return;
+    }
+
+    try {
+        switch (change.type) {
+            case 'bookmark-created':
+                if (change.bookmark && change.bookmark.url) {
+                    await syncBookmarkAddToBrowser(
+                        change.bookmark.url,
+                        change.bookmark.name,
+                        change.category,
+                        change.index
+                    );
+                }
+                break;
+            case 'bookmark-removed':
+                if (change.bookmark && change.bookmark.url) {
+                    await syncDeleteToBrowser(change.bookmark.url);
+                }
+                break;
+            case 'bookmark-moved':
+                if (change.bookmark && change.bookmark.url) {
+                    await syncBookmarkMoveToBrowser(
+                        change.bookmark.url,
+                        change.category,
+                        change.index
+                    );
+                }
+                break;
+            case 'folder-created':
+                if (change.folderName) {
+                    await syncAddFolderToBrowser(change.folderName);
+                }
+                break;
+            case 'folder-removed':
+                if (change.folderName) {
+                    await syncDeleteFolderToBrowser(change.folderName);
+                }
+                break;
+            default:
+                break;
+        }
+    } catch (error) {
+        console.error('[RealtimeSync] Failed to sync realtime change to browser:', error);
+    }
+}
+
+function setupBookmarksRealtimeSync() {
+    if (bookmarksRealtimeSource || typeof window.EventSource === 'undefined') {
+        return;
+    }
+
+    const eventSource = new EventSource('/api/bookmarks/stream');
+    bookmarksRealtimeSource = eventSource;
+
+    eventSource.addEventListener('connected', (event) => {
+        try {
+            const payload = JSON.parse(event.data);
+            console.log('[RealtimeSync] Connected to bookmark stream:', payload);
+        } catch (error) {
+            console.warn('[RealtimeSync] Failed to parse connected event:', error);
+        }
+    });
+
+    eventSource.addEventListener('bookmark-change', async (event) => {
+        try {
+            const change = JSON.parse(event.data);
+            console.log('[RealtimeSync] Received bookmark change:', change);
+            await syncRealtimeChangeToBrowser(change);
+            await refreshBookmarksFromRealtime(change.type);
+        } catch (error) {
+            console.error('[RealtimeSync] Failed to handle bookmark change:', error);
+        }
+    });
+
+    eventSource.onerror = () => {
+        if (eventSource.readyState === EventSource.CLOSED) {
+            bookmarksRealtimeSource = null;
+        }
+    };
+}
+
 /* --- Dashboard Logic --- */
 async function initDashboard() {
     // 恢复主题设置（优先执行）
@@ -1022,6 +1139,7 @@ async function initDashboard() {
     // 加载便签待办
     const isLoggedIn = await dataManager.isLoggedIn();
     if (isLoggedIn) {
+        setupBookmarksRealtimeSync();
         await initTodos();
     }
 
@@ -2340,7 +2458,7 @@ async function loadFrequentBookmarks() {
             // 使用保存的logo或默认图标（不使用内联事件处理器）
             // 兼容旧数据：如果logo来自 gstatic/faviconV2，改用当前的 getFaviconUrl 或回退到emoji
             let logoUrl = bookmark.logo || '';
-            if (logoUrl && (logoUrl.includes('gstatic.com') || logoUrl.includes('faviconV2'))) {
+            if (isLegacyGoogleFaviconUrl(logoUrl)) {
                 const fixedUrl = getFaviconUrl(bookmark.url);
                 logoUrl = fixedUrl || '';
             }
@@ -2351,7 +2469,7 @@ async function loadFrequentBookmarks() {
             const fallbackIcon = logoUrl ? '' : (bookmark.icon || '🔗');
             html += `
                 <a href="${escapeHtml(bookmark.url)}" target="_blank" class="frequent-bookmark-item" title="${escapeHtml(bookmark.name)} (点击 ${bookmark.count} 次)">
-                    <span class="frequent-bookmark-icon">${iconHtml}<span style="display: ${bookmark.logo ? 'none' : 'inline'}">${fallbackIcon}</span></span>
+                    <span class="frequent-bookmark-icon">${iconHtml}<span style="display: ${bookmark.logo ? 'none' : 'inline'}">${getBookmarkPlainIcon(fallbackIcon, '🔗')}</span></span>
                     <span class="frequent-bookmark-name">${escapeHtml(displayName)}</span>
                 </a>
             `;
@@ -2408,7 +2526,7 @@ function isLocalUrl(url) {
 }
 
 // 获取网站favicon
-function getFaviconUrl(url) {
+function getFaviconUrlLegacy(url) {
     try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
@@ -2447,7 +2565,7 @@ async function updateBookmarkLogo(url, name, catIndex, itemIndex) {
                 bookmark.icon = `<img src="${faviconUrl}" width="16" height="16" style="vertical-align: middle;">`;
             } else {
                 // 如果icon是emoji，添加logo但保留emoji作为fallback
-                bookmark.icon = `<img src="${faviconUrl}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${bookmark.icon || '🔗'}</span>`;
+                bookmark.icon = `<img src="${faviconUrl}" width="16" height="16" style="vertical-align: middle;">`;
             }
 
             // 保存更新
@@ -2459,6 +2577,65 @@ async function updateBookmarkLogo(url, name, catIndex, itemIndex) {
     } catch (error) {
         console.error('Update bookmark logo error:', error);
     }
+}
+
+function isLegacyGoogleFaviconUrl(url) {
+    return typeof url === 'string' && (
+        url.includes('google.com/s2/favicons') ||
+        url.includes('gstatic.com') ||
+        url.includes('faviconV2')
+    );
+}
+
+function getFaviconUrl(url) {
+    try {
+        const urlObj = new URL(url);
+
+        if (isLocalUrl(url)) {
+            return null;
+        }
+
+        if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+            return null;
+        }
+
+        return `/api/favicon?url=${encodeURIComponent(urlObj.toString())}`;
+    } catch (e) {
+        return null;
+    }
+}
+
+function buildBookmarkFaviconImg(url, fallbackIcon = '🔗') {
+    const faviconUrl = getFaviconUrl(url);
+    if (!faviconUrl) {
+        return fallbackIcon;
+    }
+
+    return `<img src="${escapeHtml(faviconUrl)}" width="16" height="16" style="vertical-align: middle;">`;
+}
+
+function getBookmarkPlainIcon(iconValue, fallbackIcon = '🔗') {
+    if (typeof iconValue !== 'string' || !iconValue.trim()) {
+        return fallbackIcon;
+    }
+
+    if (iconValue.includes('<')) {
+        return fallbackIcon;
+    }
+
+    return iconValue;
+}
+
+function sanitizeBookmarkIconHtml(iconHtml) {
+    if (typeof iconHtml !== 'string' || !iconHtml.includes('<img')) {
+        return '';
+    }
+
+    return iconHtml
+        .replace(/onerror="[^"]*"/gi, '')
+        .replace(/onload="[^"]*"/gi, '')
+        .replace(/<span[^>]*>[\s\S]*?<\/span>/gi, '')
+        .trim();
 }
 
 async function loadBookmarks() {
@@ -2576,7 +2753,7 @@ async function loadBookmarks() {
 
                     // 兼容旧数据：如果logo来自 gstatic/faviconV2，改用当前的 getFaviconUrl 或回退到emoji
                     let logoUrl = item.logo || '';
-                    if (logoUrl && (logoUrl.includes('gstatic.com') || logoUrl.includes('faviconV2'))) {
+                    if (isLegacyGoogleFaviconUrl(logoUrl)) {
                         const fixedUrl = getFaviconUrl(item.url);
                         logoUrl = fixedUrl || '';
                     }
@@ -2584,21 +2761,33 @@ async function loadBookmarks() {
                     if (logoUrl) {
                         // 如果有有效的logo，使用img标签，emoji作为fallback（不使用内联事件处理器）
                         const fallbackIcon = item.icon && !item.icon.includes('<img') ? item.icon : '🔗';
-                        iconDisplay = `<img src="${logoUrl}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">${fallbackIcon}</span>`;
+                        iconDisplay = `<img src="${logoUrl}" width="16" height="16" style="vertical-align: middle;">`;
                     } else if (item.icon && item.icon.includes('<img')) {
                         // 如果icon已经是img标签，移除内联事件处理器；若仍包含 gstatic/faviconV2，则直接使用默认图标
                         let cleanedIcon = item.icon
                             .replace(/onerror="[^"]*"/g, '')
                             .replace(/onload="[^"]*"/g, '');
-                        if (cleanedIcon.includes('gstatic.com') || cleanedIcon.includes('faviconV2')) {
+                        if (isLegacyGoogleFaviconUrl(cleanedIcon)) {
                             iconDisplay = '🔗';
                         } else {
                             iconDisplay = cleanedIcon;
+                        }
+                        if (isLegacyGoogleFaviconUrl(cleanedIcon)) {
+                            iconDisplay = buildBookmarkFaviconImg(item.url, '🔗');
                         }
                     } else {
                         // 使用emoji图标
                         iconDisplay = item.icon || '🔗';
                     }
+                    if (typeof iconDisplay === 'string' && iconDisplay.includes('<img')) {
+                        const normalizedIconDisplay = sanitizeBookmarkIconHtml(iconDisplay);
+                        if (normalizedIconDisplay) {
+                            iconDisplay = normalizedIconDisplay;
+                        }
+                    } else {
+                        iconDisplay = getBookmarkPlainIcon(iconDisplay, '🔗');
+                    }
+
                     return `
                             <div class="bookmark-item-wrapper" style="position: relative;">
                                 <a href="${escapeHtml(item.url)}" target="_blank" class="bookmark-item" 
@@ -2812,12 +3001,17 @@ async function loadBookmarks() {
                 enableBookmarkDragAndDrop();
             }
 
-            // 如果设置已打开，为书签卡片添加右边和下边的resize handles
+            // 如果设置已打开，只为当前高亮的书签卡片挂载右下角 resize handle
             if (document.body.classList.contains('sidebar-open')) {
-                const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
-                bookmarkCards.forEach(card => {
-                    window.addBookmarkCardResizeHandles(card);
-                });
+                const highlightedBookmarkCard = document.querySelector('#bookmarks-container .bookmark-card.highlighted-card');
+                if (highlightedBookmarkCard && window.addBookmarkCardResizeHandles) {
+                    window.addBookmarkCardResizeHandles(highlightedBookmarkCard);
+                } else if (window.clearBookmarkCardResizeHandles) {
+                    window.clearBookmarkCardResizeHandles();
+                }
+                if (window.enableBookmarkCardSort) {
+                    window.enableBookmarkCardSort();
+                }
             }
 
             // 检查并显示/隐藏滚动条
@@ -3116,6 +3310,44 @@ function renderRightNav() {
     renderRightNavInternal();
 }
 
+let activeRightNavCategory = null;
+let bookmarkNavOutsideClickBound = false;
+
+function setActiveRightNavCategory(categoryName) {
+    activeRightNavCategory = categoryName || null;
+
+    document.querySelectorAll('.nav-dot-wrapper').forEach(wrapper => {
+        const isActive = !!activeRightNavCategory && wrapper.dataset.category === activeRightNavCategory;
+        wrapper.classList.toggle('active', isActive);
+    });
+}
+
+function clearBookmarkQuickNavSelection() {
+    activeRightNavCategory = null;
+
+    document.querySelectorAll('.nav-dot-wrapper.active').forEach(wrapper => {
+        wrapper.classList.remove('active');
+    });
+    document.querySelectorAll('.highlighted-card').forEach(card => {
+        card.classList.remove('highlighted-card');
+    });
+}
+
+function bindBookmarkNavOutsideClick() {
+    if (bookmarkNavOutsideClickBound) return;
+    bookmarkNavOutsideClickBound = true;
+
+    document.addEventListener('click', (e) => {
+        if (document.body.classList.contains('sidebar-open')) return;
+        if (e.target.closest('.nav-dot-wrapper') || e.target.closest('.nav-back-to-top')) return;
+        if (e.target.closest('#bookmarks-container .bookmark-card')) return;
+        if (e.target.closest('#monitor-section .glass-card')) return;
+        if (e.target.closest('button, a, input, textarea, select, label, [role="button"], [contenteditable="true"]')) return;
+
+        clearBookmarkQuickNavSelection();
+    });
+}
+
 function renderRightNavInternal() {
     let navContainer = document.getElementById('right-nav-container');
     if (!navContainer) {
@@ -3170,8 +3402,7 @@ function renderRightNavInternal() {
             }
 
             // Update active state
-            document.querySelectorAll('.nav-dot-wrapper').forEach(d => d.classList.remove('active'));
-            wrapper.classList.add('active');
+            setActiveRightNavCategory(catName);
         };
 
         const dot = document.createElement('div');
@@ -3186,10 +3417,14 @@ function renderRightNavInternal() {
         wrapper.appendChild(dot);
         wrapper.appendChild(label);
         navContainer.appendChild(wrapper);
+        if (activeRightNavCategory && activeRightNavCategory === catName) {
+            wrapper.classList.add('active');
+        }
     });
 
     // 初始化右侧导航的滚动显示/隐藏功能
     initRightNavScroll();
+    bindBookmarkNavOutsideClick();
 }
 
 // 切换监控组件显示/隐藏（保留此函数供initMonitor中的删除按钮使用）
@@ -3462,8 +3697,7 @@ window.saveBookmarkFromModal = async function () {
     if (isLocalUrl(url)) {
         iconHtml = '🔗'; // 本地URL使用默认图标
     } else {
-        const iconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-        iconHtml = `<img src="${iconUrl}" width="16" height="16" data-favicon-fallback="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTAgMGgyNHYyNEgwem0wIDBoMjR2MjRIMHoiIGZpbGw9Im5vbmUiLz48cGF0aCBkPSJNMTIgMmEzLjUgMy41IDAgMCAwLTMuNSAzLjVjMCAuNzUuMjkgMS40NC43NyAxLjk3TDUuNDEgMTIuNzVsMi44MyAyLjgzTDEyIDEwLjgzbDMuNzUgMy43NS0yLjgzIDIuODMgMy41MyAzLjUzIDUuNjYtNS42NkwxMiAyem0wIDBhMy41IDMuNSAwIDAgMCAzLjUgMy41IDMuNSAzLjUgMCAwIDAtMy41LTMuNXoiLz48L3N2Zz4=" style="vertical-align: text-bottom;">`;
+        iconHtml = buildBookmarkFaviconImg(url, '🔗');
     }
 
 
@@ -4170,7 +4404,7 @@ function parseBookmarkHTML(html) {
                                         folderItems.push({ name, url, icon: '🔗' });
                                     } else {
                                         const domain = new URL(url).hostname;
-                                        const icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                                        const icon = buildBookmarkFaviconImg(url, '🔗');
                                         folderItems.push({ name, url, icon });
                                     }
                                 } catch (e) {
@@ -4200,7 +4434,7 @@ function parseBookmarkHTML(html) {
                             icon = '🔗';
                         } else {
                             const domain = new URL(url).hostname;
-                            icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                            icon = buildBookmarkFaviconImg(url, '🔗');
                         }
                         // 根级别书签
                         let rootCategory = result.find(c => c.category === '导入书签');
@@ -4274,7 +4508,7 @@ function parseBookmarkHTMLRegex(html) {
                         icon = '🔗';
                     } else {
                         const domain = new URL(url).hostname;
-                        icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                        icon = buildBookmarkFaviconImg(url, '🔗');
                     }
                     items.push({ name, url, icon });
                 } catch (e) {
@@ -4309,7 +4543,7 @@ function parseBookmarkHTMLRegex(html) {
         if (name && url) {
             try {
                 const domain = new URL(url).hostname;
-                const icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                const icon = buildBookmarkFaviconImg(url, '🔗');
                 rootBookmarks.push({ name, url, icon });
             } catch (e) {
                 rootBookmarks.push({ name, url, icon: '🔗' });
@@ -4349,7 +4583,7 @@ function parseSubFolders(html) {
                         icon = '🔗';
                     } else {
                         const domain = new URL(url).hostname;
-                        icon = `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=32" width="16" height="16">`;
+                        icon = buildBookmarkFaviconImg(url, '🔗');
                     }
                     items.push({ name, url, icon });
                 } catch (e) {
@@ -5399,14 +5633,233 @@ function handleSearchShortcut(e) {
     openSearchModal();
 }
 
-// 为书签卡片添加右边和下边的调整大小功能（已删除：不再提供手动调整左侧书签分类卡片大小）
+const BOOKMARK_CARD_BASE_HEIGHT = 98;
+const BOOKMARK_CARD_FIRST_ROW_HEIGHT = 30;
+const BOOKMARK_CARD_ROW_HEIGHT = 42;
+const BOOKMARK_CARD_MIN_HEIGHT = BOOKMARK_CARD_BASE_HEIGHT + BOOKMARK_CARD_FIRST_ROW_HEIGHT;
+const BOOKMARK_CARD_MAX_HEIGHT = 2000;
+const BOOKMARK_CARD_WIDTH_SNAP_PRESETS = [
+    { label: '1/4', columns: 4 },
+    { label: '1/3', columns: 3 },
+    { label: '1/2', columns: 2 }
+];
+
+function clampNumber(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+}
+
+function getBookmarkCardResizeMetrics(card) {
+    const container = document.getElementById('bookmarks-container');
+    const cardWidth = Math.round(card.getBoundingClientRect().width) || 260;
+    const containerWidth = container ? Math.round(container.clientWidth) : cardWidth;
+    const containerStyles = container ? window.getComputedStyle(container) : null;
+    const gap = containerStyles ? (parseFloat(containerStyles.columnGap || containerStyles.gap || '24') || 24) : 24;
+
+    const widthSnapPoints = BOOKMARK_CARD_WIDTH_SNAP_PRESETS
+        .map(({ label, columns }) => ({
+            label,
+            value: Math.round((containerWidth - gap * (columns - 1)) / columns)
+        }))
+        .filter(point => Number.isFinite(point.value) && point.value > 0)
+        .sort((a, b) => a.value - b.value);
+
+    const minWidth = Math.max(180, Math.min(220, widthSnapPoints[0]?.value || 220));
+    const maxWidth = Math.max(minWidth, containerWidth);
+
+    return {
+        minWidth,
+        maxWidth,
+        minHeight: BOOKMARK_CARD_MIN_HEIGHT,
+        maxHeight: BOOKMARK_CARD_MAX_HEIGHT,
+        widthSnapPoints
+    };
+}
+
+function snapBookmarkCardWidth(rawWidth, metrics) {
+    const clampedWidth = clampNumber(rawWidth, metrics.minWidth, metrics.maxWidth);
+    const tolerance = Math.max(20, Math.round(metrics.maxWidth * 0.025));
+
+    let snappedWidth = clampedWidth;
+    let snappedLabel = '';
+    let closestDiff = Infinity;
+
+    metrics.widthSnapPoints.forEach(point => {
+        const diff = Math.abs(clampedWidth - point.value);
+        if (diff <= tolerance && diff < closestDiff) {
+            snappedWidth = point.value;
+            snappedLabel = point.label;
+            closestDiff = diff;
+        }
+    });
+
+    return {
+        value: snappedWidth,
+        label: snappedLabel
+    };
+}
+
+function snapBookmarkCardHeight(rawHeight, metrics) {
+    const clampedHeight = clampNumber(rawHeight, metrics.minHeight, metrics.maxHeight);
+    const rowCount = Math.max(
+        1,
+        Math.round((clampedHeight - BOOKMARK_CARD_MIN_HEIGHT) / BOOKMARK_CARD_ROW_HEIGHT) + 1
+    );
+    const snappedHeight = BOOKMARK_CARD_MIN_HEIGHT + (rowCount - 1) * BOOKMARK_CARD_ROW_HEIGHT;
+    return clampNumber(snappedHeight, metrics.minHeight, metrics.maxHeight);
+}
+
+function clearBookmarkCardResizeHandles() {
+    document.querySelectorAll('#bookmarks-container .bookmark-card').forEach(bookmarkCard => {
+        bookmarkCard.classList.remove(
+            'bookmark-card-resizable',
+            'bookmark-card-resizing',
+            'bookmark-card-resizing-width',
+            'bookmark-card-resizing-height'
+        );
+        bookmarkCard.querySelectorAll('.bookmark-resize-handle-right-edge, .bookmark-resize-handle-bottom-edge').forEach(handle => handle.remove());
+    });
+    document.body.classList.remove('bookmark-card-resizing-active');
+}
+
+function startBookmarkCardResize(event, card, options = {}) {
+    if (!card || event.button !== 0) return;
+
+    const categoryName = card.dataset.category;
+    if (!categoryName) return;
+
+    const resizeWidth = options.resizeWidth !== false;
+    const resizeHeight = options.resizeHeight === true;
+    const cursor = options.cursor || (resizeWidth && resizeHeight ? 'nwse-resize' : 'ew-resize');
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const metrics = getBookmarkCardResizeMetrics(card);
+    const startWidth = Math.round(card.getBoundingClientRect().width) || 260;
+    const startHeight = Math.round(card.getBoundingClientRect().height) || BOOKMARK_CARD_MIN_HEIGHT;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const originalUserSelect = document.body.style.userSelect;
+    const originalCursor = document.body.style.cursor;
+
+    let latestWidth = startWidth;
+    let latestHeight = startHeight;
+    let pendingX = startX;
+    let pendingY = startY;
+    let animationFrameId = null;
+
+    document.body.classList.add('bookmark-card-resizing-active');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = cursor;
+    card.classList.add('bookmark-card-resizing');
+    card.classList.toggle('bookmark-card-resizing-width', resizeWidth && !resizeHeight);
+    card.classList.toggle('bookmark-card-resizing-height', resizeHeight && !resizeWidth);
+
+    const applyPendingResize = () => {
+        animationFrameId = null;
+
+        if (resizeWidth) {
+            const widthResult = snapBookmarkCardWidth(startWidth + (pendingX - startX), metrics);
+            if (latestWidth !== widthResult.value) {
+                latestWidth = widthResult.value;
+                card.style.width = `${latestWidth}px`;
+            }
+        }
+
+        if (resizeHeight) {
+            const snappedHeight = snapBookmarkCardHeight(startHeight + (pendingY - startY), metrics);
+            if (latestHeight !== snappedHeight) {
+                latestHeight = snappedHeight;
+                card.style.height = `${latestHeight}px`;
+            }
+        }
+    };
+
+    const queueResizeFrame = () => {
+        if (animationFrameId !== null) return;
+        animationFrameId = window.requestAnimationFrame(applyPendingResize);
+    };
+
+    const handleMouseMove = (moveEvent) => {
+        moveEvent.preventDefault();
+        pendingX = moveEvent.clientX;
+        pendingY = moveEvent.clientY;
+        queueResizeFrame();
+    };
+
+    const stopResize = async () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', stopResize);
+        if (animationFrameId !== null) {
+            window.cancelAnimationFrame(animationFrameId);
+            applyPendingResize();
+        }
+        document.body.classList.remove('bookmark-card-resizing-active');
+        document.body.style.userSelect = originalUserSelect;
+        document.body.style.cursor = originalCursor;
+        card.classList.remove(
+            'bookmark-card-resizing',
+            'bookmark-card-resizing-width',
+            'bookmark-card-resizing-height'
+        );
+
+        if (window.updateBookmarkScrollbars) {
+            window.updateBookmarkScrollbars();
+        }
+        await saveBookmarkCardSize(categoryName, latestWidth, latestHeight);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', stopResize);
+}
+
+window.clearBookmarkCardResizeHandles = clearBookmarkCardResizeHandles;
+
 window.addBookmarkCardResizeHandles = function (card) {
-    // 清理旧的 resize 手柄，避免影响显示
-    const existingRightHandle = card.querySelector('.bookmark-resize-handle-right');
-    const existingBottomHandle = card.querySelector('.bookmark-resize-handle-bottom');
-    if (existingRightHandle) existingRightHandle.remove();
-    if (existingBottomHandle) existingBottomHandle.remove();
-    // 不再添加新的拖动手柄和事件
+    clearBookmarkCardResizeHandles();
+
+    if (!card ||
+        !card.classList.contains('bookmark-card') ||
+        !card.classList.contains('highlighted-card') ||
+        card.classList.contains('bookmark-card-collapsed') ||
+        !document.body.classList.contains('sidebar-open')) {
+        return;
+    }
+
+    card.classList.add('bookmark-card-resizable');
+
+    const rightEdgeHandle = document.createElement('button');
+    rightEdgeHandle.type = 'button';
+    rightEdgeHandle.className = 'bookmark-resize-handle-right-edge';
+    rightEdgeHandle.title = '拖动右侧边框调整宽度';
+    rightEdgeHandle.setAttribute('aria-label', 'Resize bookmark module width');
+    rightEdgeHandle.addEventListener('mousedown', (event) => startBookmarkCardResize(event, card, {
+        resizeWidth: true,
+        resizeHeight: false,
+        cursor: 'ew-resize'
+    }));
+    rightEdgeHandle.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
+    const bottomEdgeHandle = document.createElement('button');
+    bottomEdgeHandle.type = 'button';
+    bottomEdgeHandle.className = 'bookmark-resize-handle-bottom-edge';
+    bottomEdgeHandle.title = '拖动下侧边框调整高度';
+    bottomEdgeHandle.setAttribute('aria-label', 'Resize bookmark module height');
+    bottomEdgeHandle.addEventListener('mousedown', (event) => startBookmarkCardResize(event, card, {
+        resizeWidth: false,
+        resizeHeight: true,
+        cursor: 'ns-resize'
+    }));
+    bottomEdgeHandle.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
+    card.appendChild(rightEdgeHandle);
+    card.appendChild(bottomEdgeHandle);
 };
 
 // 保存书签卡片大小（供右侧设置面板调用，持久化宽高）

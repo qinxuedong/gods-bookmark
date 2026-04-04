@@ -11,6 +11,8 @@ const DEFAULT_CONFIG = {
   syncOnRemove: true  // 默认启用删除同步
 };
 
+let cachedServerUrl = DEFAULT_CONFIG.serverUrl;
+
 // 获取配置
 async function getConfig() {
   const result = await chrome.storage.sync.get(['bookmarkSyncConfig']);
@@ -22,7 +24,120 @@ async function getConfig() {
     // 自动保存修正后的配置
     await saveConfig(config);
   }
+  cachedServerUrl = config.serverUrl || DEFAULT_CONFIG.serverUrl;
   return config;
+}
+
+function getServerBaseUrl(serverUrl = cachedServerUrl) {
+  try {
+    const normalizedUrl = serverUrl || DEFAULT_CONFIG.serverUrl;
+    const urlObj = new URL(normalizedUrl);
+    urlObj.pathname = '';
+    urlObj.search = '';
+    urlObj.hash = '';
+    return urlObj.toString().replace(/\/$/, '');
+  } catch (error) {
+    return DEFAULT_CONFIG.serverUrl;
+  }
+}
+
+function getUrlPort(urlObj) {
+  if (!urlObj) {
+    return '';
+  }
+
+  if (urlObj.port) {
+    return urlObj.port;
+  }
+
+  return urlObj.protocol === 'https:' ? '443' : '80';
+}
+
+function isConfiguredSearchPage(tabUrl, serverUrl) {
+  if (!tabUrl || !serverUrl) {
+    return false;
+  }
+
+  try {
+    const tabUrlObj = new URL(tabUrl);
+    const serverUrlObj = new URL(serverUrl);
+
+    return tabUrlObj.protocol === serverUrlObj.protocol &&
+      tabUrlObj.hostname === serverUrlObj.hostname &&
+      getUrlPort(tabUrlObj) === getUrlPort(serverUrlObj) &&
+      !tabUrlObj.pathname.includes('login.html');
+  } catch (error) {
+    console.warn('[书签同步] 无法解析搜索页 URL，回退到字符串匹配:', error);
+    return tabUrl.includes(serverUrl) && !tabUrl.includes('login.html');
+  }
+}
+
+async function sendOpenSearchMessage(tabId, serverUrl) {
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      action: 'openSearchModal'
+    });
+    return true;
+  } catch (error) {
+    console.error('[书签同步] 发送打开搜索浮窗消息失败:', error);
+    if (serverUrl) {
+      await chrome.tabs.create({ url: serverUrl });
+    }
+    return false;
+  }
+}
+
+async function openSearchOverlayInTab(tabId, currentUrl, serverUrl) {
+  if (!tabId) {
+    if (serverUrl) {
+      await chrome.tabs.create({ url: serverUrl });
+    }
+    return;
+  }
+
+  if (isConfiguredSearchPage(currentUrl, serverUrl)) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          if (window.openSearchModal && typeof window.openSearchModal === 'function') {
+            window.openSearchModal();
+          } else if (window.postMessage) {
+            window.postMessage({ type: 'OPEN_SEARCH_MODAL' }, '*');
+          }
+        }
+      });
+      return;
+    } catch (error) {
+      console.error('[书签同步] 在书签页打开搜索浮窗失败，尝试发送消息:', error);
+      await sendOpenSearchMessage(tabId, serverUrl);
+      return;
+    }
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['search-modal-injected.js']
+    });
+  } catch (error) {
+    console.error('[书签同步] 注入搜索浮窗失败，尝试发送消息:', error);
+    await sendOpenSearchMessage(tabId, serverUrl);
+  }
+}
+
+async function openSearchOverlayInActiveTab() {
+  const config = await getConfig();
+  const serverUrl = config.serverUrl || DEFAULT_CONFIG.serverUrl;
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  if (tabs && tabs.length > 0) {
+    const currentTab = tabs[0];
+    await openSearchOverlayInTab(currentTab.id, currentTab.url || '', serverUrl);
+    return;
+  }
+
+  await chrome.tabs.create({ url: serverUrl });
 }
 
 // 获取当前登录用户ID（通过content script从网站获取）
@@ -137,7 +252,7 @@ async function saveConfig(config) {
 }
 
 // 获取网站favicon URL
-function getFaviconUrl(url) {
+function getFaviconUrl(url, serverUrl = cachedServerUrl) {
   try {
     const urlObj = new URL(url);
     const domain = urlObj.hostname;
@@ -152,22 +267,28 @@ function getFaviconUrl(url) {
       return null;
     }
 
-    return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+    if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+      return null;
+    }
+
+    const apiUrl = new URL('/api/favicon', getServerBaseUrl(serverUrl));
+    apiUrl.searchParams.set('url', urlObj.toString());
+    return apiUrl.toString();
   } catch (e) {
     return null;
   }
 }
 
 // 将浏览器书签节点转换为网站书签格式
-function convertBookmarkNode(bookmarkNode) {
+function convertBookmarkNode(bookmarkNode, serverUrl = cachedServerUrl) {
   if (!bookmarkNode.url) {
     // 这是文件夹，不是书签
     return null;
   }
 
-  const faviconUrl = getFaviconUrl(bookmarkNode.url);
+  const faviconUrl = getFaviconUrl(bookmarkNode.url, serverUrl);
   const icon = faviconUrl
-    ? `<img src="${faviconUrl}" width="16" height="16" style="vertical-align: middle;"><span style="display: none;">🔗</span>`
+    ? `<img src="${faviconUrl}" width="16" height="16" style="vertical-align: middle;">`
     : '🔗';
 
   return {
@@ -595,8 +716,6 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
     const skipFlag = await chrome.storage.local.get('skipNextBookmarkRemoveSync');
     if (skipFlag.skipNextBookmarkRemoveSync) {
       console.log('[书签同步] 跳过同步：这是扩展自己删除的书签，避免循环同步');
-      // 清除标记
-      await chrome.storage.local.remove('skipNextBookmarkRemoveSync');
       return;
     }
   } catch (error) {
@@ -780,6 +899,74 @@ async function getAllBookmarks(node, categoryPath = '', config = null) {
   return bookmarks;
 }
 
+function isRootBookmarkCategory(categoryName) {
+  return !categoryName ||
+    categoryName === '书签栏' ||
+    categoryName === 'Bookmarks bar';
+}
+
+function getBookmarksBarNode(root) {
+  if (!root || !root.children) {
+    return null;
+  }
+
+  return root.children.find(node =>
+    node.title === '书签栏' ||
+    node.title === 'Bookmarks bar' ||
+    node.id === '1'
+  ) || null;
+}
+
+async function findFolderByName(node, folderName) {
+  if (!node || !node.children) {
+    return null;
+  }
+
+  for (const child of node.children) {
+    if (!child.url && child.title === folderName) {
+      return child;
+    }
+    if (child.children) {
+      const found = await findFolderByName(child, folderName);
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function setTemporarySyncFlag(flagKey, durationMs = 1000) {
+  const flagValue = `${flagKey}_${Date.now()}_${Math.random()}`;
+  await chrome.storage.local.set({ [flagKey]: flagValue });
+
+  setTimeout(async () => {
+    try {
+      await chrome.storage.local.remove(flagKey);
+    } catch (error) {
+      console.warn('[书签同步] 清理同步标记失败:', flagKey, error);
+    }
+  }, durationMs);
+
+  return flagValue;
+}
+
+async function createBookmarkNodeWithSyncGuard(details) {
+  await setTemporarySyncFlag('skipNextBookmarkSync');
+  return chrome.bookmarks.create(details);
+}
+
+async function removeBookmarkNodeWithSyncGuard(nodeId) {
+  await setTemporarySyncFlag('skipNextBookmarkRemoveSync');
+  return chrome.bookmarks.remove(nodeId);
+}
+
+async function removeFolderNodeWithSyncGuard(nodeId) {
+  await setTemporarySyncFlag('skipNextBookmarkRemoveSync');
+  return chrome.bookmarks.removeTree(nodeId);
+}
+
 // 同步所有书签到服务器（浏览器 → 网站）
 async function syncBrowserToServer() {
   try {
@@ -893,12 +1080,9 @@ async function syncServerToBrowser() {
       return;
     }
 
-    console.log('[书签同步] 步骤2: 开始同步网站 → 浏览器...');
+    console.log('[书签同步] 步骤2: 开始同步网站 -> 浏览器...');
 
-    // 获取当前登录用户ID
     const userId = await getCurrentUserId(config);
-
-    // 从服务器获取所有书签（使用不需要认证的端点）
     const url = new URL(`${config.serverUrl}/api/bookmark/get-all`);
     if (userId !== null) {
       url.searchParams.set('userId', userId.toString());
@@ -909,7 +1093,7 @@ async function syncServerToBrowser() {
       headers: {
         'Content-Type': 'application/json'
       },
-      credentials: 'include' // 尝试包含cookie
+      credentials: 'include'
     });
 
     if (!response.ok) {
@@ -917,142 +1101,130 @@ async function syncServerToBrowser() {
     }
 
     const serverBookmarks = await response.json();
-    console.log('[书签同步] 从服务器获取到', serverBookmarks.length, '个分类');
+    console.log('[书签同步] 从服务器获取到', Array.isArray(serverBookmarks) ? serverBookmarks.length : 0, '个分类');
 
-    if (!Array.isArray(serverBookmarks) || serverBookmarks.length === 0) {
-      console.log('[书签同步] 服务器没有书签数据');
-      return { added: 0, updated: 0, foldersCreated: 0 };
+    if (!Array.isArray(serverBookmarks)) {
+      throw new Error('服务器返回的书签数据格式不正确');
     }
 
-    // 获取书签栏根节点
-    const bookmarksBar = await chrome.bookmarks.getTree();
-    const root = bookmarksBar[0];
-
-    let bookmarksBarId = null;
-    const barNode = root.children.find(node =>
-      node.title === '书签栏' ||
-      node.title === 'Bookmarks bar' ||
-      node.id === '1'
-    );
+    const bookmarksTree = await chrome.bookmarks.getTree();
+    const root = bookmarksTree[0];
+    const barNode = getBookmarksBarNode(root);
     if (barNode) {
-      bookmarksBarId = barNode.id;
+      // no-op
     } else {
       throw new Error('无法找到书签栏');
     }
+    const bookmarksBarId = barNode.id;
 
     let totalAdded = 0;
+    let totalRemoved = 0;
     let totalUpdated = 0;
     let foldersCreated = 0;
+    let foldersRemoved = 0;
 
-    // 处理每个分类
+    const serverCategoryMap = new Map();
+    const serverFolderNames = new Set();
+
     for (const category of serverBookmarks) {
-      const categoryName = category.category || '书签栏';
-      const items = category.items || [];
+      const rawCategoryName = category && category.category ? category.category : '书签栏';
+      const normalizedCategoryName = isRootBookmarkCategory(rawCategoryName) ? '书签栏' : rawCategoryName;
+      const items = Array.isArray(category?.items) ? category.items.filter(item => item && item.url) : [];
 
-      // 查找或创建文件夹
-      let folderId = null;
+      serverCategoryMap.set(normalizedCategoryName, items);
+      if (!isRootBookmarkCategory(normalizedCategoryName)) {
+        serverFolderNames.add(normalizedCategoryName);
+      }
+    }
 
-      if (categoryName === '书签栏') {
-        folderId = bookmarksBarId;
-      } else {
-        // 查找文件夹
-        const findFolder = async (node, folderName) => {
-          if (!node.children) return null;
+    const topLevelNodes = await chrome.bookmarks.getChildren(bookmarksBarId);
+    for (const child of topLevelNodes) {
+      if (!child.url && !serverFolderNames.has(child.title)) {
+        await removeFolderNodeWithSyncGuard(child.id);
+        foldersRemoved++;
+        console.log('[书签同步] 删除服务器已不存在的文件夹:', child.title);
+      }
+    }
 
-          for (const child of node.children) {
-            if (!child.url && child.title === folderName) {
-              return child.id;
-            }
-            if (child.children) {
-              const found = await findFolder(child, folderName);
-              if (found) return found;
-            }
-          }
-          return null;
-        };
+    const rootItems = serverCategoryMap.get('书签栏') || [];
+    const rootChildren = await chrome.bookmarks.getChildren(bookmarksBarId);
+    const rootUrls = new Set(rootItems.map(item => item.url));
+    for (const node of rootChildren.filter(child => child.url)) {
+      if (!rootUrls.has(node.url)) {
+        await removeBookmarkNodeWithSyncGuard(node.id);
+        totalRemoved++;
+        console.log('[书签同步] 删除服务器已不存在的根目录书签:', node.url);
+      }
+    }
 
-        folderId = await findFolder(root, categoryName);
+    for (const [categoryName, items] of serverCategoryMap.entries()) {
+      let folderId = bookmarksBarId;
 
-        // 如果文件夹不存在，创建它
-        if (!folderId) {
-          const newFolder = await chrome.bookmarks.create({
+      if (!isRootBookmarkCategory(categoryName)) {
+        let folderNode = await findFolderByName(root, categoryName);
+        if (!folderNode) {
+          folderNode = await createBookmarkNodeWithSyncGuard({
             parentId: bookmarksBarId,
             title: categoryName
           });
-          folderId = newFolder.id;
           foldersCreated++;
           console.log('[书签同步] 创建文件夹:', categoryName);
         }
+        folderId = folderNode.id;
       }
 
-      // 获取文件夹内的现有书签
-      const existingBookmarks = await chrome.bookmarks.getChildren(folderId);
-      const existingUrls = new Set(existingBookmarks.filter(b => b.url).map(b => b.url));
+      const existingNodes = await chrome.bookmarks.getChildren(folderId);
+      const existingBookmarks = existingNodes.filter(node => node.url);
+      const serverUrls = new Set(items.map(item => item.url));
 
-      // 计算当前文件夹中实际的书签数量（排除文件夹）
-      const currentBookmarkCount = existingBookmarks.filter(b => b.url).length;
+      for (const existingBookmark of existingBookmarks) {
+        if (!serverUrls.has(existingBookmark.url)) {
+          await removeBookmarkNodeWithSyncGuard(existingBookmark.id);
+          totalRemoved++;
+          console.log('[书签同步] 删除服务器已不存在的书签:', existingBookmark.url, '分类:', categoryName);
+        }
+      }
 
-      // 同步书签
-      for (let index = 0; index < items.length; index++) {
-        const item = items[index];
-        if (!item.url) continue;
+      const remainingNodes = await chrome.bookmarks.getChildren(folderId);
+      const remainingUrls = new Set(remainingNodes.filter(node => node.url).map(node => node.url));
 
-        // 检查书签是否已存在（在同一文件夹中）
-        const existingBookmark = existingBookmarks.find(b => b.url === item.url);
-
-        if (existingBookmark) {
-          // 如果已存在相同URL的书签，跳过同步
-          console.log('[书签同步] 跳过同步：文件夹', categoryName, '中已存在相同URL的书签:', item.url);
+      for (const item of items) {
+        if (remainingUrls.has(item.url)) {
           continue;
         }
 
-        // 计算插入位置：使用当前书签数量 + 已添加的书签数量
-        // 确保 index 不超过文件夹中现有书签的数量
-        const insertIndex = Math.min(currentBookmarkCount + totalAdded, currentBookmarkCount + index);
-
         try {
-          // 添加新书签（不指定 index，让浏览器自动添加到末尾，更安全）
-          await chrome.bookmarks.create({
+          await createBookmarkNodeWithSyncGuard({
             parentId: folderId,
             title: item.name,
             url: item.url
-            // 不指定 index，让浏览器自动添加到末尾，避免索引越界
           });
           totalAdded++;
-          console.log('[书签同步] 添加书签:', item.name, '到文件夹:', categoryName);
+          console.log('[书签同步] 添加书签:', item.name, '到分类:', categoryName);
         } catch (createError) {
           console.error('[书签同步] 创建书签失败:', item.name, createError);
-          // 如果创建失败，尝试不指定 index
-          try {
-            await chrome.bookmarks.create({
-              parentId: folderId,
-              title: item.name,
-              url: item.url
-            });
-            totalAdded++;
-            console.log('[书签同步] 添加书签成功（重试）:', item.name);
-          } catch (retryError) {
-            console.error('[书签同步] 重试创建书签也失败:', item.name, retryError);
-            // 继续处理下一个书签，不中断整个同步过程
-          }
         }
       }
     }
 
-    console.log('[书签同步] 网站 → 浏览器同步完成:', {
+    console.log('[书签同步] 网站 -> 浏览器同步完成:', {
       added: totalAdded,
+      removed: totalRemoved,
       updated: totalUpdated,
-      foldersCreated: foldersCreated
+      foldersCreated,
+      foldersRemoved
     });
 
     return {
       added: totalAdded,
+      removed: totalRemoved,
       updated: totalUpdated,
-      foldersCreated: foldersCreated
+      foldersCreated,
+      foldersRemoved
     };
 
   } catch (error) {
-    console.error('[书签同步] 网站 → 浏览器同步失败:', error);
+    console.error('[书签同步] 网站 -> 浏览器同步失败:', error);
     throw error;
   }
 }
@@ -1105,6 +1277,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'sync' && changes.bookmarkSyncConfig) {
     const newConfig = changes.bookmarkSyncConfig.newValue;
     const oldConfig = changes.bookmarkSyncConfig.oldValue;
+    if (newConfig && newConfig.serverUrl) {
+      cachedServerUrl = newConfig.serverUrl;
+    }
 
     // 如果从禁用变为启用，执行初始同步
     if (newConfig && (!oldConfig || !oldConfig.enabled) && newConfig.enabled) {
@@ -1275,85 +1450,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
+  if (request.action === 'openSearchOverlay') {
+    (async () => {
+      const config = await getConfig();
+      const serverUrl = config.serverUrl || DEFAULT_CONFIG.serverUrl;
+      const senderTab = sender && sender.tab ? sender.tab : null;
+
+      if (senderTab && senderTab.id) {
+        await openSearchOverlayInTab(senderTab.id, senderTab.url || '', serverUrl);
+      } else {
+        await openSearchOverlayInActiveTab();
+      }
+
+      sendResponse({ success: true });
+    })().catch(error => {
+      console.error('[书签同步] 打开搜索浮窗失败:', error);
+      sendResponse({ success: false, error: error.message || '打开搜索浮窗失败' });
+    });
+
+    return true;
+  }
+
   // 对于其他消息，返回 false 表示同步处理
   return false;
 });
 
 // 监听快捷键命令
-chrome.commands.onCommand.addListener((command) => {
+chrome.commands.onCommand.addListener(async (command) => {
   console.log('[书签同步] 收到命令:', command);
 
   if (command === 'open-search') {
-    // 获取服务器URL
-    getConfig().then(config => {
-      const serverUrl = config.serverUrl || 'http://localhost:3000';
-
-      // 检查当前活动标签页是否是搜索页面
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs.length > 0) {
-          const currentTab = tabs[0];
-          const currentUrl = currentTab.url || '';
-
-          // 检查是否是搜索页面（精确匹配端口3000）
-          const isSearchPage = (currentUrl.includes('localhost:3000') ||
-            currentUrl.includes('127.0.0.1:3000')) &&
-            !currentUrl.includes('login.html');
-
-          if (isSearchPage) {
-            // 如果是搜索页面，直接注入脚本打开浮窗（更可靠）
-            chrome.scripting.executeScript({
-              target: { tabId: currentTab.id },
-              func: () => {
-                // 直接调用页面函数打开搜索浮窗
-                if (window.openSearchModal && typeof window.openSearchModal === 'function') {
-                  window.openSearchModal();
-                } else if (window.postMessage) {
-                  // 如果函数不存在，发送postMessage
-                  window.postMessage({ type: 'OPEN_SEARCH_MODAL' }, '*');
-                }
-              }
-            }).catch(err => {
-              console.error('[书签同步] 注入脚本失败，尝试发送消息:', err);
-              // 如果注入失败，尝试发送消息
-              chrome.tabs.sendMessage(currentTab.id, {
-                action: 'openSearchModal'
-              }, (response) => {
-                if (chrome.runtime.lastError) {
-                  console.error('[书签同步] 发送消息也失败:', chrome.runtime.lastError);
-                }
-              });
-            });
-          } else {
-            // 如果不是搜索页面，注入完整搜索功能脚本
-            chrome.scripting.executeScript({
-              target: { tabId: currentTab.id },
-              files: ['search-modal-injected.js']
-            }).catch(err => {
-              console.error('[书签同步] 注入搜索浮窗失败:', err);
-              // 如果注入失败，尝试发送消息给content script
-              chrome.tabs.sendMessage(currentTab.id, {
-                action: 'openSearchModal'
-              }, (response) => {
-                if (chrome.runtime.lastError) {
-                  console.error('[书签同步] 发送消息也失败:', chrome.runtime.lastError);
-                }
-              });
-            });
-          }
-        } else {
-          // 没有活动标签页，打开新标签页
-          chrome.tabs.create({
-            url: serverUrl
-          });
-        }
-      });
-    }).catch(error => {
+    try {
+      await openSearchOverlayInActiveTab();
+    } catch (error) {
       console.error('[书签同步] 获取配置失败:', error);
-      // 使用默认URL
-      chrome.tabs.create({
-        url: 'http://localhost:3000'
+      await chrome.tabs.create({
+        url: DEFAULT_CONFIG.serverUrl
       });
-    });
+    }
   }
 });
 

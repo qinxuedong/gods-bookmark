@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "God's Bookmark 书签同步",
-  "version": "0.0.5",
-  "description": "自动将浏览器书签同步到 God's Bookmark 书签模块 (RC)",
+  "version": "1.1.0",
+  "description": "自动将浏览器书签与 God's Bookmark 实时同步",
   "permissions": [
     "bookmarks",
     "storage",
@@ -56,7 +56,8 @@
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
-    "128": "icon128.png"
+    "128": "icon128.png",
+    "256": "icon256.png"
   },
   "options_page": "options.html",
   "commands": {

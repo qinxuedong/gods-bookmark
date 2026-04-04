@@ -11,6 +11,16 @@ const db = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const bookmarkStreamClients = new Map();
+const faviconCache = new Map();
+const FAVICON_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const FAVICON_FETCH_TIMEOUT_MS = 8000;
+const DEFAULT_FAVICON_SVG = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+        <rect width="32" height="32" rx="8" fill="#1f2937"/>
+        <path d="M10 8h8.5a5.5 5.5 0 1 1 0 11H14v5h-4V8zm4 7h4.5a1.5 1.5 0 1 0 0-3H14v3z" fill="#f9fafb"/>
+    </svg>`
+);
 
 // Middleware
 // 增加 JSON 请求体大小限制（处理大量书签数据）
@@ -23,6 +33,58 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin"; // Simple password
 
 // ===== Session 管理函数 =====
 const crypto = require('crypto');
+
+function writeSseEvent(res, eventName, payload) {
+    res.write(`event: ${eventName}\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function addBookmarkStreamClient(userId, res) {
+    const clientId = crypto.randomUUID();
+    const clientInfo = {
+        id: clientId,
+        res
+    };
+
+    if (!bookmarkStreamClients.has(userId)) {
+        bookmarkStreamClients.set(userId, new Map());
+    }
+
+    bookmarkStreamClients.get(userId).set(clientId, clientInfo);
+    return clientId;
+}
+
+function removeBookmarkStreamClient(userId, clientId) {
+    const userClients = bookmarkStreamClients.get(userId);
+    if (!userClients) {
+        return;
+    }
+
+    userClients.delete(clientId);
+    if (userClients.size === 0) {
+        bookmarkStreamClients.delete(userId);
+    }
+}
+
+function broadcastBookmarkChange(userId, change) {
+    const userClients = bookmarkStreamClients.get(userId);
+    if (!userClients || userClients.size === 0) {
+        return;
+    }
+
+    const payload = {
+        ...change,
+        timestamp: Date.now()
+    };
+
+    for (const client of userClients.values()) {
+        try {
+            writeSseEvent(client.res, 'bookmark-change', payload);
+        } catch (error) {
+            console.error('[BOOKMARK STREAM] Failed to push bookmark change:', error);
+        }
+    }
+}
 
 // 创建 session
 async function createSession(userId) {
@@ -204,6 +266,247 @@ function validatePassword(password) {
         return `Password must be ${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters`;
     }
     return null;
+}
+
+function buildServerFaviconUrl(targetUrl) {
+    if (!targetUrl) {
+        return null;
+    }
+    return `/api/favicon?url=${encodeURIComponent(targetUrl)}`;
+}
+
+function isPrivateIpv4Hostname(hostname) {
+    const parts = hostname.split('.').map(part => Number.parseInt(part, 10));
+    if (parts.length !== 4 || parts.some(part => Number.isNaN(part) || part < 0 || part > 255)) {
+        return false;
+    }
+
+    if (parts[0] === 10 || parts[0] === 127) {
+        return true;
+    }
+    if (parts[0] === 169 && parts[1] === 254) {
+        return true;
+    }
+    if (parts[0] === 192 && parts[1] === 168) {
+        return true;
+    }
+    return parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31;
+}
+
+function isDisallowedFaviconHostname(hostname) {
+    if (!hostname) {
+        return true;
+    }
+
+    const normalizedHostname = hostname.trim().toLowerCase();
+    if (!normalizedHostname) {
+        return true;
+    }
+
+    if (
+        normalizedHostname === 'localhost' ||
+        normalizedHostname === '0.0.0.0' ||
+        normalizedHostname === '::1' ||
+        normalizedHostname.endsWith('.local')
+    ) {
+        return true;
+    }
+
+    if (isPrivateIpv4Hostname(normalizedHostname)) {
+        return true;
+    }
+
+    return normalizedHostname.startsWith('fe80:') ||
+        normalizedHostname.startsWith('fc') ||
+        normalizedHostname.startsWith('fd');
+}
+
+function isAllowedFaviconTarget(targetUrl) {
+    try {
+        const parsedUrl = new URL(targetUrl);
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+            return false;
+        }
+        return !isDisallowedFaviconHostname(parsedUrl.hostname);
+    } catch (error) {
+        return false;
+    }
+}
+
+function getCachedFavicon(targetUrl) {
+    const cached = faviconCache.get(targetUrl);
+    if (!cached) {
+        return null;
+    }
+
+    if (cached.expiresAt <= Date.now()) {
+        faviconCache.delete(targetUrl);
+        return null;
+    }
+
+    return cached;
+}
+
+function setCachedFavicon(targetUrl, result) {
+    faviconCache.set(targetUrl, {
+        ...result,
+        expiresAt: Date.now() + FAVICON_CACHE_TTL_MS
+    });
+
+    if (faviconCache.size <= 500) {
+        return;
+    }
+
+    for (const [cacheKey, cacheValue] of faviconCache.entries()) {
+        if (cacheValue.expiresAt <= Date.now()) {
+            faviconCache.delete(cacheKey);
+        }
+        if (faviconCache.size <= 400) {
+            break;
+        }
+    }
+}
+
+function extractHtmlAttribute(tag, attributeName) {
+    const pattern = new RegExp(`${attributeName}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
+    const match = tag.match(pattern);
+    if (!match) {
+        return '';
+    }
+
+    return match[2] || match[3] || match[4] || '';
+}
+
+function extractIconLinksFromHtml(html, baseUrl) {
+    if (!html) {
+        return [];
+    }
+
+    const iconUrls = [];
+    const linkTags = html.match(/<link\b[^>]*>/gi) || [];
+
+    linkTags.forEach(tag => {
+        const rel = extractHtmlAttribute(tag, 'rel').toLowerCase();
+        const href = extractHtmlAttribute(tag, 'href');
+        if (!href || !rel.includes('icon')) {
+            return;
+        }
+
+        try {
+            iconUrls.push(new URL(href, baseUrl).toString());
+        } catch (error) {
+            // Ignore malformed icon links.
+        }
+    });
+
+    return iconUrls;
+}
+
+async function fetchWithTimeout(url, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FAVICON_FETCH_TIMEOUT_MS);
+
+    try {
+        return await fetch(url, {
+            redirect: 'follow',
+            signal: controller.signal,
+            ...options
+        });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function resolveFaviconCandidates(targetUrl) {
+    const parsedUrl = new URL(targetUrl);
+    const candidates = [];
+    let pageUrl = parsedUrl.toString();
+
+    try {
+        const response = await fetchWithTimeout(parsedUrl.toString(), {
+            headers: {
+                'User-Agent': 'GodsBookmark/1.0 favicon-fetcher',
+                'Accept': 'text/html,application/xhtml+xml'
+            }
+        });
+
+        if (response.ok) {
+            const finalUrl = response.url || parsedUrl.toString();
+            if (isAllowedFaviconTarget(finalUrl)) {
+                pageUrl = finalUrl;
+                const contentType = (response.headers.get('content-type') || '').toLowerCase();
+                if (contentType.includes('text/html') || contentType.includes('application/xhtml+xml')) {
+                    const html = await response.text();
+                    candidates.push(...extractIconLinksFromHtml(html, finalUrl));
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('[FAVICON] Failed to resolve icon links from page:', targetUrl, error.message);
+    }
+
+    try {
+        const pageOrigin = new URL(pageUrl).origin;
+        candidates.push(new URL('/favicon.ico', pageOrigin).toString());
+        candidates.push(new URL('/apple-touch-icon.png', pageOrigin).toString());
+    } catch (error) {
+        // Ignore malformed origin.
+    }
+
+    return [...new Set(candidates.filter(isAllowedFaviconTarget))];
+}
+
+async function fetchFaviconPayload(targetUrl) {
+    const candidates = await resolveFaviconCandidates(targetUrl);
+
+    for (const candidateUrl of candidates) {
+        try {
+            const response = await fetchWithTimeout(candidateUrl, {
+                headers: {
+                    'User-Agent': 'GodsBookmark/1.0 favicon-fetcher',
+                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+                }
+            });
+
+            if (!response.ok || !isAllowedFaviconTarget(response.url || candidateUrl)) {
+                continue;
+            }
+
+            const contentTypeHeader = (response.headers.get('content-type') || '').toLowerCase();
+            if (
+                contentTypeHeader &&
+                !contentTypeHeader.startsWith('image/') &&
+                !contentTypeHeader.includes('icon') &&
+                !contentTypeHeader.includes('octet-stream')
+            ) {
+                continue;
+            }
+
+            const body = Buffer.from(await response.arrayBuffer());
+            if (!body.length) {
+                continue;
+            }
+
+            return {
+                body,
+                contentType: contentTypeHeader.split(';')[0] || 'image/x-icon'
+            };
+        } catch (error) {
+            console.warn('[FAVICON] Failed to fetch candidate:', candidateUrl, error.message);
+        }
+    }
+
+    return {
+        body: DEFAULT_FAVICON_SVG,
+        contentType: 'image/svg+xml'
+    };
+}
+
+function sendFaviconResponse(res, result) {
+    res.setHeader('Content-Type', result.contentType || 'image/x-icon');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(result.body);
 }
 
 function validateRole(role) {
@@ -568,6 +871,34 @@ app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // 2. Bookmarks (支持多用户数据隔离)
+app.get('/api/favicon', async (req, res) => {
+    const rawUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
+
+    if (!rawUrl || rawUrl.length > 2048 || !isAllowedFaviconTarget(rawUrl)) {
+        return sendFaviconResponse(res, {
+            body: DEFAULT_FAVICON_SVG,
+            contentType: 'image/svg+xml'
+        });
+    }
+
+    const cached = getCachedFavicon(rawUrl);
+    if (cached) {
+        return sendFaviconResponse(res, cached);
+    }
+
+    try {
+        const result = await fetchFaviconPayload(rawUrl);
+        setCachedFavicon(rawUrl, result);
+        return sendFaviconResponse(res, result);
+    } catch (error) {
+        console.error('[FAVICON] Unhandled favicon fetch error:', rawUrl, error);
+        return sendFaviconResponse(res, {
+            body: DEFAULT_FAVICON_SVG,
+            contentType: 'image/svg+xml'
+        });
+    }
+});
+
 app.get('/api/bookmarks', requireAuth, async (req, res) => {
     try {
         const userId = req.userId || 0;
@@ -611,11 +942,17 @@ app.post('/api/bookmarks', requireAuth, async (req, res) => {
                 "INSERT OR REPLACE INTO user_data (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
                 [userId, 'bookmarks', JSON.stringify(req.body)]
             );
+            broadcastBookmarkChange(userId, {
+                type: 'bookmarks-replaced'
+            });
             return res.json({ success: true });
         } catch (err) {
             // 如果user_data表不存在，使用旧方式
             if (err.message.includes('no such table')) {
                 await db.run("INSERT OR REPLACE INTO app_data (key, value) VALUES (?, ?)", ['bookmarks', JSON.stringify(req.body)]);
+                broadcastBookmarkChange(userId, {
+                    type: 'bookmarks-replaced'
+                });
                 return res.json({ success: true });
             }
             throw err;
@@ -627,6 +964,39 @@ app.post('/api/bookmarks', requireAuth, async (req, res) => {
         console.error('Save bookmarks error:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+app.get('/api/bookmarks/stream', requireAuth, async (req, res) => {
+    const userId = req.userId || 0;
+
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+
+    const clientId = addBookmarkStreamClient(userId, res);
+    writeSseEvent(res, 'connected', {
+        success: true,
+        userId,
+        clientId,
+        timestamp: Date.now()
+    });
+
+    const heartbeat = setInterval(() => {
+        try {
+            res.write(`: heartbeat ${Date.now()}\n\n`);
+        } catch (error) {
+            clearInterval(heartbeat);
+            removeBookmarkStreamClient(userId, clientId);
+        }
+    }, 25000);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        removeBookmarkStreamClient(userId, clientId);
+    });
 });
 
 // 5. Click Statistics API (支持多用户数据隔离)
@@ -683,7 +1053,7 @@ app.post('/api/bookmark/click', requireAuth, async (req, res) => {
                     !domain.startsWith('10.') && 
                     !domain.startsWith('172.') &&
                     domain !== '0.0.0.0') {
-                    stats[url].logo = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+                    stats[url].logo = buildServerFaviconUrl(url);
                 }
             } catch (e) {
                 // URL无效，忽略
@@ -805,6 +1175,14 @@ app.post('/api/bookmark/sync', requireAuth, async (req, res) => {
                     ['bookmarks', JSON.stringify(bookmarks)]);
             }
             
+            broadcastBookmarkChange(targetUserId, {
+                type: action === 'moved'
+                    ? 'bookmark-moved'
+                    : (action === 'updated' ? 'bookmark-updated' : 'bookmark-created'),
+                category: categoryName,
+                bookmark
+            });
+
             res.json({ 
                 success: true, 
                 message: action === 'created' ? '书签已添加' : (action === 'moved' ? '书签已移动' : '书签已更新'),
@@ -840,6 +1218,11 @@ app.post('/api/bookmark/sync', requireAuth, async (req, res) => {
                         ['bookmarks', JSON.stringify(bookmarks)]);
                 }
                 
+                broadcastBookmarkChange(targetUserId, {
+                    type: 'bookmark-removed',
+                    bookmark
+                });
+
                 res.json({ success: true, message: '书签已删除' });
             } else {
                 res.json({ success: false, message: '未找到要删除的书签' });
@@ -1035,6 +1418,12 @@ app.post('/api/bookmark/sync-folder', requireAuth, async (req, res) => {
             }
             
             console.log('[书签同步] 用户', targetUserId, '创建分类:', folderName, '包含', bookmarks[categoryIndex].items.length, '个书签');
+            broadcastBookmarkChange(targetUserId, {
+                type: 'folder-created',
+                folderName,
+                bookmarks: Array.isArray(folderBookmarks) ? folderBookmarks : []
+            });
+
             res.json({ success: true, message: '分类已创建' });
         } else if (action === 'removed') {
             // 获取当前用户的书签数据（优先从user_data表）
@@ -1075,6 +1464,11 @@ app.post('/api/bookmark/sync-folder', requireAuth, async (req, res) => {
                 }
                 
                 console.log('[书签同步] 用户', targetUserId, '删除分类:', folderName);
+                broadcastBookmarkChange(targetUserId, {
+                    type: 'folder-removed',
+                    folderName
+                });
+
                 res.json({ success: true, message: '分类已删除' });
             } else {
                 res.json({ success: false, message: '未找到要删除的分类' });

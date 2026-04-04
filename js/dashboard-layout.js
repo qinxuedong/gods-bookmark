@@ -11,7 +11,7 @@ async function toggleSettingsSidebar() {
     const sidebar = document.getElementById('admin-sidebar');
     if (sidebar) {
         if (sidebar.classList.contains('open')) {
-            closeSettingsSidebar();
+            await closeSettingsSidebar();
         } else {
             sidebar.classList.add('open');
             document.body.classList.add('sidebar-open');
@@ -24,7 +24,7 @@ async function openSettingsSidebar() {
     await toggleSettingsSidebar();
 }
 
-function closeSettingsSidebar() {
+async function closeSettingsSidebar() {
     const sidebar = document.getElementById('admin-sidebar');
     if (sidebar) {
         sidebar.classList.remove('open');
@@ -37,6 +37,21 @@ function closeSettingsSidebar() {
         document.querySelectorAll('.highlighted-card').forEach(card => {
             card.classList.remove('highlighted-card');
         });
+        if (window.clearBookmarkCardResizeHandles) {
+            window.clearBookmarkCardResizeHandles();
+        }
+        if (window.disableBookmarkCardSort) {
+            window.disableBookmarkCardSort();
+        }
+        if (autoSaveTimer) {
+            clearTimeout(autoSaveTimer);
+            autoSaveTimer = null;
+        }
+        try {
+            await saveLayoutState();
+        } catch (error) {
+            console.error('[closeSettingsSidebar] 保存布局失败:', error);
+        }
         
         // 不再需要禁用拖拽和调整大小（因为已经禁用了）
         // disableTodosDragAndResize();
@@ -245,9 +260,6 @@ async function renderCardControls() {
     const bookmarkCards = document.querySelectorAll('#bookmarks-container .glass-card');
     const allCards = [...monitorCards, ...bookmarkCards];
 
-    // 书签卡片允许的最大宽度：固定为 1536px
-    const maxCardWidth = 1536;
-
     allCards.forEach((card, globalIndex) => {
         const cardId = card.id || `card-${globalIndex}`;
         const cardName = getCardName(card);
@@ -356,27 +368,12 @@ async function renderCardControls() {
         });
         const isHidden = bookmarkLayoutItem?.hidden === true;
         
-        // 读取已保存的宽高（如果有），否则使用当前卡片实际尺寸
-        const baseWidth = card.offsetWidth || 260;
-        const baseHeight = card.offsetHeight || 220;
-        const savedWidth = bookmarkLayoutItem && bookmarkLayoutItem.width ? bookmarkLayoutItem.width : null;
-        const savedHeight = bookmarkLayoutItem && bookmarkLayoutItem.height ? bookmarkLayoutItem.height : null;
-        const currentWidthPx = savedWidth || baseWidth;
-        const currentHeightPx = savedHeight || baseHeight;
-
-        // 不同主题下，上移/下移及删除按钮的样式（保证亮色 / 暗色下都清晰可读）
-        const upBtnStyle = isLightTheme
-            ? 'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.6);background:rgba(255,255,255,0.4);color:var(--accent-color);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;box-shadow:0 1px 2px rgba(15,23,42,0.05);'
-            : 'width:18px;height:18px;border-radius:999px;border:1px solid rgba(139,92,246,0.6);background:rgba(139,92,246,0.85);color:#F9FAFB;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;box-shadow:0 1px 3px rgba(139,92,246,0.35);';
-
-        const downBtnStyle = upBtnStyle;
-
         const deleteBtnStyle = isLightTheme
             ? 'width: 20px; height: 20px; padding: 0; background: rgba(255,255,255,0.5); color: var(--text-secondary); border: 1px solid rgba(226,232,240,0.8); border-radius: 4px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 2px rgba(15,23,42,0.05);'
             : 'width: 20px; height: 20px; padding: 0; background: rgba(30,41,59,0.9); color: rgba(248,113,113,0.95); border: 1px solid rgba(248,113,113,0.8); border-radius: 4px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 3px rgba(15,23,42,0.35);';
         
         html += `
-            <div class="card-control-item" data-card-index="${globalIndex}" 
+            <div class="card-control-item" data-card-index="${globalIndex}" ${isBookmarkCard && bookmarkCategoryIndex !== null ? `data-bookmark-category="${bookmarkCategoryIndex}"` : ''}
                 style="border-bottom: ${globalIndex < allCards.length - 1 ? '1px solid var(--card-border)' : 'none'}; 
                        padding-bottom: ${globalIndex < allCards.length - 1 ? '1rem' : '0'}; 
                        margin-bottom: ${globalIndex < allCards.length - 1 ? '1rem' : '0'}; 
@@ -384,15 +381,7 @@ async function renderCardControls() {
                        border-left: 3px solid ${borderColor};
                        box-shadow: 0 0 10px ${borderColor}40;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; position: relative;">
-                    <div class="drag-handle-container" style="display:flex; align-items:center; gap:4px;">
-                        <button class="card-move-up-btn" data-card-index="${globalIndex}" title="上移"
-                            style="${upBtnStyle}">
-                            ▲
-                        </button>
-                        <button class="card-move-down-btn" data-card-index="${globalIndex}" title="下移"
-                            style="${downBtnStyle}">
-                            ▼
-                        </button>
+                    <div class="drag-handle-container" style="display:flex; align-items:center; gap:4px; min-width: 0;">
                     <h4 style="margin: 0; font-size: 0.85rem; color: ${borderColor};">${cardName}</h4>
                     </div>
                     <div style="display: flex; gap: 4px; position: absolute; top: 0; right: 0;">
@@ -425,24 +414,6 @@ async function renderCardControls() {
                         aria-label="卡片颜色" 
                         style="width: 24px; height: 24px; margin-left: 4px;">
                 </div>
-                ${
-                    isBookmarkCard && bookmarkCategoryIndex !== null
-                        ? `
-                <div class="control-row" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem;">
-                    <label style="width: 50px; font-size: 0.7rem;">宽度</label>
-                    <input type="range" class="card-width-range" data-category="${bookmarkCategoryIndex}" min="100" max="${maxCardWidth}" step="10" value="${currentWidthPx}"
-                        style="flex: 1;">
-                    <span class="card-width-value" style="font-size: 0.7rem; width: 60px; text-align: right;">${currentWidthPx}px</span>
-                </div>
-                <div class="control-row" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.15rem;">
-                    <label style="width: 50px; font-size: 0.7rem;">高度</label>
-                    <input type="range" class="card-height-range" data-category="${bookmarkCategoryIndex}" min="70" max="2000" step="10" value="${currentHeightPx}"
-                        style="flex: 1;">
-                    <span class="card-height-value" style="font-size: 0.7rem; width: 60px; text-align: right;">${currentHeightPx}px</span>
-                </div>
-                        `
-                        : ''
-                }
             </div>
         `;
     });
@@ -452,15 +423,19 @@ async function renderCardControls() {
     // 绑定事件监听器（避免内联事件处理器，符合CSP）
     bindDashboardLayoutEvents(container);
 
+    enableCardControlsDragSort();
+
     // 绑定管理功能按钮事件
     bindManagementButtons();
     
     // 绑定用户和备份管理事件（包括用户资料模态框按钮）
     bindUserAndBackupEvents();
     
-    // 不再启用设置面板中的卡片拖拽排序，改用上下移动按钮
+    if (window.enableBookmarkCardSort) {
+        window.enableBookmarkCardSort();
+    }
 
-    // 布局编辑默认开启（仅启用可视上的联动逻辑，不再启用卡片拖拽）
+    // 布局编辑默认开启（仅启用可视上的联动逻辑，不再启用监控卡片拖拽）
     // enableLayoutEditing();
     
     // 不再启用便签待办的拖拽和调整大小（固定位置，不可移动和调整大小）
@@ -625,46 +600,6 @@ function bindDashboardLayoutEvents(container) {
         });
     }
 
-    // 卡片顺序上下移动按钮
-    const controlsList = document.getElementById('card-controls-list');
-    if (controlsList) {
-        controlsList.querySelectorAll('.card-move-up-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const index = parseInt(btn.getAttribute('data-card-index'));
-                if (isNaN(index) || index <= 0) return;
-                await moveCardControl(index, -1);
-            });
-        });
-        controlsList.querySelectorAll('.card-move-down-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const index = parseInt(btn.getAttribute('data-card-index'));
-                if (isNaN(index)) return;
-                await moveCardControl(index, 1);
-            });
-        });
-    }
-
-    // 卡片顺序上下移动按钮
-    // 卡片顺序上下移动按钮
-    container.querySelectorAll('.card-move-up-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const index = parseInt(btn.getAttribute('data-card-index'));
-            if (isNaN(index) || index <= 0) return;
-            await moveCardControl(index, -1);
-        });
-    });
-    container.querySelectorAll('.card-move-down-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const index = parseInt(btn.getAttribute('data-card-index'));
-            if (isNaN(index)) return;
-            await moveCardControl(index, 1);
-        });
-    });
-
     // 便签待办显示/隐藏按钮
     const todosVisibilityBtn = container.querySelector('#todos-visibility-btn');
     if (todosVisibilityBtn) {
@@ -729,6 +664,9 @@ function bindDashboardLayoutEvents(container) {
             document.querySelectorAll('.highlighted-card').forEach(card => {
                 card.classList.remove('highlighted-card');
             });
+            if (window.clearBookmarkCardResizeHandles) {
+                window.clearBookmarkCardResizeHandles();
+            }
         }
     });
 
@@ -788,160 +726,6 @@ function bindDashboardLayoutEvents(container) {
         }
     });
 
-    // 处理所有宽度滑块（仅书签分类卡片）
-    container.querySelectorAll('.card-width-range').forEach((range) => {
-        const category = range.getAttribute('data-category');
-        const valueSpan = range.parentElement.querySelector('.card-width-value');
-        if (!category) return;
-
-        // 宽度吸附函数：在固定位置增加“磁性”效果
-        // 固定吸附点：496px，752px，1016px
-        function snapWidth(rawVal) {
-            const width = parseInt(rawVal, 10);
-            if (Number.isNaN(width)) return width;
-
-            // 固定吸附点
-            const snapPoints = [
-                496,   // 吸附点1
-                752,   // 吸附点2
-                1016   // 吸附点3
-            ];
-
-            // 吸附容差：30px
-            const tolerance = 30;
-
-            let snapped = width;
-            let minDiff = Infinity;
-            snapPoints.forEach(p => {
-                const diff = Math.abs(width - p);
-                if (diff <= tolerance && diff < minDiff) {
-                    minDiff = diff;
-                    snapped = p;
-                }
-            });
-
-            return snapped;
-        }
-
-        function applyWidth(val, save) {
-            const snappedWidth = snapWidth(val);
-            if (snappedWidth == null) return;
-
-            // 更新滑杆位置为吸附后的值
-            range.value = snappedWidth;
-
-            const card = document.querySelector(`.bookmark-card[data-category="${CSS.escape(category)}"]`);
-            if (card) {
-                card.style.width = snappedWidth + 'px';
-            }
-            if (valueSpan) {
-                valueSpan.textContent = `${snappedWidth}px`;
-            }
-            if (save && window.updateBookmarkCardSize) {
-                window.updateBookmarkCardSize(category, snappedWidth, null);
-            }
-            
-            // 更新滚动条状态
-            setTimeout(() => {
-                if (window.updateBookmarkScrollbars) {
-                    window.updateBookmarkScrollbars();
-                }
-            }, 50);
-        }
-
-        range.addEventListener('input', (e) => {
-            applyWidth(e.target.value, false);
-        });
-
-        range.addEventListener('change', (e) => {
-            applyWidth(e.target.value, true);
-        });
-    });
-
-    //处理所有高度滑块（仅书签分类卡片）
-    container.querySelectorAll('.card-height-range').forEach((range) => {
-        const category = range.getAttribute('data-category');
-        const valueSpan = range.parentElement.querySelector('.card-height-value');
-        if (!category) return;
-
-        // 高度吸附函数：基于可以完整展示1行、2行、3行...书签的高度
-        // 计算规则：
-        // - 卡片顶部padding: 24px (1.5rem)
-        // - 标题区域高度: 约40px (标题高度 + margin-bottom)
-        // - 书签项高度: 30px
-        // - 行间距: 12px (0.75rem)
-        // - 卡片底部padding: 24px (1.5rem)
-        // - 额外底部空间: 10px (避免拥挤)
-        // 总高度 = 24 + 40 + n×30 + (n-1)×12 + 24 + 10 = 98 + n×30 + (n-1)×12 = 86 + 42n
-        function snapHeight(rawVal) {
-            const height = parseInt(rawVal, 10);
-            if (Number.isNaN(height)) return height;
-
-            // 基础高度：顶部padding + 标题区域 + 底部padding + 额外底部空间 = 24 + 40 + 24 + 10 = 98px
-            const baseHeight = 98;
-            // 每行书签高度：书签项高度 + 行间距 = 30 + 12 = 42px
-            const rowHeight = 42;
-            // 第一行书签高度：只有书签项高度，没有行间距 = 30px
-            const firstRowHeight = 30;
-
-            // 计算可以完整展示的行数对应的吸附点（最多计算到20行）
-            const snapPoints = [];
-            for (let n = 1; n <= 20; n++) {
-                // n行书签的总高度 = 基础高度 + 第一行 + (n-1)行 × 每行高度
-                const snapHeight = baseHeight + firstRowHeight + (n - 1) * rowHeight;
-                snapPoints.push(snapHeight);
-            }
-
-            // 吸附容差：30px（约半行的高度）
-            const tolerance = 30;
-
-            let snapped = height;
-            let minDiff = Infinity;
-            snapPoints.forEach(p => {
-                const diff = Math.abs(height - p);
-                if (diff <= tolerance && diff < minDiff) {
-                    minDiff = diff;
-                    snapped = p;
-                }
-            });
-
-            return snapped;
-        }
-
-        function applyHeight(val, save) {
-            const snappedHeight = snapHeight(val);
-            if (snappedHeight == null) return;
-
-            // 更新滑杆位置为吸附后的值
-            range.value = snappedHeight;
-
-            const card = document.querySelector(`.bookmark-card[data-category="${CSS.escape(category)}"]`);
-            if (card) {
-                card.style.height = snappedHeight + 'px';
-            }
-            if (valueSpan) {
-                valueSpan.textContent = `${snappedHeight}px`;
-            }
-            if (save && window.updateBookmarkCardSize) {
-                window.updateBookmarkCardSize(category, null, snappedHeight);
-            }
-            
-            // 更新滚动条状态
-            setTimeout(() => {
-                if (window.updateBookmarkScrollbars) {
-                    window.updateBookmarkScrollbars();
-                }
-            }, 50);
-        }
-
-        range.addEventListener('input', (e) => {
-            applyHeight(e.target.value, false);
-        });
-
-        range.addEventListener('change', (e) => {
-            applyHeight(e.target.value, true);
-        });
-    });
 }
 
 function getCardName(card) {
@@ -2481,17 +2265,25 @@ async function renameCard(index, newName) {
 function bindCardClickEvents() {
     const cards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
 
-    cards.forEach((card, index) => {
+    cards.forEach((card) => {
         // 移除旧的事件监听器（避免重复绑定）
         // 使用 once 选项确保只绑定一次，或者使用标记来避免重复绑定
         if (card.dataset.cardClickBound) return;
         card.dataset.cardClickBound = 'true';
         
         card.addEventListener('click', (e) => {
+            if (Date.now() < bookmarkCardSortSuppressClickUntil) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
             // 忽略拖拽或调整大小时的点击
             if (e.target.classList.contains('resize-handle') || 
                 e.target.classList.contains('bookmark-resize-handle-right') ||
-                e.target.classList.contains('bookmark-resize-handle-bottom')) return;
+                e.target.classList.contains('bookmark-resize-handle-bottom') ||
+                e.target.closest('.bookmark-resize-handle-right-edge') ||
+                e.target.closest('.bookmark-resize-handle-bottom-edge')) return;
             
             // 忽略点击书签项内部链接的点击（让链接正常跳转，由 handleBookmarkClick 处理）
             if (e.target.closest('.bookmark-item')) {
@@ -2509,8 +2301,10 @@ function bindCardClickEvents() {
             const sidebar = document.getElementById('admin-sidebar');
             if (sidebar && sidebar.classList.contains('open')) {
                 e.stopPropagation(); // 阻止冒泡，避免触发关闭逻辑
+                const currentIndex = getCardControlIndex(card);
+                if (currentIndex === -1) return;
                 // 点击左侧卡片空白位置，滚动右侧设置面板使其居中，但不滚动左侧卡片
-                highlightCardControl(index, true, false);
+                highlightCardControl(currentIndex, true, false);
             }
         });
     });
@@ -2534,6 +2328,9 @@ function bindCardClickEvents() {
         document.querySelectorAll('.card-control-item').forEach(item => {
             item.classList.remove('highlighted');
         });
+        if (window.clearBookmarkCardResizeHandles) {
+            window.clearBookmarkCardResizeHandles();
+        }
     }, true);
 }
 
@@ -2545,6 +2342,9 @@ function highlightCardControl(index, shouldScroll = true, scrollLeftCard = true)
     document.querySelectorAll('.highlighted-card').forEach(card => {
         card.classList.remove('highlighted-card');
     });
+    if (window.clearBookmarkCardResizeHandles) {
+        window.clearBookmarkCardResizeHandles();
+    }
 
     // 添加高亮到对应控制项
     const controlItem = document.querySelector(`.card-control-item[data-card-index="${index}"]`);
@@ -2557,6 +2357,9 @@ function highlightCardControl(index, shouldScroll = true, scrollLeftCard = true)
     const card = cards[index];
     if (card) {
         card.classList.add('highlighted-card');
+        if (card.classList.contains('bookmark-card') && window.addBookmarkCardResizeHandles) {
+            window.addBookmarkCardResizeHandles(card);
+        }
     }
 
     // 当点击左侧卡片时，只滚动右侧设置面板使其居中，不滚动左侧卡片
@@ -2706,6 +2509,8 @@ window.toggleBookmarkCardVisibility = toggleBookmarkCardVisibility;
 window.applyBookmarkScale = applyBookmarkScale;
 window.restoreBookmarkScale = restoreBookmarkScale;
 window.enableCardControlsDragSort = enableCardControlsDragSort;
+window.enableBookmarkCardSort = enableBookmarkCardSort;
+window.disableBookmarkCardSort = disableBookmarkCardSort;
 window.bindManagementButtons = bindManagementButtons;
 window.bindUserAndBackupEvents = bindUserAndBackupEvents;
 window.showUserManagementModal = showUserManagementModal;
@@ -2745,24 +2550,13 @@ function updateAllCardGradients() {
             updateCardControlItemColor(index, color, opacity);
         });
 
-        // 同步更新全局设置中卡片控制里的「上移 / 下移 / 删除」按钮样式，保证主题切换时实时生效
+        // 同步更新全局设置中卡片控制里的删除按钮样式，保证主题切换时实时生效
         const root = document.documentElement;
         const currentTheme = root.getAttribute('data-theme') || 'dark';
         const isLightTheme = currentTheme === 'light';
 
         const controlsList = document.getElementById('card-controls-list');
         if (controlsList) {
-            const upDownLightStyle =
-                'width:18px;height:18px;border-radius:999px;border:1px solid rgba(148,163,184,0.6);' +
-                'background:rgba(255,255,255,0.4);color:var(--accent-color);cursor:pointer;' +
-                'display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;' +
-                'box-shadow:0 1px 2px rgba(15,23,42,0.05);';
-            const upDownDarkStyle =
-                'width:18px;height:18px;border-radius:999px;border:1px solid rgba(139,92,246,0.6);' +
-                'background:rgba(139,92,246,0.85);color:#F9FAFB;cursor:pointer;' +
-                'display:flex;align-items:center;justify-content:center;font-size:0.65rem;padding:0;' +
-                'box-shadow:0 1px 3px rgba(139,92,246,0.35);';
-
             const deleteLightStyle =
                 'width: 20px; height: 20px; padding: 0; background: rgba(255,255,255,0.5);' +
                 'color: var(--text-secondary); border: 1px solid rgba(226,232,240,0.8); border-radius: 4px;' +
@@ -2774,12 +2568,8 @@ function updateAllCardGradients() {
                 'cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center;' +
                 'justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 3px rgba(15,23,42,0.35);';
 
-            const upDownStyle = isLightTheme ? upDownLightStyle : upDownDarkStyle;
             const delStyle = isLightTheme ? deleteLightStyle : deleteDarkStyle;
 
-            controlsList.querySelectorAll('.card-move-up-btn, .card-move-down-btn').forEach(btn => {
-                btn.setAttribute('style', upDownStyle);
-            });
             controlsList.querySelectorAll('.delete-category-btn').forEach(btn => {
                 btn.setAttribute('style', delStyle);
             });
@@ -2829,90 +2619,133 @@ window.restoreTheme = restoreTheme;
 // ===== 设置面板卡片拖拽排序 =====
 let isCardControlsDragging = false;
 let draggedControlItem = null;
-let draggedControlIndex = null;
 let cardControlsDragPreviewIndicator = null;
 let cardControlsLastTargetItem = null;
 let cardControlsDragStartY = 0;
 let cardControlsDragCurrentY = 0;
+let cardControlsDragPlaceholder = null;
+let cardControlsPointerOffsetY = 0;
+let cardControlsOriginalUserSelect = '';
+
+function cleanupCardControlsDragState() {
+    document.body.style.userSelect = cardControlsOriginalUserSelect;
+    cardControlsOriginalUserSelect = '';
+
+    if (draggedControlItem) {
+        draggedControlItem.style.transition = '';
+        draggedControlItem.style.opacity = '';
+        draggedControlItem.style.cursor = '';
+        draggedControlItem.style.transform = '';
+        draggedControlItem.style.boxShadow = '';
+        draggedControlItem.style.zIndex = '';
+        draggedControlItem.style.position = '';
+        draggedControlItem.style.left = '';
+        draggedControlItem.style.top = '';
+        draggedControlItem.style.width = '';
+        draggedControlItem.style.pointerEvents = '';
+    }
+
+    if (cardControlsDragPreviewIndicator && cardControlsDragPreviewIndicator.parentNode) {
+        cardControlsDragPreviewIndicator.parentNode.removeChild(cardControlsDragPreviewIndicator);
+    }
+    cardControlsDragPreviewIndicator = null;
+
+    if (cardControlsLastTargetItem && cardControlsLastTargetItem !== draggedControlItem) {
+        cardControlsLastTargetItem.style.transform = '';
+        cardControlsLastTargetItem.style.marginTop = '';
+        cardControlsLastTargetItem.style.marginBottom = '';
+    }
+    cardControlsLastTargetItem = null;
+
+    if (cardControlsDragPlaceholder && cardControlsDragPlaceholder.parentNode) {
+        cardControlsDragPlaceholder.parentNode.removeChild(cardControlsDragPlaceholder);
+    }
+    cardControlsDragPlaceholder = null;
+
+    document.removeEventListener('mousemove', handleCardControlsDrag);
+    document.removeEventListener('mouseup', stopCardControlsDrag);
+}
 
 // 启用设置面板中的卡片拖拽排序
 function enableCardControlsDragSort() {
     const container = document.getElementById('card-controls-list');
     if (!container) return;
     
-    const items = container.querySelectorAll('.card-control-item');
-    items.forEach((item, index) => {
-        // 查找拖拽手柄容器（在h4前面的容器）
-        const dragHandleContainer = item.querySelector('.drag-handle-container');
-        if (!dragHandleContainer) return;
+    const items = container.querySelectorAll('.card-control-item[data-bookmark-category]');
+    items.forEach(item => {
+        if (item.dataset.dragSortBound === 'true') return;
 
-        // 如果已经有拖拽手柄，跳过
-        if (dragHandleContainer.querySelector('.drag-handle-controls')) return;
+        item.dataset.dragSortBound = 'true';
+        item.style.cursor = 'move';
 
-        // 添加拖拽图标和样式
-        const dragHandle = document.createElement('div');
-        dragHandle.className = 'drag-handle-controls';
-        dragHandle.innerHTML = '⋮⋮';
-        dragHandle.style.cssText = `
-            width: 32px;
-            height: 32px;
-            cursor: move;
-            color: var(--text-secondary);
-            font-size: 1.2rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0.6;
-            transition: opacity 0.2s;
-            user-select: none;
-            line-height: 1;
-        `;
-        dragHandle.title = '拖动调整位置';
+        item.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            if (e.target.closest('input, button, select, textarea, label, a')) return;
 
-        // 悬停时显示
-        dragHandle.addEventListener('mouseenter', () => {
-            dragHandle.style.opacity = '1';
+            const startX = e.clientX;
+            const startY = e.clientY;
+
+            const handleMouseMove = (moveEvent) => {
+                const movedX = Math.abs(moveEvent.clientX - startX);
+                const movedY = Math.abs(moveEvent.clientY - startY);
+                if (Math.max(movedX, movedY) < 6) return;
+
+                cleanupPendingDrag();
+                startCardControlsDrag(moveEvent, item);
+            };
+
+            const cleanupPendingDrag = () => {
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', cleanupPendingDrag);
+            };
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', cleanupPendingDrag);
         });
-        dragHandle.addEventListener('mouseleave', () => {
-            dragHandle.style.opacity = '0.6';
-        });
-
-        // 拖拽开始
-        dragHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const cardIndex = parseInt(item.dataset.cardIndex);
-            if (!isNaN(cardIndex)) {
-                startCardControlsDrag(e, item, cardIndex);
-            }
-        });
-
-        // 插入到拖拽手柄容器中
-        dragHandleContainer.appendChild(dragHandle);
     });
 }
 
 // 开始拖拽设置面板中的卡片
-function startCardControlsDrag(e, item, cardIndex) {
+function startCardControlsDrag(e, item) {
     e.preventDefault();
     e.stopPropagation();
     
     isCardControlsDragging = true;
     draggedControlItem = item;
-    draggedControlIndex = cardIndex;
+    const itemRect = item.getBoundingClientRect();
+    const container = document.getElementById('card-controls-list');
     cardControlsDragStartY = e.clientY;
     cardControlsDragCurrentY = e.clientY;
+    cardControlsPointerOffsetY = e.clientY - itemRect.top;
+    cardControlsOriginalUserSelect = document.body.style.userSelect;
+
+    cardControlsDragPlaceholder = document.createElement('div');
+    cardControlsDragPlaceholder.className = 'card-controls-drag-placeholder';
+    cardControlsDragPlaceholder.style.height = `${itemRect.height}px`;
+    cardControlsDragPlaceholder.style.marginBottom = getComputedStyle(item).marginBottom;
+    cardControlsDragPlaceholder.style.borderRadius = '0.75rem';
+    cardControlsDragPlaceholder.style.border = '2px dashed rgba(129, 140, 248, 0.45)';
+    cardControlsDragPlaceholder.style.background = 'rgba(129, 140, 248, 0.08)';
+
+    if (item.parentNode) {
+        item.parentNode.insertBefore(cardControlsDragPlaceholder, item.nextSibling);
+    }
     
     // 添加视觉反馈
-    draggedControlItem.style.opacity = '0.7';
-    draggedControlItem.style.transform = 'scale(0.98)';
+    draggedControlItem.style.opacity = '0.92';
+    draggedControlItem.style.transform = 'scale(0.99)';
     draggedControlItem.style.boxShadow = '0 8px 16px rgba(0,0,0,0.3)';
-    draggedControlItem.style.zIndex = '1000';
+    draggedControlItem.style.zIndex = '2000';
     draggedControlItem.style.cursor = 'grabbing';
     draggedControlItem.style.transition = 'none';
+    draggedControlItem.style.position = 'fixed';
+    draggedControlItem.style.left = `${itemRect.left}px`;
+    draggedControlItem.style.top = `${itemRect.top}px`;
+    draggedControlItem.style.width = `${itemRect.width}px`;
+    draggedControlItem.style.pointerEvents = 'none';
+    document.body.style.userSelect = 'none';
     
     // 为其他项添加过渡效果
-    const container = document.getElementById('card-controls-list');
     if (container) {
         const allItems = container.querySelectorAll('.card-control-item');
         allItems.forEach(otherItem => {
@@ -2936,14 +2769,13 @@ function handleCardControlsDrag(e) {
     const container = document.getElementById('card-controls-list');
     if (!container) return;
     
-    // 更新拖拽项的位置
-    const deltaY = cardControlsDragCurrentY - cardControlsDragStartY;
-    draggedControlItem.style.transform = `translateY(${deltaY}px) scale(0.98)`;
+    // 更新拖拽项的位置，让卡片贴近鼠标
+    draggedControlItem.style.top = `${cardControlsDragCurrentY - cardControlsPointerOffsetY}px`;
     
     // 查找目标位置
-    const allItems = Array.from(container.querySelectorAll('.card-control-item[data-card-index]'));
+    const allItems = Array.from(container.querySelectorAll('.card-control-item[data-bookmark-category]'));
     let targetItem = null;
-    let targetIndex = -1;
+    let insertBefore = false;
     
     for (let i = 0; i < allItems.length; i++) {
         const item = allItems[i];
@@ -2952,14 +2784,13 @@ function handleCardControlsDrag(e) {
         const rect = item.getBoundingClientRect();
         const itemMiddle = rect.top + rect.height / 2;
         
-        if (cardControlsDragCurrentY < itemMiddle && i < draggedControlIndex) {
+        if (cardControlsDragCurrentY < itemMiddle) {
             targetItem = item;
-            targetIndex = i;
+            insertBefore = true;
             break;
-        } else if (cardControlsDragCurrentY > itemMiddle && i > draggedControlIndex) {
-            targetItem = item;
-            targetIndex = i;
         }
+        targetItem = item;
+        insertBefore = false;
     }
     
     // 更新预览指示器和目标项样式
@@ -3002,10 +2833,9 @@ function handleCardControlsDrag(e) {
         }
         
         // 插入预览指示器
-        const insertBefore = cardControlsDragCurrentY < targetItem.getBoundingClientRect().top + targetItem.getBoundingClientRect().height / 2;
         if (insertBefore) {
             container.insertBefore(cardControlsDragPreviewIndicator, targetItem);
-    } else {
+        } else {
             if (targetItem.nextSibling) {
                 container.insertBefore(cardControlsDragPreviewIndicator, targetItem.nextSibling);
             } else {
@@ -3016,48 +2846,24 @@ function handleCardControlsDrag(e) {
         // 高亮目标项
         targetItem.style.transform = `translateY(${insertBefore ? '-4px' : '4px'})`;
         cardControlsLastTargetItem = targetItem;
-        
-        // 实际移动DOM元素（在下一帧执行，确保预览先显示）
-        requestAnimationFrame(() => {
-            if (draggedControlItem && targetItem && cardControlsDragPreviewIndicator) {
-                // 临时移除预览指示器
-                const tempIndicator = cardControlsDragPreviewIndicator;
-                if (tempIndicator.parentNode) {
-                    tempIndicator.parentNode.removeChild(tempIndicator);
-                }
-                
-                // 移动拖拽项
-                if (insertBefore) {
-                    container.insertBefore(draggedControlItem, targetItem);
-                } else {
-                    if (targetItem.nextSibling) {
-                        container.insertBefore(draggedControlItem, targetItem.nextSibling);
-                    } else {
-                        container.appendChild(draggedControlItem);
-                    }
-                }
-                
-                // 重新插入预览指示器
-                if (insertBefore) {
-                    container.insertBefore(tempIndicator, draggedControlItem);
-                } else {
-                    if (draggedControlItem.nextSibling) {
-                        container.insertBefore(tempIndicator, draggedControlItem.nextSibling);
-                    } else {
-                        container.appendChild(tempIndicator);
-                    }
-                }
-                
-                // 更新索引
-                const newItems = Array.from(container.querySelectorAll('.card-control-item[data-card-index]'));
-                draggedControlIndex = newItems.indexOf(draggedControlItem);
+
+        if (cardControlsDragPlaceholder) {
+            if (insertBefore) {
+                container.insertBefore(cardControlsDragPlaceholder, targetItem);
+            } else if (targetItem.nextSibling) {
+                container.insertBefore(cardControlsDragPlaceholder, targetItem.nextSibling);
+            } else {
+                container.appendChild(cardControlsDragPlaceholder);
             }
-        });
+        }
     } else if (!targetItem && cardControlsDragPreviewIndicator) {
         // 没有目标项，移除预览指示器
         if (cardControlsDragPreviewIndicator.parentNode) {
             cardControlsDragPreviewIndicator.parentNode.removeChild(cardControlsDragPreviewIndicator);
             cardControlsDragPreviewIndicator = null;
+        }
+        if (cardControlsDragPlaceholder && container.lastChild !== cardControlsDragPlaceholder) {
+            container.appendChild(cardControlsDragPlaceholder);
         }
     }
 }
@@ -3065,34 +2871,27 @@ function handleCardControlsDrag(e) {
 async function stopCardControlsDrag(e) {
     if (!isCardControlsDragging || !draggedControlItem) {
         isCardControlsDragging = false;
+        cleanupCardControlsDragState();
         draggedControlItem = null;
-        draggedControlIndex = null;
-        cardControlsDragPreviewIndicator = null;
-        cardControlsLastTargetItem = null;
-        document.removeEventListener('mousemove', handleCardControlsDrag);
-        document.removeEventListener('mouseup', stopCardControlsDrag);
         return;
-    }
-    
-    // 移除预览指示器
-    if (cardControlsDragPreviewIndicator && cardControlsDragPreviewIndicator.parentNode) {
-        cardControlsDragPreviewIndicator.parentNode.removeChild(cardControlsDragPreviewIndicator);
-        cardControlsDragPreviewIndicator = null;
-    }
-    
-    // 恢复目标项的样式
-    if (cardControlsLastTargetItem && cardControlsLastTargetItem !== draggedControlItem) {
-        cardControlsLastTargetItem.style.transform = '';
-        cardControlsLastTargetItem.style.marginTop = '';
-        cardControlsLastTargetItem.style.marginBottom = '';
-        cardControlsLastTargetItem = null;
     }
     
     // 获取新的顺序
     const container = document.getElementById('card-controls-list');
-    if (!container) return;
+    if (!container) {
+        cleanupCardControlsDragState();
+        isCardControlsDragging = false;
+        draggedControlItem = null;
+        return;
+    }
+
+    if (cardControlsDragPlaceholder && cardControlsDragPlaceholder.parentNode) {
+        container.insertBefore(draggedControlItem, cardControlsDragPlaceholder);
+        cardControlsDragPlaceholder.parentNode.removeChild(cardControlsDragPlaceholder);
+    }
+    cardControlsDragPlaceholder = null;
     
-    const allControlItems = Array.from(container.querySelectorAll('.card-control-item[data-card-index]'));
+    const allControlItems = Array.from(container.querySelectorAll('.card-control-item[data-bookmark-category]'));
     const newOrder = [];
     
     allControlItems.forEach((item, newIndex) => {
@@ -3114,6 +2913,9 @@ async function stopCardControlsDrag(e) {
     const dataManagerInstance = window.dataManager || dataManager;
     if (!dataManagerInstance) {
         console.error('[stopCardControlsDrag] dataManager not available');
+        cleanupCardControlsDragState();
+        isCardControlsDragging = false;
+        draggedControlItem = null;
         return;
     }
     const config = await dataManagerInstance.getDashboardConfig();
@@ -3140,28 +2942,12 @@ async function stopCardControlsDrag(e) {
     
     // 同步更新左侧书签卡片位置
     await syncBookmarkCardOrder(config.bookmarkLayout);
-    
-    // 恢复拖拽项的样式（带动画）
-    draggedControlItem.style.transition = 'transform 0.3s ease, opacity 0.3s ease, box-shadow 0.3s ease';
-    draggedControlItem.style.opacity = '';
-    draggedControlItem.style.cursor = '';
-    draggedControlItem.style.transform = '';
-    draggedControlItem.style.boxShadow = '';
-    draggedControlItem.style.zIndex = '';
-    
-    // 等待动画完成后再移除过渡
-    setTimeout(() => {
-        if (draggedControlItem) {
-            draggedControlItem.style.transition = '';
-        }
-    }, 300);
+    cleanupCardControlsDragState();
+    await renderCardControls();
     
     // 重置状态
     isCardControlsDragging = false;
     draggedControlItem = null;
-    draggedControlIndex = null;
-    document.removeEventListener('mousemove', handleCardControlsDrag);
-    document.removeEventListener('mouseup', stopCardControlsDrag);
 }
 
 // 同步书签卡片顺序（左侧）
@@ -3183,6 +2969,359 @@ async function syncBookmarkCardOrder(bookmarkLayout) {
             container.appendChild(card);
         }
     });
+}
+
+let draggedBookmarkCard = null;
+let bookmarkCardDropTarget = null;
+let bookmarkCardDropPosition = null;
+let draggedBookmarkCardCategory = null;
+let bookmarkCardSortOriginalUserSelect = '';
+let bookmarkCardSortPlaceholder = null;
+let bookmarkCardSortPointerOffsetX = 0;
+let bookmarkCardSortPointerOffsetY = 0;
+let bookmarkCardSortAnimationFrame = null;
+let bookmarkCardSortPendingPoint = null;
+let bookmarkCardSortSuppressClickUntil = 0;
+let pendingBookmarkCardSortCard = null;
+let pendingBookmarkCardSortStartX = 0;
+let pendingBookmarkCardSortStartY = 0;
+
+function cleanupPendingBookmarkCardSortStart() {
+    document.removeEventListener('mousemove', handlePendingBookmarkCardSortMouseMove);
+    document.removeEventListener('mouseup', cleanupPendingBookmarkCardSortStart);
+    pendingBookmarkCardSortCard = null;
+}
+
+function getCardControlIndex(card) {
+    if (!card) return -1;
+
+    if (card.classList.contains('bookmark-card')) {
+        const categoryName = card.dataset.category;
+        if (categoryName) {
+            const controlItem = document.querySelector(`.card-control-item[data-bookmark-category="${CSS.escape(categoryName)}"]`);
+            if (controlItem) {
+                const controlIndex = parseInt(controlItem.dataset.cardIndex, 10);
+                if (!Number.isNaN(controlIndex)) {
+                    return controlIndex;
+                }
+            }
+        }
+    }
+
+    const currentCards = Array.from(document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card'));
+    return currentCards.indexOf(card);
+}
+
+function clearBookmarkCardSortIndicators() {
+    document.querySelectorAll('#bookmarks-container .bookmark-card').forEach(card => {
+        card.classList.remove('drag-over', 'bookmark-card-sort-before', 'bookmark-card-sort-after', 'bookmark-card-sorting');
+    });
+    bookmarkCardDropTarget = null;
+    bookmarkCardDropPosition = null;
+}
+
+function cleanupBookmarkCardSortFloatingState() {
+    if (bookmarkCardSortAnimationFrame !== null) {
+        cancelAnimationFrame(bookmarkCardSortAnimationFrame);
+        bookmarkCardSortAnimationFrame = null;
+    }
+    bookmarkCardSortPendingPoint = null;
+
+    if (draggedBookmarkCard) {
+        draggedBookmarkCard.style.position = '';
+        draggedBookmarkCard.style.left = '';
+        draggedBookmarkCard.style.top = '';
+        draggedBookmarkCard.style.width = '';
+        draggedBookmarkCard.style.height = '';
+        draggedBookmarkCard.style.zIndex = '';
+        draggedBookmarkCard.style.pointerEvents = '';
+        draggedBookmarkCard.style.opacity = '';
+        draggedBookmarkCard.style.transform = '';
+        draggedBookmarkCard.style.cursor = '';
+        draggedBookmarkCard.style.transition = '';
+    }
+
+    if (bookmarkCardSortPlaceholder && bookmarkCardSortPlaceholder.parentNode) {
+        bookmarkCardSortPlaceholder.parentNode.removeChild(bookmarkCardSortPlaceholder);
+    }
+    bookmarkCardSortPlaceholder = null;
+
+    document.body.style.userSelect = bookmarkCardSortOriginalUserSelect;
+    bookmarkCardSortOriginalUserSelect = '';
+    document.body.classList.remove('is-sorting-bookmark-card');
+
+    document.removeEventListener('mousemove', handleBookmarkCardSortMouseMove);
+    document.removeEventListener('mouseup', handleBookmarkCardSortMouseUp);
+}
+
+function getBookmarkCardDropPosition(card, clientX, clientY) {
+    if (!card || !draggedBookmarkCard) {
+        return 'after';
+    }
+
+    const targetRect = card.getBoundingClientRect();
+    const draggedRect = draggedBookmarkCard.getBoundingClientRect();
+    const sameRow = Math.abs(targetRect.top - draggedRect.top) < Math.min(targetRect.height, draggedRect.height) * 0.5;
+
+    if (sameRow) {
+        const targetCenterX = targetRect.left + targetRect.width / 2;
+        return clientX < targetCenterX ? 'before' : 'after';
+    }
+
+    const targetCenterY = targetRect.top + targetRect.height / 2;
+    return clientY < targetCenterY ? 'before' : 'after';
+}
+
+function findNearestBookmarkSortTarget(clientX, clientY) {
+    const cards = Array.from(document.querySelectorAll('#bookmarks-container .bookmark-card'))
+        .filter(card => card !== draggedBookmarkCard);
+
+    if (!cards.length) {
+        return null;
+    }
+
+    let nearestCard = null;
+    let nearestDistance = Infinity;
+
+    cards.forEach(card => {
+        const rect = card.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const distance = Math.abs(clientX - centerX) + Math.abs(clientY - centerY);
+
+        if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestCard = card;
+        }
+    });
+
+    return nearestCard;
+}
+
+function updateBookmarkSortTarget(clientX, clientY, explicitCard = null) {
+    if (!draggedBookmarkCard) {
+        return;
+    }
+
+    const targetCard = explicitCard && explicitCard !== draggedBookmarkCard
+        ? explicitCard
+        : findNearestBookmarkSortTarget(clientX, clientY);
+
+    clearBookmarkCardSortIndicators();
+
+    if (!targetCard) {
+        return;
+    }
+
+    const dropPosition = getBookmarkCardDropPosition(targetCard, clientX, clientY);
+    targetCard.classList.add('drag-over');
+    targetCard.classList.add(dropPosition === 'before' ? 'bookmark-card-sort-before' : 'bookmark-card-sort-after');
+    bookmarkCardDropTarget = targetCard;
+    bookmarkCardDropPosition = dropPosition;
+
+    const container = document.getElementById('bookmarks-container');
+    if (container && bookmarkCardSortPlaceholder) {
+        if (dropPosition === 'before') {
+            container.insertBefore(bookmarkCardSortPlaceholder, targetCard);
+        } else if (targetCard.nextSibling) {
+            container.insertBefore(bookmarkCardSortPlaceholder, targetCard.nextSibling);
+        } else {
+            container.appendChild(bookmarkCardSortPlaceholder);
+        }
+    }
+}
+
+function applyBookmarkCardSortFloatingPosition() {
+    bookmarkCardSortAnimationFrame = null;
+    if (!draggedBookmarkCard || !bookmarkCardSortPendingPoint) {
+        return;
+    }
+
+    draggedBookmarkCard.style.left = `${bookmarkCardSortPendingPoint.x - bookmarkCardSortPointerOffsetX}px`;
+    draggedBookmarkCard.style.top = `${bookmarkCardSortPendingPoint.y - bookmarkCardSortPointerOffsetY}px`;
+}
+
+function queueBookmarkCardSortFloatingPosition(clientX, clientY) {
+    bookmarkCardSortPendingPoint = { x: clientX, y: clientY };
+    if (bookmarkCardSortAnimationFrame !== null) {
+        return;
+    }
+    bookmarkCardSortAnimationFrame = requestAnimationFrame(applyBookmarkCardSortFloatingPosition);
+}
+
+function handleBookmarkCardSortDragStart(e) {
+    if (!document.body.classList.contains('sidebar-open')) {
+        return;
+    }
+
+    if (e.target.closest('.bookmark-item-wrapper, .bookmark-item, button, input, textarea, label, a, .category-name-input, .bookmark-resize-handle-right-edge, .bookmark-resize-handle-bottom-edge')) {
+        return;
+    }
+
+    if (e.button !== 0) {
+        return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    draggedBookmarkCard = this;
+    draggedBookmarkCardCategory = this.dataset.category || null;
+    const cardRect = this.getBoundingClientRect();
+    bookmarkCardSortOriginalUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+    bookmarkCardSortPointerOffsetX = e.clientX - cardRect.left;
+    bookmarkCardSortPointerOffsetY = e.clientY - cardRect.top;
+    this.classList.add('bookmark-card-sorting');
+    document.body.classList.add('is-sorting-bookmark-card');
+    this.style.position = 'fixed';
+    this.style.left = `${cardRect.left}px`;
+    this.style.top = `${cardRect.top}px`;
+    this.style.width = `${cardRect.width}px`;
+    this.style.height = `${cardRect.height}px`;
+    this.style.zIndex = '2000';
+    this.style.pointerEvents = 'none';
+    this.style.opacity = '0.92';
+    this.style.transform = 'scale(0.99)';
+    this.style.cursor = 'grabbing';
+    this.style.transition = 'none';
+
+    bookmarkCardSortPlaceholder = document.createElement('div');
+    bookmarkCardSortPlaceholder.className = 'bookmark-card-sort-placeholder';
+    bookmarkCardSortPlaceholder.style.width = `${cardRect.width}px`;
+    bookmarkCardSortPlaceholder.style.height = `${cardRect.height}px`;
+    bookmarkCardSortPlaceholder.style.margin = getComputedStyle(this).margin;
+    bookmarkCardSortPlaceholder.style.borderRadius = '1rem';
+    bookmarkCardSortPlaceholder.style.border = '2px dashed rgba(129, 140, 248, 0.45)';
+    bookmarkCardSortPlaceholder.style.background = 'rgba(129, 140, 248, 0.08)';
+
+    if (this.parentNode) {
+        this.parentNode.insertBefore(bookmarkCardSortPlaceholder, this.nextSibling);
+    }
+
+    const currentIndex = getCardControlIndex(this);
+    if (currentIndex !== -1 && typeof highlightCardControl === 'function') {
+        highlightCardControl(currentIndex, false, false);
+    }
+    queueBookmarkCardSortFloatingPosition(e.clientX, e.clientY);
+    updateBookmarkSortTarget(e.clientX, e.clientY, this);
+
+    document.addEventListener('mousemove', handleBookmarkCardSortMouseMove);
+    document.addEventListener('mouseup', handleBookmarkCardSortMouseUp);
+}
+
+function handlePendingBookmarkCardSortMouseMove(e) {
+    if (!pendingBookmarkCardSortCard) {
+        cleanupPendingBookmarkCardSortStart();
+        return;
+    }
+
+    const movedX = Math.abs(e.clientX - pendingBookmarkCardSortStartX);
+    const movedY = Math.abs(e.clientY - pendingBookmarkCardSortStartY);
+    if (Math.max(movedX, movedY) < 8) {
+        return;
+    }
+
+    const targetCard = pendingBookmarkCardSortCard;
+    cleanupPendingBookmarkCardSortStart();
+    handleBookmarkCardSortDragStart.call(targetCard, e);
+}
+
+function handleBookmarkCardSortPointerDown(e) {
+    if (!document.body.classList.contains('sidebar-open')) {
+        return;
+    }
+
+    if (e.button !== 0) {
+        return;
+    }
+
+    if (e.target.closest('.bookmark-item-wrapper, .bookmark-item, button, input, textarea, label, a, .category-name-input, .bookmark-resize-handle-right-edge, .bookmark-resize-handle-bottom-edge')) {
+        return;
+    }
+
+    cleanupPendingBookmarkCardSortStart();
+    pendingBookmarkCardSortCard = this;
+    pendingBookmarkCardSortStartX = e.clientX;
+    pendingBookmarkCardSortStartY = e.clientY;
+
+    document.addEventListener('mousemove', handlePendingBookmarkCardSortMouseMove);
+    document.addEventListener('mouseup', cleanupPendingBookmarkCardSortStart);
+}
+
+function handleBookmarkCardSortMouseMove(e) {
+    if (!draggedBookmarkCard) {
+        return;
+    }
+
+    e.preventDefault();
+    queueBookmarkCardSortFloatingPosition(e.clientX, e.clientY);
+
+    const explicitCard = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('#bookmarks-container .bookmark-card') || null;
+    updateBookmarkSortTarget(e.clientX, e.clientY, explicitCard);
+}
+
+async function handleBookmarkCardSortMouseUp(e) {
+    if (!draggedBookmarkCard) {
+        cleanupBookmarkCardSortFloatingState();
+        return;
+    }
+
+    e.preventDefault();
+
+    const container = document.getElementById('bookmarks-container');
+    if (container && bookmarkCardSortPlaceholder && bookmarkCardSortPlaceholder.parentNode) {
+        container.insertBefore(draggedBookmarkCard, bookmarkCardSortPlaceholder);
+    }
+
+    const didReorder = Boolean(bookmarkCardDropTarget && bookmarkCardSortPlaceholder);
+
+    cleanupBookmarkCardSortFloatingState();
+    bookmarkCardSortSuppressClickUntil = Date.now() + 250;
+
+    if (didReorder) {
+        await updateBookmarkCardOrder();
+    }
+
+    if (draggedBookmarkCardCategory) {
+        const reorderedCard = document.querySelector(`#bookmarks-container .bookmark-card[data-category="${CSS.escape(draggedBookmarkCardCategory)}"]`);
+        const reorderedIndex = getCardControlIndex(reorderedCard);
+        if (reorderedIndex !== -1 && typeof highlightCardControl === 'function') {
+            highlightCardControl(reorderedIndex, false, false);
+        }
+    }
+
+    draggedBookmarkCard = null;
+    draggedBookmarkCardCategory = null;
+    clearBookmarkCardSortIndicators();
+}
+
+function enableBookmarkCardSort() {
+    const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
+    bookmarkCards.forEach(card => {
+        card.classList.add('bookmark-card-sort-enabled');
+        card.removeAttribute('draggable');
+        if (card.dataset.bookmarkSortMouseBound === 'true') {
+            return;
+        }
+        card.dataset.bookmarkSortMouseBound = 'true';
+        card.addEventListener('mousedown', handleBookmarkCardSortPointerDown);
+    });
+}
+
+function disableBookmarkCardSort() {
+    const bookmarkCards = document.querySelectorAll('#bookmarks-container .bookmark-card');
+    bookmarkCards.forEach(card => {
+        card.removeAttribute('draggable');
+        card.classList.remove('bookmark-card-sort-enabled');
+        card.removeEventListener('mousedown', handleBookmarkCardSortPointerDown);
+        delete card.dataset.bookmarkSortMouseBound;
+    });
+    cleanupPendingBookmarkCardSortStart();
+    cleanupBookmarkCardSortFloatingState();
+    clearBookmarkCardSortIndicators();
+    draggedBookmarkCard = null;
+    draggedBookmarkCardCategory = null;
 }
 
 // 更新书签卡片顺序（当左侧拖动时）
@@ -3226,43 +3365,6 @@ async function updateBookmarkCardOrder() {
     await dataManagerInstance.saveDashboardConfig(config);
     
     // 同步更新设置菜单中的位置
-    await renderCardControls();
-}
-
-// 使用上下箭头移动设置面板中的卡片顺序，并同步到左侧书签卡片
-async function moveCardControl(currentIndex, delta) {
-    const dataManagerInstance = window.dataManager || dataManager;
-    if (!dataManagerInstance) return;
-
-    const config = await dataManagerInstance.getDashboardConfig();
-    if (!config.bookmarkLayout || !Array.isArray(config.bookmarkLayout)) {
-        return;
-    }
-
-    const layout = [...config.bookmarkLayout];
-    // 根据 index 排序，保证顺序一致
-    layout.sort((a, b) => {
-        const ai = a.index ?? 999;
-        const bi = b.index ?? 999;
-        return ai - bi;
-    });
-
-    const pos = layout.findIndex(item => (item.index ?? 999) === currentIndex);
-    if (pos === -1) return;
-
-    const targetPos = pos + delta;
-    if (targetPos < 0 || targetPos >= layout.length) return;
-
-    // 交换 index
-    const currentItem = layout[pos];
-    const targetItem = layout[targetPos];
-    const tmpIndex = currentItem.index;
-    currentItem.index = targetItem.index;
-    targetItem.index = tmpIndex;
-
-    config.bookmarkLayout = layout;
-    await dataManagerInstance.saveDashboardConfig(config);
-    await syncBookmarkCardOrder(config.bookmarkLayout);
     await renderCardControls();
 }
 

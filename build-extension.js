@@ -1,200 +1,160 @@
 /**
- * 构建 Chrome 扩展发布包
- * 生成符合 Chrome Web Store 规范的 extension.zip
- * 压缩包根目录直接是 manifest.json（无 extension 文件夹）
+ * 构建 Chrome/Edge 扩展发布包。
+ * 生成的 extension.zip 根目录直接包含 manifest.json，
+ * 可直接用于本地加载或提交到 Chrome Web Store。
  */
 
 const fs = require('fs');
 const path = require('path');
 
-// 检查 archiver 是否可用
 let archiver;
 try {
-    archiver = require('archiver');
+  archiver = require('archiver');
 } catch (error) {
-    console.error('❌ 错误: archiver 模块未安装');
-    console.error('请运行: npm install archiver --save-dev');
-    console.error('\n或者使用手动方法创建 ZIP（见 EXTENSION_CHECK_REPORT.md）');
-    process.exit(1);
+  console.error('错误: 缺少 archiver 依赖。');
+  console.error('请先运行: npm install archiver --save-dev');
+  process.exit(1);
 }
 
-// 扩展目录
 const extensionDir = path.join(__dirname, 'extension');
 const outputFile = path.join(__dirname, 'extension.zip');
 
-// 需要包含的文件（排除文档文件）
 const includeFiles = [
-    'manifest.json',
-    'background.js',
-    'content.js',
-    'content-search.js',
-    'popup.html',
-    'popup.js',
-    'options.html',
-    'options.js',
-    'icon16.png',
-    'icon48.png',
-    'icon128.png'
+  'manifest.json',
+  'background.js',
+  'content.js',
+  'content-search.js',
+  'search-modal-injected.js',
+  'popup.html',
+  'popup.js',
+  'options.html',
+  'options.js',
+  'icon16.png',
+  'icon48.png',
+  'icon128.png',
+  'icon256.png'
 ];
 
-console.log('═══════════════════════════════════════════════════════');
-console.log('  Chrome 扩展包构建工具');
-console.log('═══════════════════════════════════════════════════════\n');
-
-// 检查扩展目录是否存在
-if (!fs.existsSync(extensionDir)) {
-    console.error('❌ 错误: extension 目录不存在');
-    process.exit(1);
+function fail(message) {
+  console.error(`错误: ${message}`);
+  process.exit(1);
 }
 
-// 检查 manifest.json 是否存在
+console.log('========================================');
+console.log("God's Bookmark 扩展打包工具");
+console.log('========================================');
+
+if (!fs.existsSync(extensionDir)) {
+  fail('未找到 extension 目录。');
+}
+
 const manifestPath = path.join(extensionDir, 'manifest.json');
 if (!fs.existsSync(manifestPath)) {
-    console.error('❌ 错误: manifest.json 不存在');
-    process.exit(1);
+  fail('未找到 extension/manifest.json。');
 }
 
-// 读取并验证 manifest.json
 let manifest;
 try {
-    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-    console.log('✓ manifest.json 格式正确');
-    console.log('  名称:', manifest.name);
-    console.log('  版本:', manifest.version);
-    console.log('  Manifest V3:', manifest.manifest_version === 3);
-    
-    // 验证必需字段
-    const requiredFields = ['manifest_version', 'name', 'version'];
-    for (const field of requiredFields) {
-        if (!manifest[field]) {
-            console.error(`❌ 错误: manifest.json 缺少必需字段: ${field}`);
-            process.exit(1);
-        }
-    }
+  manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 } catch (error) {
-    console.error('❌ 错误: manifest.json 格式错误:', error.message);
-    process.exit(1);
+  fail(`manifest.json 解析失败: ${error.message}`);
 }
 
-// 检查必需文件是否存在
-console.log('\n检查必需文件...');
+for (const field of ['manifest_version', 'name', 'version']) {
+  if (!manifest[field]) {
+    fail(`manifest.json 缺少必填字段: ${field}`);
+  }
+}
+
+console.log('manifest.json 校验通过');
+console.log(`名称: ${manifest.name}`);
+console.log(`版本: ${manifest.version}`);
+console.log(`Manifest 版本: ${manifest.manifest_version}`);
+
+console.log('\n检查打包文件...');
 const missingFiles = [];
 for (const file of includeFiles) {
-    const filePath = path.join(extensionDir, file);
-    if (!fs.existsSync(filePath)) {
-        missingFiles.push(file);
-        console.error(`  ❌ 缺失: ${file}`);
-    } else {
-        const stats = fs.statSync(filePath);
-        console.log(`  ✓ ${file.padEnd(25)} ${(stats.size / 1024).toFixed(2)} KB`);
-    }
+  const filePath = path.join(extensionDir, file);
+  if (!fs.existsSync(filePath)) {
+    missingFiles.push(file);
+    console.error(`  缺失: ${file}`);
+    continue;
+  }
+
+  const sizeKB = (fs.statSync(filePath).size / 1024).toFixed(2);
+  console.log(`  OK  ${file.padEnd(24)} ${sizeKB} KB`);
 }
 
 if (missingFiles.length > 0) {
-    console.error('\n❌ 错误: 以下必需文件缺失:', missingFiles.join(', '));
-    process.exit(1);
+  fail(`以下文件缺失: ${missingFiles.join(', ')}`);
 }
 
-// 验证 manifest.json 中引用的文件是否存在
-console.log('\n验证 manifest.json 引用的文件...');
-const referencedFiles = [];
-
-if (manifest.background && manifest.background.service_worker) {
-    referencedFiles.push(manifest.background.service_worker);
+const referencedFiles = new Set();
+if (manifest.background?.service_worker) {
+  referencedFiles.add(manifest.background.service_worker);
 }
-
-if (manifest.content_scripts) {
-    manifest.content_scripts.forEach(script => {
-        if (script.js) {
-            referencedFiles.push(...script.js);
-        }
-    });
+for (const script of manifest.content_scripts || []) {
+  for (const file of script.js || []) {
+    referencedFiles.add(file);
+  }
 }
-
-if (manifest.action && manifest.action.default_popup) {
-    referencedFiles.push(manifest.action.default_popup);
+if (manifest.action?.default_popup) {
+  referencedFiles.add(manifest.action.default_popup);
 }
-
 if (manifest.options_page) {
-    referencedFiles.push(manifest.options_page);
+  referencedFiles.add(manifest.options_page);
+}
+for (const icon of Object.values(manifest.icons || {})) {
+  referencedFiles.add(icon);
+}
+for (const icon of Object.values(manifest.action?.default_icon || {})) {
+  referencedFiles.add(icon);
 }
 
-if (manifest.icons) {
-    Object.values(manifest.icons).forEach(icon => {
-        referencedFiles.push(icon);
-    });
-}
-
-if (manifest.action && manifest.action.default_icon) {
-    Object.values(manifest.action.default_icon).forEach(icon => {
-        referencedFiles.push(icon);
-    });
-}
-
-// 验证引用的文件是否存在
-const missingReferenced = [];
+console.log('\n检查 manifest 引用...');
 for (const file of referencedFiles) {
-    const filePath = path.join(extensionDir, file);
-    if (!fs.existsSync(filePath)) {
-        missingReferenced.push(file);
-        console.error(`  ❌ manifest.json 引用的文件不存在: ${file}`);
-    } else {
-        console.log(`  ✓ ${file}`);
-    }
+  const filePath = path.join(extensionDir, file);
+  if (!fs.existsSync(filePath)) {
+    fail(`manifest 引用了不存在的文件: ${file}`);
+  }
+  console.log(`  OK  ${file}`);
 }
 
-if (missingReferenced.length > 0) {
-    console.error('\n❌ 错误: manifest.json 引用的以下文件不存在:', missingReferenced.join(', '));
-    process.exit(1);
-}
-
-// 删除旧的 ZIP 文件
 if (fs.existsSync(outputFile)) {
-    fs.unlinkSync(outputFile);
-    console.log('\n已删除旧的 extension.zip');
+  fs.unlinkSync(outputFile);
+  console.log('\n已删除旧的 extension.zip');
 }
 
-// 创建 ZIP 文件
-console.log('\n创建 ZIP 压缩包...');
+console.log('\n开始生成 ZIP...');
 const output = fs.createWriteStream(outputFile);
 const archive = archiver('zip', {
-    zlib: { level: 9 } // 最高压缩级别
+  zlib: { level: 9 }
 });
 
 output.on('close', () => {
-    const sizeMB = (archive.pointer() / 1024 / 1024).toFixed(2);
-    const sizeKB = (archive.pointer() / 1024).toFixed(2);
-    console.log('\n═══════════════════════════════════════════════════════');
-    console.log('  ✓ 扩展包构建成功!');
-    console.log('═══════════════════════════════════════════════════════');
-    console.log(`  文件: ${outputFile}`);
-    console.log(`  大小: ${sizeKB} KB (${sizeMB} MB)`);
-    console.log('  文件数: 11 个');
-    console.log('\n可以提交到 Chrome Web Store 了！');
-    console.log('\n提示:');
-    console.log('  1. 在 Chrome 中访问 chrome://extensions/');
-    console.log('  2. 开启"开发者模式"');
-    console.log('  3. 点击"加载已解压的扩展程序"');
-    console.log('  4. 选择 extension 目录');
-    console.log('  或者直接使用生成的 extension.zip 文件');
-    console.log('═══════════════════════════════════════════════════════\n');
+  const sizeKB = (archive.pointer() / 1024).toFixed(2);
+  const sizeMB = (archive.pointer() / 1024 / 1024).toFixed(2);
+
+  console.log('\n========================================');
+  console.log('扩展打包完成');
+  console.log('========================================');
+  console.log(`文件: ${outputFile}`);
+  console.log(`大小: ${sizeKB} KB (${sizeMB} MB)`);
+  console.log(`文件数: ${includeFiles.length}`);
+  console.log('\n发布前建议:');
+  console.log('1. 在 chrome://extensions 中重新加载 extension 目录');
+  console.log('2. 手动验证弹窗、选项页、同步、全局搜索');
+  console.log('3. 上传 extension.zip 前再次检查版本号与图标');
 });
 
-archive.on('error', (err) => {
-    console.error('\n❌ 构建失败:', err);
-    process.exit(1);
+archive.on('error', (error) => {
+  fail(`ZIP 构建失败: ${error.message}`);
 });
 
 archive.pipe(output);
 
-// 添加文件到 ZIP（根目录直接是扩展文件，无 extension 文件夹）
-console.log('\n添加文件到压缩包...');
 for (const file of includeFiles) {
-    const filePath = path.join(extensionDir, file);
-    // 直接添加到 ZIP 根目录，不包含 extension 文件夹
-    archive.file(filePath, { name: file });
-    console.log(`  ✓ ${file}`);
+  archive.file(path.join(extensionDir, file), { name: file });
 }
 
-// 完成压缩
 archive.finalize();

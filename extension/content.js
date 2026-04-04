@@ -68,8 +68,15 @@
           } catch (e) {
             // URL解析失败，使用字符串匹配
             const currentUrl = window.location.href;
+            let serverHost = '';
+            try {
+              serverHost = new URL(serverUrl).hostname || '';
+            } catch (parseError) {
+              serverHost = '';
+            }
+
             resolve(currentUrl.includes(serverUrl) ||
-              currentUrl.includes(serverUrlObj.hostname));
+              (!!serverHost && currentUrl.includes(serverHost)));
           }
         });
       });
@@ -444,32 +451,47 @@
   console.log('[书签同步-Content] Content script loaded');
 
   // ===== 全局搜索快捷键支持 =====
-  // 监听快捷键，在其他页面也可以调出搜索
-  document.addEventListener('keydown', async function (e) {
-    // 如果正在输入，不触发
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+  // 监听快捷键，在不同页面上统一走后台的搜索浮窗逻辑
+  let pendingSearchOverlayFallback = false;
+
+  function hasVisibleSearchModal() {
+    const siteModal = document.getElementById('global-search-modal');
+    if (siteModal) {
+      const display = window.getComputedStyle(siteModal).display;
+      if (display !== 'none') {
+        return true;
+      }
+    }
+
+    return !!document.getElementById('gods-bookmark-search-modal');
+  }
+
+  document.addEventListener('keydown', function (e) {
+    const target = e.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
       return;
     }
 
-    // 默认快捷键 Ctrl+Space
-    if (e.ctrlKey && e.code === 'Space') {
-      // 检查当前页面是否是服务器页面
-      const isServer = await isServerPage();
+    if (!e.ctrlKey || e.altKey || e.shiftKey || e.code !== 'Space') {
+      return;
+    }
 
-      if (isServer) {
-        // 如果是服务器页面，发送消息给网页端打开搜索浮窗
-        e.preventDefault();
-        console.log('[书签同步-Content] 在服务器页面，发送消息打开搜索浮窗');
-        window.postMessage({
-          type: 'OPEN_SEARCH_MODAL'
-        }, '*');
+    e.preventDefault();
+
+    if (pendingSearchOverlayFallback) {
+      return;
+    }
+
+    pendingSearchOverlayFallback = true;
+
+    window.setTimeout(() => {
+      pendingSearchOverlayFallback = false;
+
+      // 如果页面原生快捷键或 Commands API 已经拉起搜索框，就不再重复触发
+      if (hasVisibleSearchModal()) {
         return;
       }
 
-      // 如果不是服务器页面，打开新标签页到搜索页面
-      e.preventDefault();
-
-      // 检查扩展上下文是否有效
       if (!isExtensionContextValid()) {
         if (contextInvalidatedCount < MAX_WARNINGS) {
           console.warn('[书签同步-Content] 扩展上下文已失效，无法打开搜索。请重新加载页面。');
@@ -478,42 +500,9 @@
         return;
       }
 
-      // 打开新标签页到搜索页面
-      const serverUrl = await getServerUrl();
-      if (serverUrl) {
-        sendMessageSafely({
-          action: 'openSearch',
-          url: serverUrl
-        });
-      }
-    }
+      sendMessageSafely({
+        action: 'openSearchOverlay'
+      });
+    }, 120);
   });
-
-  // 获取服务器URL
-  async function getServerUrl() {
-    return new Promise((resolve) => {
-      // 检查扩展上下文是否有效
-      if (!isExtensionContextValid()) {
-        // 如果上下文失效，返回默认URL
-        resolve('http://localhost:3000');
-        return;
-      }
-
-      try {
-        chrome.storage.sync.get(['bookmarkSyncConfig'], (result) => {
-          if (chrome.runtime.lastError) {
-            console.warn('[书签同步-Content] 获取配置失败:', chrome.runtime.lastError.message);
-            resolve('http://localhost:3000');
-            return;
-          }
-          const config = result.bookmarkSyncConfig || {};
-          const serverUrl = config.serverUrl || 'http://localhost:3000';
-          resolve(serverUrl);
-        });
-      } catch (error) {
-        console.warn('[书签同步-Content] 获取服务器URL失败:', error);
-        resolve('http://localhost:3000');
-      }
-    });
-  }
 })();
