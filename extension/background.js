@@ -12,6 +12,9 @@ const DEFAULT_CONFIG = {
 };
 
 let cachedServerUrl = DEFAULT_CONFIG.serverUrl;
+const BOOKMARK_NODE_CACHE_KEY = 'bookmarkNodeCache';
+let bookmarkCacheRefreshTimer = null;
+let serverToBrowserReconcileTimer = null;
 
 // 获取配置
 async function getConfig() {
@@ -251,6 +254,91 @@ async function saveConfig(config) {
   await chrome.storage.sync.set({ bookmarkSyncConfig: config });
 }
 
+function normalizeBookmarkNodeForCache(node) {
+  if (!node || !node.id) {
+    return null;
+  }
+
+  return {
+    id: node.id,
+    title: node.title || '',
+    url: node.url || '',
+    parentId: node.parentId || null
+  };
+}
+
+async function loadBookmarkNodeCache() {
+  const result = await chrome.storage.local.get(BOOKMARK_NODE_CACHE_KEY);
+  return result[BOOKMARK_NODE_CACHE_KEY] && typeof result[BOOKMARK_NODE_CACHE_KEY] === 'object'
+    ? result[BOOKMARK_NODE_CACHE_KEY]
+    : {};
+}
+
+async function saveBookmarkNodeCache(cache) {
+  await chrome.storage.local.set({
+    [BOOKMARK_NODE_CACHE_KEY]: cache
+  });
+}
+
+async function cacheBookmarkNode(node) {
+  const normalizedNode = normalizeBookmarkNodeForCache(node);
+  if (!normalizedNode) {
+    return;
+  }
+
+  const cache = await loadBookmarkNodeCache();
+  cache[normalizedNode.id] = normalizedNode;
+  await saveBookmarkNodeCache(cache);
+}
+
+async function consumeCachedBookmarkNode(nodeId) {
+  const cache = await loadBookmarkNodeCache();
+  const cachedNode = cache[nodeId] || null;
+
+  if (cachedNode) {
+    delete cache[nodeId];
+    await saveBookmarkNodeCache(cache);
+  }
+
+  return cachedNode;
+}
+
+async function rebuildBookmarkNodeCache() {
+  const tree = await chrome.bookmarks.getTree();
+  const cache = {};
+
+  const walk = (node) => {
+    const normalizedNode = normalizeBookmarkNodeForCache(node);
+    if (normalizedNode) {
+      cache[normalizedNode.id] = normalizedNode;
+    }
+
+    if (node && Array.isArray(node.children)) {
+      node.children.forEach(walk);
+    }
+  };
+
+  tree.forEach(walk);
+  await saveBookmarkNodeCache(cache);
+}
+
+function scheduleBookmarkCacheRefresh(delayMs = 300) {
+  if (bookmarkCacheRefreshTimer) {
+    clearTimeout(bookmarkCacheRefreshTimer);
+  }
+
+  bookmarkCacheRefreshTimer = setTimeout(() => {
+    bookmarkCacheRefreshTimer = null;
+    rebuildBookmarkNodeCache().catch((error) => {
+      console.error('[书签同步] 刷新书签缓存失败:', error);
+    });
+  }, delayMs);
+}
+
+rebuildBookmarkNodeCache().catch((error) => {
+  console.warn('[书签同步] 初始化书签缓存失败:', error);
+});
+
 // 获取网站favicon URL
 function getFaviconUrl(url, serverUrl = cachedServerUrl) {
   try {
@@ -382,6 +470,7 @@ async function syncBookmarkToServer(bookmarkId, action = 'created') {
     // 获取分类名称（书签所在的文件夹）
     let categoryName = '书签栏'; // 强制使用"书签栏"作为默认分类
     const folderPath = await getBookmarkFolderPath(bookmarkId);
+    const fullFolderPath = await getBookmarkFullFolderPath(bookmarkId);
     if (folderPath) {
       categoryName = folderPath;
     } else {
@@ -392,6 +481,8 @@ async function syncBookmarkToServer(bookmarkId, action = 'created') {
     console.log('[书签同步] 书签分类:', categoryName, 'folderPath:', folderPath, 'userId:', userId);
 
     // 如果 userId 为 null，记录警告但继续同步（服务器端会尝试从cookie获取）
+    bookmarkData.folderPath = fullFolderPath || '';
+
     if (userId === null || userId === undefined) {
       console.warn('[书签同步] 警告：无法获取当前用户ID，同步可能失败。请确保已登录网站。');
     }
@@ -574,6 +665,12 @@ async function syncFolderToServer(folderId, action = 'created') {
 
 // 监听书签创建
 chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
+  try {
+    await cacheBookmarkNode({ ...bookmark, id });
+  } catch (error) {
+    console.warn('[书签同步] 写入创建节点缓存失败:', error);
+  }
+  scheduleBookmarkCacheRefresh();
   console.log('[书签同步] 检测到新书签或文件夹:', bookmark.title, 'ID:', id);
 
   // 先检查配置是否启用同步
@@ -625,6 +722,15 @@ chrome.bookmarks.onCreated.addListener(async (id, bookmark) => {
 
 // 监听书签更新
 chrome.bookmarks.onChanged.addListener(async (id, changeInfo) => {
+  try {
+    const nodes = await chrome.bookmarks.get(id);
+    if (nodes && nodes.length > 0) {
+      await cacheBookmarkNode(nodes[0]);
+    }
+  } catch (error) {
+    console.warn('[书签同步] 更新节点缓存失败:', error);
+  }
+  scheduleBookmarkCacheRefresh();
   console.log('[书签同步] 检测到书签更新:', changeInfo.title);
   const config = await getConfig();
   if (!config.enabled || !config.syncOnUpdate) {
@@ -636,6 +742,15 @@ chrome.bookmarks.onChanged.addListener(async (id, changeInfo) => {
 
 // 监听书签移动（改变文件夹）
 chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
+  try {
+    const nodes = await chrome.bookmarks.get(id);
+    if (nodes && nodes.length > 0) {
+      await cacheBookmarkNode(nodes[0]);
+    }
+  } catch (error) {
+    console.warn('[书签同步] 移动后更新节点缓存失败:', error);
+  }
+  scheduleBookmarkCacheRefresh();
   console.log('[书签同步] 检测到书签移动:', id, moveInfo);
   const config = await getConfig();
   if (!config.enabled || !config.syncOnUpdate) {
@@ -664,6 +779,7 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
       // 获取新的分类名称（移动后的文件夹）
       let categoryName = '书签栏'; // 强制使用"书签栏"作为默认分类
       const folderPath = await getBookmarkFolderPath(id);
+      const fullFolderPath = await getBookmarkFullFolderPath(id);
       if (folderPath) {
         categoryName = folderPath;
       } else {
@@ -672,6 +788,8 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
       }
 
       console.log('[书签同步] 移动后书签分类:', categoryName, 'folderPath:', folderPath);
+
+      bookmarkData.folderPath = fullFolderPath || '';
 
       // 获取当前登录用户ID
       const userId = await getCurrentUserId(config);
@@ -687,6 +805,7 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
           action: 'moved',
           bookmark: bookmarkData,
           category: categoryName,
+          index: Number.isInteger(moveInfo.index) ? moveInfo.index : undefined,
           userId: userId
         })
       });
@@ -694,6 +813,7 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
       if (response.ok) {
         const result = await response.json();
         console.log('[书签同步] 书签移动同步成功:', bookmarkData.name, '到分类:', categoryName, result);
+        scheduleServerToBrowserReconcile('bookmark-moved');
       }
     } catch (error) {
       console.error('[书签同步] 书签移动同步失败:', error);
@@ -703,6 +823,8 @@ chrome.bookmarks.onMoved.addListener(async (id, moveInfo) => {
 
 // 监听书签删除
 chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
+  const cachedDeletedNode = await consumeCachedBookmarkNode(id);
+  scheduleBookmarkCacheRefresh();
   console.log('[书签同步] 检测到书签删除事件, ID:', id, 'removeInfo:', removeInfo);
   const config = await getConfig();
 
@@ -723,7 +845,7 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
   }
 
   // 获取被删除的书签节点信息
-  let deletedNode = removeInfo.node;
+  let deletedNode = removeInfo.node || cachedDeletedNode;
   
   // 如果 removeInfo.node 不存在，尝试通过 id 获取（虽然已删除，但Chrome可能仍保留信息）
   if (!deletedNode) {
@@ -857,7 +979,7 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
 });
 
 // 递归获取所有书签（按文件夹分类）
-async function getAllBookmarks(node, categoryPath = '', config = null) {
+async function getAllBookmarks(node, categoryPath = '', config = null, fullFolderPath = '') {
   const bookmarks = [];
 
   if (!node || !node.children) {
@@ -873,12 +995,11 @@ async function getAllBookmarks(node, categoryPath = '', config = null) {
       // 这是一个书签
       const bookmarkData = convertBookmarkNode(child);
       if (bookmarkData) {
-        // 如果 categoryPath 为空（根目录的直接书签），使用默认分类
-        // 如果 categoryPath 不为空（在文件夹内的书签），使用文件夹名称作为分类
-        const finalCategory = categoryPath || '书签栏';
+        bookmarkData.folderPath = fullFolderPath || '';
+        const normalizedFinalCategory = categoryPath || '???';
         bookmarks.push({
           bookmark: bookmarkData,
-          category: finalCategory
+          category: normalizedFinalCategory
         });
       }
     } else if (child.children && child.children.length > 0) {
@@ -889,14 +1010,48 @@ async function getAllBookmarks(node, categoryPath = '', config = null) {
       // 如果 categoryPath 为空，说明这是根目录下的文件夹，使用文件夹名称
       // 如果 categoryPath 不为空，说明这是嵌套文件夹，仍然使用文件夹名称（不嵌套分类）
       const newCategory = folderName;
+      const newFullFolderPath = fullFolderPath ? `${fullFolderPath}/${folderName}` : folderName;
 
       // 递归处理文件夹内的书签
-      const folderBookmarks = await getAllBookmarks(child, newCategory, config);
+      const folderBookmarks = await getAllBookmarks(child, newCategory, config, newFullFolderPath);
       bookmarks.push(...folderBookmarks);
     }
   }
 
   return bookmarks;
+}
+
+async function getBookmarkFullFolderPath(bookmarkId) {
+  try {
+    const bookmark = await chrome.bookmarks.get(bookmarkId);
+    if (!bookmark || bookmark.length === 0) return '';
+
+    let currentNode = bookmark[0];
+    const segments = [];
+
+    while (currentNode && currentNode.parentId) {
+      const parents = await chrome.bookmarks.get(currentNode.parentId);
+      if (!parents || parents.length === 0) {
+        break;
+      }
+
+      const parentNode = parents[0];
+      if (parentNode.id === '1' || isRootBookmarkCategory(parentNode.title) || !parentNode.parentId) {
+        break;
+      }
+
+      if (!parentNode.url && parentNode.title) {
+        segments.unshift(parentNode.title);
+      }
+
+      currentNode = parentNode;
+    }
+
+    return segments.join('/');
+  } catch (error) {
+    console.error('获取书签完整文件夹路径失败:', error);
+    return '';
+  }
 }
 
 function isRootBookmarkCategory(categoryName) {
@@ -965,6 +1120,89 @@ async function removeBookmarkNodeWithSyncGuard(nodeId) {
 async function removeFolderNodeWithSyncGuard(nodeId) {
   await setTemporarySyncFlag('skipNextBookmarkRemoveSync');
   return chrome.bookmarks.removeTree(nodeId);
+}
+
+function buildBookmarkIdentityKey(name, url) {
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  const normalizedUrl = typeof url === 'string' ? url.trim() : '';
+  return `${normalizedName}\n${normalizedUrl}`;
+}
+
+async function updateBookmarkNodeWithSyncGuard(nodeId, changes) {
+  await setTemporarySyncFlag('skipNextBookmarkSync');
+  return chrome.bookmarks.update(nodeId, changes);
+}
+
+async function reconcileFolderBookmarksWithServer(folderId, items) {
+  const existingNodes = (await chrome.bookmarks.getChildren(folderId)).filter(node => node.url);
+  const remainingEntries = existingNodes.map(node => ({ node, used: false }));
+
+  let added = 0;
+  let removed = 0;
+  let updated = 0;
+
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || !item.url) {
+      continue;
+    }
+
+    const exactMatch = remainingEntries.find(entry =>
+      !entry.used && buildBookmarkIdentityKey(entry.node.title, entry.node.url) === buildBookmarkIdentityKey(item.name, item.url)
+    );
+
+    if (exactMatch) {
+      exactMatch.used = true;
+      continue;
+    }
+
+    const sameUrlMatch = remainingEntries.find(entry =>
+      !entry.used && buildBookmarkIdentityKey('', entry.node.url) === buildBookmarkIdentityKey('', item.url)
+    );
+
+    if (sameUrlMatch) {
+      sameUrlMatch.used = true;
+      if ((sameUrlMatch.node.title || '') !== (item.name || '')) {
+        await updateBookmarkNodeWithSyncGuard(sameUrlMatch.node.id, {
+          title: item.name || sameUrlMatch.node.title
+        });
+        updated++;
+      }
+      continue;
+    }
+
+    await createBookmarkNodeWithSyncGuard({
+      parentId: folderId,
+      title: item.name,
+      url: item.url
+    });
+    added++;
+  }
+
+  for (const entry of remainingEntries) {
+    if (entry.used) {
+      continue;
+    }
+
+    await removeBookmarkNodeWithSyncGuard(entry.node.id);
+    removed++;
+  }
+
+  return { added, removed, updated };
+}
+
+function scheduleServerToBrowserReconcile(reason = 'unknown', delayMs = 1200) {
+  if (serverToBrowserReconcileTimer) {
+    clearTimeout(serverToBrowserReconcileTimer);
+  }
+
+  serverToBrowserReconcileTimer = setTimeout(() => {
+    serverToBrowserReconcileTimer = null;
+    syncServerToBrowser().then(() => {
+      console.log('[书签同步] 移动后全量对账完成:', reason);
+    }).catch(error => {
+      console.error('[书签同步] 移动后全量对账失败:', reason, error);
+    });
+  }, delayMs);
 }
 
 // 同步所有书签到服务器（浏览器 → 网站）
@@ -1147,6 +1385,10 @@ async function syncServerToBrowser() {
     }
 
     const rootItems = serverCategoryMap.get('书签栏') || [];
+    const rootReconcileResult = await reconcileFolderBookmarksWithServer(bookmarksBarId, rootItems);
+    totalAdded += rootReconcileResult.added;
+    totalRemoved += rootReconcileResult.removed;
+    totalUpdated += rootReconcileResult.updated;
     const rootChildren = await chrome.bookmarks.getChildren(bookmarksBarId);
     const rootUrls = new Set(rootItems.map(item => item.url));
     for (const node of rootChildren.filter(child => child.url)) {
@@ -1172,6 +1414,12 @@ async function syncServerToBrowser() {
         }
         folderId = folderNode.id;
       }
+
+      const reconcileResult = await reconcileFolderBookmarksWithServer(folderId, items);
+      totalAdded += reconcileResult.added;
+      totalRemoved += reconcileResult.removed;
+      totalUpdated += reconcileResult.updated;
+      continue;
 
       const existingNodes = await chrome.bookmarks.getChildren(folderId);
       const existingBookmarks = existingNodes.filter(node => node.url);
@@ -1291,6 +1539,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 // 初始化：检查服务器连接
 chrome.runtime.onInstalled.addListener(async (details) => {
+  try {
+    await rebuildBookmarkNodeCache();
+  } catch (error) {
+    console.warn('[书签同步] 安装后重建书签缓存失败:', error);
+  }
   console.log('[书签同步] 扩展已安装，原因:', details.reason);
   const config = await getConfig();
 
@@ -1351,6 +1604,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
 
     return true; // 保持消息通道开放以支持异步响应
+  }
+
+  if (request.action === 'deleteBookmarkExact') {
+    console.log('[书签同步] 收到精确删除书签请求（来自网站）:', request.bookmark);
+
+    deleteBrowserBookmarkExact(request.bookmark, true)
+      .then(result => {
+        console.log('[书签同步] 浏览器书签精确删除结果:', result);
+        sendResponse({ success: true, result });
+      })
+      .catch(error => {
+        console.error('[书签同步] 精确删除浏览器书签失败:', error);
+        sendResponse({ success: false, error: error.message || '精确删除失败' });
+      });
+
+    return true;
+  }
+
+  if (request.action === 'syncServerToBrowserNow') {
+    syncServerToBrowser()
+      .then(result => {
+        console.log('[书签同步] 已执行网站到浏览器全量对账:', result);
+        sendResponse({ success: true, result });
+      })
+      .catch(error => {
+        console.error('[书签同步] 网站到浏览器全量对账失败:', error);
+        sendResponse({ success: false, error: error.message || '全量对账失败' });
+      });
+
+    return true;
   }
 
   if (request.action === 'moveBookmark') {
@@ -1559,6 +1842,81 @@ async function deleteBrowserBookmark(url, skipConfigCheck = false) {
     } catch (e) {
       // 忽略清除标记的错误
     }
+    throw error;
+  }
+}
+
+function normalizeBookmarkMatchText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function deleteBrowserBookmarkExact(bookmarkInfo, skipConfigCheck = false) {
+  try {
+    const targetUrl = normalizeBookmarkMatchText(bookmarkInfo?.url);
+    const targetName = normalizeBookmarkMatchText(bookmarkInfo?.name);
+    const targetFolderPath = normalizeBookmarkMatchText(bookmarkInfo?.folderPath);
+    const rawCategory = normalizeBookmarkMatchText(bookmarkInfo?.category);
+    const targetCategory = !rawCategory || isRootBookmarkCategory(rawCategory) ? '' : rawCategory;
+    const targetPath = targetFolderPath || targetCategory;
+
+    if (!targetUrl) {
+      throw new Error('URL不能为空');
+    }
+
+    if (!skipConfigCheck) {
+      const config = await getConfig();
+      if (!config.syncOnRemove) {
+        return { skipped: true, reason: '删除同步已禁用' };
+      }
+    }
+
+    const bookmarks = await chrome.bookmarks.search({ url: targetUrl });
+    if (!bookmarks.length) {
+      return { found: false, message: '未找到匹配的书签' };
+    }
+
+    const candidates = [];
+    for (const bookmark of bookmarks) {
+      if (bookmark.url !== targetUrl) {
+        continue;
+      }
+
+      if (targetName && normalizeBookmarkMatchText(bookmark.title) !== targetName) {
+        continue;
+      }
+
+      const fullFolderPath = normalizeBookmarkMatchText(await getBookmarkFullFolderPath(bookmark.id));
+      if (targetPath && fullFolderPath !== targetPath) {
+        continue;
+      }
+      if (!targetPath && fullFolderPath) {
+        continue;
+      }
+
+      candidates.push(bookmark);
+    }
+
+    const bookmarkToDelete = candidates[0];
+    if (!bookmarkToDelete) {
+      return { found: false, message: '未找到精确匹配的书签' };
+    }
+
+    await removeBookmarkNodeWithSyncGuard(bookmarkToDelete.id);
+    console.log('[书签同步] 已精确删除浏览器书签:', {
+      title: bookmarkToDelete.title,
+      url: bookmarkToDelete.url,
+      category: targetCategory || '书签栏',
+      folderPath: targetPath || ''
+    });
+
+    return {
+      success: true,
+      deletedId: bookmarkToDelete.id,
+      title: bookmarkToDelete.title,
+      url: bookmarkToDelete.url
+    };
+  } catch (error) {
+    console.error('[书签同步] 精确删除浏览器书签失败:', error);
     throw error;
   }
 }
@@ -1898,7 +2256,7 @@ async function deleteBrowserFolder(folderName) {
     }
 
     // 删除文件夹（会同时删除文件夹内的所有书签）
-    await chrome.bookmarks.removeTree(folderId);
+    await removeFolderNodeWithSyncGuard(folderId);
     console.log('[书签同步] 已删除浏览器文件夹:', folderName);
     return { success: true, message: '文件夹已删除' };
 
@@ -1956,7 +2314,7 @@ async function addBrowserFolder(folderName) {
     }
 
     // 创建新文件夹
-    const newFolder = await chrome.bookmarks.create({
+    const newFolder = await createBookmarkNodeWithSyncGuard({
       parentId: barNode.id,
       title: folderName
     });

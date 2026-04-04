@@ -86,6 +86,77 @@ function broadcastBookmarkChange(userId, change) {
     }
 }
 
+function normalizeBookmarkInsertIndex(index, itemsLength) {
+    if (!Number.isInteger(index)) {
+        return itemsLength;
+    }
+
+    return Math.max(0, Math.min(index, itemsLength));
+}
+
+function normalizeBookmarkMatchName(name) {
+    return typeof name === 'string' ? name.trim() : '';
+}
+
+function normalizeBookmarkMatchUrl(url) {
+    return typeof url === 'string' ? url.trim() : '';
+}
+
+function isSameBookmarkIdentity(left, right) {
+    const leftUrl = normalizeBookmarkMatchUrl(left?.url);
+    const rightUrl = normalizeBookmarkMatchUrl(right?.url);
+    if (!leftUrl || !rightUrl || leftUrl !== rightUrl) {
+        return false;
+    }
+
+    return normalizeBookmarkMatchName(left?.name) === normalizeBookmarkMatchName(right?.name);
+}
+
+function findBookmarkIndexByIdentity(items, bookmark, allowUrlFallback = true) {
+    if (!Array.isArray(items) || !bookmark) {
+        return -1;
+    }
+
+    const exactIndex = items.findIndex(item => isSameBookmarkIdentity(item, bookmark));
+    if (exactIndex >= 0) {
+        return exactIndex;
+    }
+
+    if (!allowUrlFallback) {
+        return -1;
+    }
+
+    const targetUrl = normalizeBookmarkMatchUrl(bookmark.url);
+    if (!targetUrl) {
+        return -1;
+    }
+
+    return items.findIndex(item => normalizeBookmarkMatchUrl(item?.url) === targetUrl);
+}
+
+function removeBookmarkFromAllCategories(bookmarks, bookmark, options = {}) {
+    const { removeAll = false, allowUrlFallback = true } = options;
+    let removedCount = 0;
+
+    for (const category of Array.isArray(bookmarks) ? bookmarks : []) {
+        const items = Array.isArray(category?.items) ? category.items : [];
+        let itemIndex = findBookmarkIndexByIdentity(items, bookmark, allowUrlFallback);
+
+        while (itemIndex >= 0) {
+            items.splice(itemIndex, 1);
+            removedCount += 1;
+
+            if (!removeAll) {
+                return removedCount;
+            }
+
+            itemIndex = findBookmarkIndexByIdentity(items, bookmark, false);
+        }
+    }
+
+    return removedCount;
+}
+
 // 创建 session
 async function createSession(userId) {
     try {
@@ -1087,6 +1158,7 @@ app.post('/api/bookmark/click', requireAuth, async (req, res) => {
 app.post('/api/bookmark/sync', requireAuth, async (req, res) => {
     try {
         const { category, bookmark, action } = req.body;
+        const requestedIndex = Number.isInteger(req.body.index) ? req.body.index : null;
         
         if (!bookmark || !bookmark.url) {
             return res.status(400).json({ error: 'Invalid bookmark data' });
@@ -1119,53 +1191,58 @@ app.post('/api/bookmark/sync', requireAuth, async (req, res) => {
         const categoryName = category || '书签栏';
         
         if (action === 'created' || action === 'updated' || action === 'moved') {
-            // 如果是移动操作，先从旧分类中删除
             if (action === 'moved') {
-                let moved = false;
-                for (let i = 0; i <bookmarks.length; i++) {
-                    const cat = bookmarks[i];
-                    const itemIndex = cat.items.findIndex(item => item.url === bookmark.url);
-                    if (itemIndex >= 0) {
-                        cat.items.splice(itemIndex, 1);
-                        moved = true;
-                        console.log('[书签同步] 从分类移除书签:', cat.category, bookmark.name);
-                        break;
-                    }
-                }
+                const removedCount = removeBookmarkFromAllCategories(bookmarks, bookmark, {
+                    removeAll: true,
+                    allowUrlFallback: true
+                });
+                console.log('[bookmark-sync] moved cleanup removed entries:', removedCount, bookmark.name, bookmark.url);
             }
-            
-            // 查找或创建分类
+
             let categoryIndex = bookmarks.findIndex(cat => cat.category === categoryName);
-            
+
             if (categoryIndex === -1) {
-                // 创建新分类
                 bookmarks.push({
                     category: categoryName,
                     items: []
                 });
                 categoryIndex = bookmarks.length - 1;
             }
-            
-            // 检查书签是否已存在（基于URL）
+
             const categoryItems = bookmarks[categoryIndex].items;
-            const existingIndex = categoryItems.findIndex(item => item.url === bookmark.url);
-            
-            if (existingIndex >= 0) {
-                // 如果已存在相同URL的书签，跳过同步（不更新）
-                console.log('[书签同步] 跳过同步：分类', categoryName, '中已存在相同URL的书签:', bookmark.url);
-                return res.json({ 
-                    success: true, 
-                    message: '书签已存在，跳过同步',
-                    skipped: true,
-                    category: categoryName
-                });
+            let finalIndex = normalizeBookmarkInsertIndex(requestedIndex, categoryItems.length);
+
+            if (action === 'created') {
+                const existingCreatedIndex = findBookmarkIndexByIdentity(categoryItems, bookmark, false);
+                if (existingCreatedIndex >= 0) {
+                    console.log('[bookmark-sync] skip duplicate create in category:', categoryName, bookmark.name, bookmark.url);
+                    return res.json({
+                        success: true,
+                        message: 'Bookmark already exists, skipped',
+                        skipped: true,
+                        category: categoryName
+                    });
+                }
+
+                categoryItems.splice(finalIndex, 0, bookmark);
+                console.log('[bookmark-sync] created bookmark:', bookmark.name, 'category:', categoryName, 'index:', finalIndex);
+            } else if (action === 'updated') {
+                const existingIndex = findBookmarkIndexByIdentity(categoryItems, bookmark, true);
+                if (existingIndex >= 0) {
+                    categoryItems[existingIndex] = {
+                        ...categoryItems[existingIndex],
+                        ...bookmark
+                    };
+                    finalIndex = existingIndex;
+                } else {
+                    categoryItems.splice(finalIndex, 0, bookmark);
+                }
             } else {
-                // 添加新书签
-                categoryItems.push(bookmark);
-                console.log('[书签同步] 添加书签:', bookmark.name, '到分类:', categoryName);
+                finalIndex = normalizeBookmarkInsertIndex(requestedIndex, categoryItems.length);
+                categoryItems.splice(finalIndex, 0, bookmark);
+                console.log('[bookmark-sync] moved bookmark:', bookmark.name, 'category:', categoryName, 'index:', finalIndex);
             }
             
-            // 保存书签到user_data表
             await db.run("INSERT OR REPLACE INTO user_data (user_id, key, value) VALUES (?, ?, ?)", 
                 [targetUserId, 'bookmarks', JSON.stringify(bookmarks)]);
             
@@ -1180,7 +1257,8 @@ app.post('/api/bookmark/sync', requireAuth, async (req, res) => {
                     ? 'bookmark-moved'
                     : (action === 'updated' ? 'bookmark-updated' : 'bookmark-created'),
                 category: categoryName,
-                bookmark
+                bookmark,
+                index: finalIndex
             });
 
             res.json({ 
@@ -1195,7 +1273,7 @@ app.post('/api/bookmark/sync', requireAuth, async (req, res) => {
             
             for (let i = 0; i < bookmarks.length; i++) {
                 const category = bookmarks[i];
-                const itemIndex = category.items.findIndex(item => item.url === bookmark.url);
+                const itemIndex = findBookmarkIndexByIdentity(category.items, bookmark, true);
                 
                 if (itemIndex >= 0) {
                     category.items.splice(itemIndex, 1);

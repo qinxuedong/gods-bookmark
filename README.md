@@ -1,26 +1,29 @@
 # God's Bookmark
 
-一个可自托管的书签仪表盘，支持浏览器扩展实时同步、全局快捷搜索、点击统计、待办事项和自动备份。
+![God's Bookmark](docs/images/godbook.png)
+
+一个可自托管的书签仪表盘，支持浏览器扩展双向同步、跨页面快捷搜索、布局编辑、点击统计、待办事项和自动备份。
 
 > 重要提醒：部署或批量同步前，请先导出浏览器原始书签做好备份。
 
 ## 当前版本
 
-- Web 应用：`1.1.0`
-- 浏览器扩展：`1.1.0`
+- Web 应用：`1.1.1`
+- 浏览器扩展：`1.1.1`
 
-## 核心功能
+## 核心能力
 
-- 浏览器书签与网站双向同步，支持新增、删除、移动和文件夹同步。
-- 两台设备同时在线时，可通过网站页面自动接收实时同步广播。
-- `Ctrl+Space` 可在书签首页和普通网页中直接调出全局搜索。
-- 网站与扩展统一通过 `/api/favicon` 获取书签图标，适合部署到远程服务器后多端使用。
-- 支持全局设置中的书签模块尺寸、排序和布局持久化。
-- 支持本地或 NAS 自动备份。
+- 浏览器书签与网站双向同步，支持新增、删除、移动和文件夹同步
+- 两台设备同时在线时，网站可接收实时同步广播
+- `Ctrl+Space` 可在书签首页和普通网页中直接调出搜索浮层
+- 网站与扩展统一通过 `/api/favicon` 获取图标，适合远程部署
+- 全局设置支持书签模块尺寸调整、拖拽排序和自动保存
+- 控制中心支持手动执行“合并书签”
+- 支持本地或 NAS 自动备份
 
 ## 快速开始
 
-### Node.js 方式
+### Node.js
 
 1. 安装依赖
 
@@ -43,7 +46,7 @@ npm start
 
 生产环境请通过环境变量 `ADMIN_PASSWORD` 设置强密码，并在首次登录后立即修改。
 
-### Docker 方式
+### Docker
 
 ```bash
 docker-compose up -d
@@ -53,13 +56,13 @@ docker-compose up -d
 
 ## 浏览器扩展
 
-扩展目录位于 [extension/README.md](extension/README.md)，当前版本 `1.1.0`。
+扩展目录位于 [extension/README.md](extension/README.md)，当前版本 `1.1.1`。
 
 主要能力：
 
-- 浏览器书签与网站实时同步
+- 浏览器书签与网站双向同步
 - `Ctrl+Space` 全局搜索
-- 远程部署场景下的统一 favicon 加载
+- 远程部署场景下统一的 favicon 加载
 - 弹窗配置服务器地址、同步开关和手动全量同步
 
 ### 本地安装
@@ -70,6 +73,14 @@ docker-compose up -d
 4. 选择 `extension` 目录
 
 详细安装步骤见 [extension/安装说明.md](extension/安装说明.md)。
+
+## 合并书签
+
+当前版本已将自动查重改为手动工具。
+
+- 入口：控制中心 -> `合并书签`
+- 规则：仅当“书签名称 + URL”同时相同，才会被合并
+- 行为：保留首次出现的位置，并同步清理浏览器侧重复项
 
 ## 打包发布扩展
 
@@ -83,7 +94,7 @@ npm run build-extension
 
 - `extension.zip`
 
-打包脚本会自动检查：
+打包脚本会检查：
 
 - `manifest.json` 必填字段
 - manifest 引用的脚本和图标
@@ -98,6 +109,7 @@ npm run build-extension
 - [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
 - [BACKUP_CRON_GUIDE.md](BACKUP_CRON_GUIDE.md)
 - [EXTENSION_CHECK_REPORT.md](EXTENSION_CHECK_REPORT.md)
+- [RELEASE_NOTES_v1.1.1.md](RELEASE_NOTES_v1.1.1.md)
 - [RELEASE_NOTES_v1.1.0.md](RELEASE_NOTES_v1.1.0.md)
 - [extension/README.md](extension/README.md)
 - [extension/安装说明.md](extension/安装说明.md)
@@ -105,10 +117,10 @@ npm run build-extension
 
 ## 安全建议
 
-- 生产环境务必启用 HTTPS。
-- 修改默认管理员密码，避免使用 `admin/admin`。
-- 为 `data` 和 `backups` 目录配置持久化与备份。
-- 仅在可信网络环境中开放服务端口。
+- 生产环境务必启用 HTTPS
+- 修改默认管理员密码，避免使用 `admin/admin`
+- 为 `data` 和 `backups` 目录配置持久化与备份
+- 仅在可信网络环境中开放服务端口
 
 ## 许可证
 

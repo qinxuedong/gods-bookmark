@@ -187,6 +187,19 @@
       });
     }
 
+    if (event.data && event.data.type === 'DELETE_BOOKMARK_EXACT' && event.data.bookmark && event.data.bookmark.url) {
+      console.log('[书签同步-Content] 收到精确删除书签请求:', event.data.bookmark);
+
+      sendMessageSafely({
+        action: 'deleteBookmarkExact',
+        bookmark: event.data.bookmark
+      }, (response) => {
+        if (response && !response.error) {
+          console.log('[书签同步-Content] 精确删除结果:', response);
+        }
+      });
+    }
+
     // 处理移动书签的消息
     if (event.data && event.data.type === 'MOVE_BOOKMARK' && event.data.url) {
       console.log('[书签同步-Content] 收到移动书签请求:', event.data);
@@ -373,6 +386,33 @@
           if (response && !response.error) {
             console.log('[书签同步-Content] 删除成功:', response);
           }
+        });
+      },
+
+      deleteBookmarkExact: function (url, name, category, folderPath) {
+        console.log('[书签同步-Content] 通过API精确删除书签:', url, name, category, folderPath);
+        sendMessageSafely({
+          action: 'deleteBookmarkExact',
+          bookmark: {
+            url: url,
+            name: name,
+            category: category,
+            folderPath: folderPath
+          }
+        }, (response) => {
+          if (response && !response.error) {
+            console.log('[书签同步-Content] 精确删除成功:', response);
+          }
+        });
+      },
+
+      syncServerBookmarks: function () {
+        return new Promise((resolve) => {
+          sendMessageSafely({
+            action: 'syncServerToBrowserNow'
+          }, (response) => {
+            resolve(response || { success: false, error: 'No response' });
+          });
         });
       },
 

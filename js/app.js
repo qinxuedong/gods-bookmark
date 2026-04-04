@@ -697,6 +697,10 @@ async function updateControlCenterMenu(isLoggedIn) {
                 <span class="menu-icon">💾</span>
                 <span>导出书签</span>
             </a>
+            <a href="#" class="control-menu-link" data-action="merge-bookmarks">
+                <span class="menu-icon">📚</span>
+                <span>合并书签</span>
+            </a>
             <div class="menu-divider"></div>
             <a href="#" class="control-menu-link" data-action="logout">
                 <span class="menu-icon">🚪</span>
@@ -823,6 +827,12 @@ async function exportFromControlCenter() {
     }
 }
 
+async function mergeBookmarksFromControlCenter() {
+    if (typeof window.mergeBookmarksManually === 'function') {
+        await window.mergeBookmarksManually();
+    }
+}
+
 function openLoginFromControlCenter() {
     window.location.href = 'login.html';
 }
@@ -870,6 +880,11 @@ function bindControlCenterMenuEvents() {
             case 'export':
                 executeAfterClosingControlCenter(async () => {
                     await exportFromControlCenter();
+                });
+                break;
+            case 'merge-bookmarks':
+                executeAfterClosingControlCenter(async () => {
+                    await mergeBookmarksFromControlCenter();
                 });
                 break;
             case 'logout':
@@ -2638,6 +2653,432 @@ function sanitizeBookmarkIconHtml(iconHtml) {
         .trim();
 }
 
+let bookmarkHoverPreviewTimer = null;
+let activeBookmarkHoverWrapper = null;
+let bookmarkHoverPreviewElement = null;
+let duplicateBookmarkCheckTimer = null;
+let duplicateBookmarkPromptActive = false;
+let duplicateBookmarkMergeInProgress = false;
+let duplicateBookmarkDismissedSignature = '';
+
+function ensureBookmarkHoverPreview() {
+    if (bookmarkHoverPreviewElement) {
+        return bookmarkHoverPreviewElement;
+    }
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'bookmark-hover-preview';
+    tooltip.innerHTML = `
+        <div class="bookmark-hover-preview-name"></div>
+        <div class="bookmark-hover-preview-url"></div>
+    `;
+    document.body.appendChild(tooltip);
+    bookmarkHoverPreviewElement = tooltip;
+    return tooltip;
+}
+
+function hideBookmarkHoverPreview() {
+    if (bookmarkHoverPreviewTimer) {
+        clearTimeout(bookmarkHoverPreviewTimer);
+        bookmarkHoverPreviewTimer = null;
+    }
+
+    activeBookmarkHoverWrapper = null;
+
+    if (bookmarkHoverPreviewElement) {
+        bookmarkHoverPreviewElement.classList.remove('show');
+    }
+}
+
+function showBookmarkHoverPreview(wrapper) {
+    if (!wrapper) return;
+
+    const name = wrapper.dataset.bookmarkName || '';
+    const url = wrapper.dataset.bookmarkUrl || '';
+    if (!name && !url) return;
+
+    const tooltip = ensureBookmarkHoverPreview();
+    tooltip.querySelector('.bookmark-hover-preview-name').textContent = name;
+    tooltip.querySelector('.bookmark-hover-preview-url').textContent = url;
+
+    const rect = wrapper.getBoundingClientRect();
+    const tooltipWidth = Math.min(360, Math.max(240, Math.round(window.innerWidth * 0.28)));
+    tooltip.style.width = `${tooltipWidth}px`;
+    tooltip.style.left = `${Math.max(12, Math.min(window.innerWidth - tooltipWidth - 12, rect.left + (rect.width / 2) - (tooltipWidth / 2)))}px`;
+    tooltip.style.top = `${Math.min(window.innerHeight - 12, rect.bottom + 10)}px`;
+    tooltip.classList.add('show');
+}
+
+function bindBookmarkHoverPreview(container) {
+    if (!container || container.dataset.bookmarkHoverPreviewBound === 'true') {
+        return;
+    }
+
+    container.dataset.bookmarkHoverPreviewBound = 'true';
+
+    container.addEventListener('mouseover', (event) => {
+        const wrapper = event.target.closest('.bookmark-item-wrapper');
+        if (!wrapper || !container.contains(wrapper) || wrapper === activeBookmarkHoverWrapper) {
+            return;
+        }
+
+        activeBookmarkHoverWrapper = wrapper;
+        if (bookmarkHoverPreviewTimer) {
+            clearTimeout(bookmarkHoverPreviewTimer);
+        }
+
+        bookmarkHoverPreviewTimer = setTimeout(() => {
+            if (activeBookmarkHoverWrapper === wrapper) {
+                showBookmarkHoverPreview(wrapper);
+            }
+        }, 1000);
+    });
+
+    container.addEventListener('mouseout', (event) => {
+        const wrapper = event.target.closest('.bookmark-item-wrapper');
+        if (!wrapper || !container.contains(wrapper)) {
+            return;
+        }
+
+        if (event.relatedTarget && wrapper.contains(event.relatedTarget)) {
+            return;
+        }
+
+        if (activeBookmarkHoverWrapper === wrapper) {
+            hideBookmarkHoverPreview();
+        }
+    });
+
+    container.addEventListener('click', () => {
+        hideBookmarkHoverPreview();
+    });
+
+    window.addEventListener('scroll', hideBookmarkHoverPreview, { passive: true });
+    window.addEventListener('resize', hideBookmarkHoverPreview);
+}
+
+function normalizeDuplicateBookmarkName(name) {
+    return typeof name === 'string' ? name.trim() : '';
+}
+
+function normalizeDuplicateBookmarkUrl(url) {
+    return typeof url === 'string' ? url.trim() : '';
+}
+
+function collectDuplicateBookmarkGroups(bookmarks) {
+    const duplicateMap = new Map();
+
+    (Array.isArray(bookmarks) ? bookmarks : []).forEach((category, catIndex) => {
+        const categoryName = category?.category || '未分类';
+        (Array.isArray(category?.items) ? category.items : []).forEach((item, itemIndex) => {
+            if (!item || !item.url) return;
+
+            const normalizedName = normalizeDuplicateBookmarkName(item.name);
+            const normalizedUrl = normalizeDuplicateBookmarkUrl(item.url);
+            if (!normalizedName || !normalizedUrl) return;
+
+            const duplicateKey = `${normalizedName}\n${normalizedUrl}`;
+            if (!duplicateMap.has(duplicateKey)) {
+                duplicateMap.set(duplicateKey, {
+                    name: normalizedName,
+                    url: normalizedUrl,
+                    entries: []
+                });
+            }
+
+            duplicateMap.get(duplicateKey).entries.push({
+                catIndex,
+                itemIndex,
+                categoryName,
+                item
+            });
+        });
+    });
+
+    return Array.from(duplicateMap.values())
+        .filter(group => group.entries.length > 1);
+}
+
+function buildDuplicateBookmarkSignature(groups) {
+    return groups
+        .map(group => `${group.name}\n${group.url}:${group.entries.map(entry => `${entry.categoryName}/${entry.item.name || ''}`).join(',')}`)
+        .sort()
+        .join('|');
+}
+
+function mergeDuplicateBookmarksInPlace(bookmarks) {
+    const groups = collectDuplicateBookmarkGroups(bookmarks);
+    if (!groups.length) {
+        return { bookmarks, groupsMerged: 0, duplicatesRemoved: 0, removedEntries: [] };
+    }
+
+    let duplicatesRemoved = 0;
+    const removedEntries = [];
+
+    groups.forEach(group => {
+        const [firstEntry, ...duplicateEntries] = group.entries;
+        if (!firstEntry) return;
+
+        const primaryItem = bookmarks[firstEntry.catIndex]?.items?.[firstEntry.itemIndex];
+        if (!primaryItem) return;
+
+        duplicateEntries.forEach(entry => {
+            const duplicateItem = bookmarks[entry.catIndex]?.items?.[entry.itemIndex];
+            if (!duplicateItem) return;
+
+            if ((!primaryItem.name || primaryItem.name.length < duplicateItem.name.length) && duplicateItem.name) {
+                primaryItem.name = duplicateItem.name;
+            }
+            if ((!primaryItem.icon || primaryItem.icon === '🔗') && duplicateItem.icon) {
+                primaryItem.icon = duplicateItem.icon;
+            }
+            if (!primaryItem.logo && duplicateItem.logo) {
+                primaryItem.logo = duplicateItem.logo;
+            }
+        });
+
+        duplicateEntries
+            .sort((a, b) => {
+                if (a.catIndex !== b.catIndex) {
+                    return b.catIndex - a.catIndex;
+                }
+                return b.itemIndex - a.itemIndex;
+            })
+            .forEach(entry => {
+                const items = bookmarks[entry.catIndex]?.items;
+                if (!Array.isArray(items)) return;
+                removedEntries.push({
+                    url: entry.item?.url || '',
+                    name: entry.item?.name || '',
+                    category: entry.categoryName || '',
+                    folderPath: entry.item?.folderPath || entry.categoryName || ''
+                });
+                items.splice(entry.itemIndex, 1);
+                duplicatesRemoved++;
+            });
+    });
+
+    return {
+        bookmarks,
+        groupsMerged: groups.length,
+        duplicatesRemoved,
+        removedEntries
+    };
+}
+
+async function syncMergedDuplicateBookmarksToBrowser(removedEntries) {
+    if (!Array.isArray(removedEntries) || removedEntries.length === 0) {
+        return;
+    }
+
+    for (const entry of removedEntries) {
+        if (!entry || !entry.url) {
+            continue;
+        }
+
+        try {
+            if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.deleteBookmarkExact === 'function') {
+                window.godsBookmarkExtension.deleteBookmarkExact(
+                    entry.url,
+                    entry.name || '',
+                    entry.category || '',
+                    entry.folderPath || ''
+                );
+            } else {
+                window.postMessage({
+                    type: 'DELETE_BOOKMARK_EXACT',
+                    bookmark: {
+                        url: entry.url,
+                        name: entry.name || '',
+                        category: entry.category || '',
+                        folderPath: entry.folderPath || ''
+                    }
+                }, '*');
+            }
+        } catch (error) {
+            console.error('[书签查重] 同步删除浏览器重复书签失败:', entry, error);
+        }
+    }
+}
+
+async function syncBrowserBookmarksFromServer() {
+    try {
+        if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.syncServerBookmarks === 'function') {
+            await window.godsBookmarkExtension.syncServerBookmarks();
+        }
+    } catch (error) {
+        console.error('[书签查重] 触发浏览器全量对账失败:', error);
+    }
+}
+
+async function mergeBookmarksManually() {
+    if (duplicateBookmarkPromptActive || duplicateBookmarkMergeInProgress) {
+        return;
+    }
+
+    const bookmarks = await dataManager.getBookmarks();
+    const duplicateGroups = collectDuplicateBookmarkGroups(bookmarks);
+
+    if (!duplicateGroups.length) {
+        await showCustomAlert('未发现可合并书签。', '合并书签');
+        return;
+    }
+
+    duplicateBookmarkPromptActive = true;
+    const duplicateCount = duplicateGroups.reduce((sum, group) => sum + group.entries.length - 1, 0);
+    const shouldMerge = await showCustomConfirm(
+        `发现 ${duplicateGroups.length} 组可合并书签，共 ${duplicateCount} 条重复项。\n是否开始合并？\n\n合并规则：仅当书签名称和 URL 都相同，才会合并，并保留首次出现的位置。`,
+        '合并书签'
+    );
+    duplicateBookmarkPromptActive = false;
+
+    if (!shouldMerge) {
+        return;
+    }
+
+    duplicateBookmarkMergeInProgress = true;
+    try {
+        const latestBookmarks = await dataManager.getBookmarks();
+        const mergedResult = mergeDuplicateBookmarksInPlace(latestBookmarks);
+        if (mergedResult.duplicatesRemoved <= 0) {
+            await showCustomAlert('未发现可合并书签。', '合并书签');
+            return;
+        }
+
+        await dataManager.saveBookmarks(mergedResult.bookmarks);
+        await syncMergedDuplicateBookmarksToBrowser(mergedResult.removedEntries);
+        await syncBrowserBookmarksFromServer();
+        duplicateBookmarkDismissedSignature = '';
+        await loadBookmarks();
+        await showCustomAlert(
+            `已合并 ${mergedResult.groupsMerged} 组书签，移除 ${mergedResult.duplicatesRemoved} 条重复项。`,
+            '合并书签完成'
+        );
+    } finally {
+        duplicateBookmarkMergeInProgress = false;
+    }
+}
+
+window.mergeBookmarksManually = mergeBookmarksManually;
+
+async function checkDuplicateBookmarksAndPrompt() {
+    if (duplicateBookmarkPromptActive || duplicateBookmarkMergeInProgress) {
+        return;
+    }
+
+    const bookmarks = await dataManager.getBookmarks();
+    const duplicateGroups = collectDuplicateBookmarkGroups(bookmarks);
+
+    if (!duplicateGroups.length) {
+        duplicateBookmarkDismissedSignature = '';
+        return;
+    }
+
+    const duplicateSignature = buildDuplicateBookmarkSignature(duplicateGroups);
+    if (duplicateSignature === duplicateBookmarkDismissedSignature) {
+        return;
+    }
+
+    duplicateBookmarkPromptActive = true;
+    const duplicateCount = duplicateGroups.reduce((sum, group) => sum + group.entries.length - 1, 0);
+    const shouldMerge = await showCustomConfirm(
+        `发现 ${duplicateGroups.length} 组重复书签，共 ${duplicateCount} 条重复项。\n是否自动合并？\n\n合并规则：按网址去重，保留首次出现的位置。`,
+        '检测到重复书签'
+    );
+    duplicateBookmarkPromptActive = false;
+
+    if (!shouldMerge) {
+        duplicateBookmarkDismissedSignature = duplicateSignature;
+        return;
+    }
+
+    duplicateBookmarkMergeInProgress = true;
+    try {
+        const latestBookmarks = await dataManager.getBookmarks();
+        const mergedResult = mergeDuplicateBookmarksInPlace(latestBookmarks);
+        if (mergedResult.duplicatesRemoved > 0) {
+            await dataManager.saveBookmarks(mergedResult.bookmarks);
+            await syncMergedDuplicateBookmarksToBrowser(mergedResult.removedEntries);
+            await syncBrowserBookmarksFromServer();
+            duplicateBookmarkDismissedSignature = '';
+            await loadBookmarks();
+            await showCustomAlert(
+                `已合并 ${mergedResult.groupsMerged} 组重复书签，移除 ${mergedResult.duplicatesRemoved} 条重复项。`,
+                '重复书签已合并'
+            );
+        }
+    } finally {
+        duplicateBookmarkMergeInProgress = false;
+    }
+}
+
+async function checkDuplicateBookmarksAndPromptWithStrictRule() {
+    if (duplicateBookmarkPromptActive || duplicateBookmarkMergeInProgress) {
+        return;
+    }
+
+    const bookmarks = await dataManager.getBookmarks();
+    const duplicateGroups = collectDuplicateBookmarkGroups(bookmarks);
+
+    if (!duplicateGroups.length) {
+        duplicateBookmarkDismissedSignature = '';
+        return;
+    }
+
+    const duplicateSignature = buildDuplicateBookmarkSignature(duplicateGroups);
+    if (duplicateSignature === duplicateBookmarkDismissedSignature) {
+        return;
+    }
+
+    duplicateBookmarkPromptActive = true;
+    const duplicateCount = duplicateGroups.reduce((sum, group) => sum + group.entries.length - 1, 0);
+    const shouldMerge = await showCustomConfirm(
+        `发现 ${duplicateGroups.length} 组重复书签，共 ${duplicateCount} 条重复项。\n是否自动合并？\n\n合并规则：仅当书签名称和 URL 都相同，才判定为重复，并保留首次出现的位置。`,
+        '检测到重复书签'
+    );
+    duplicateBookmarkPromptActive = false;
+
+    if (!shouldMerge) {
+        duplicateBookmarkDismissedSignature = duplicateSignature;
+        return;
+    }
+
+    duplicateBookmarkMergeInProgress = true;
+    try {
+        const latestBookmarks = await dataManager.getBookmarks();
+        const mergedResult = mergeDuplicateBookmarksInPlace(latestBookmarks);
+        if (mergedResult.duplicatesRemoved > 0) {
+            await dataManager.saveBookmarks(mergedResult.bookmarks);
+            await syncMergedDuplicateBookmarksToBrowser(mergedResult.removedEntries);
+            await syncBrowserBookmarksFromServer();
+            duplicateBookmarkDismissedSignature = '';
+            await loadBookmarks();
+            await showCustomAlert(
+                `已合并 ${mergedResult.groupsMerged} 组重复书签，移除 ${mergedResult.duplicatesRemoved} 条重复项。`,
+                '重复书签已合并'
+            );
+        }
+    } finally {
+        duplicateBookmarkMergeInProgress = false;
+    }
+}
+
+function scheduleDuplicateBookmarkCheck() {
+    if (duplicateBookmarkCheckTimer) {
+        clearTimeout(duplicateBookmarkCheckTimer);
+    }
+
+    duplicateBookmarkCheckTimer = null;
+    return;
+
+    duplicateBookmarkCheckTimer = setTimeout(() => {
+        duplicateBookmarkCheckTimer = null;
+        checkDuplicateBookmarksAndPromptWithStrictRule().catch(error => {
+            console.error('[书签查重] 自动查重失败:', error);
+        });
+    }, 600);
+}
+
 async function loadBookmarks() {
     console.log('[loadBookmarks] Starting to load bookmarks...');
     const container = document.getElementById('bookmarks-container');
@@ -2789,12 +3230,12 @@ async function loadBookmarks() {
                     }
 
                     return `
-                            <div class="bookmark-item-wrapper" style="position: relative;">
+                            <div class="bookmark-item-wrapper" style="position: relative;" data-bookmark-name="${escapeHtml(item.name)}" data-bookmark-url="${escapeHtml(item.url)}">
                                 <a href="${escapeHtml(item.url)}" target="_blank" class="bookmark-item" 
                                    data-cat-index="${catIndex}" data-item-index="${itemIndex}"
-                                   style="display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; border-radius: 0.5rem; transition: background 0.2s; width: 100%;">
+                                    style="display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; border-radius: 0.5rem; transition: background 0.2s; width: 100%;">
                                     <span class="bookmark-icon" style="flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 16px; height: 16px;">${iconDisplay}</span>
-                                    <span class="bookmark-name" title="${escapeHtml(item.name)}">${escapeHtml(displayName)}</span>
+                                    <span class="bookmark-name">${escapeHtml(displayName)}</span>
                                 </a>
                             </div>
                             `;
@@ -2818,6 +3259,7 @@ async function loadBookmarks() {
 
         // 绑定favicon错误处理（符合CSP）
         bindFaviconErrorHandlers(container);
+        bindBookmarkHoverPreview(container);
 
         // Bind Events mainly for Right Click (Context Menu) and Click
         container.querySelectorAll('.bookmark-item').forEach(item => {
@@ -3025,6 +3467,7 @@ async function loadBookmarks() {
         if (typeof refreshBookmarksCache === 'function') {
             await refreshBookmarksCache();
         }
+        scheduleDuplicateBookmarkCheck();
     }
 }
 
