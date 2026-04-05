@@ -376,22 +376,35 @@
       return; // 不是服务器页面，不注入全局函数
     }
 
+    function sendActionAsPromise(payload, successMessage) {
+      return new Promise((resolve, reject) => {
+        sendMessageSafely(payload, (response) => {
+          if (response && !response.error && response.success !== false) {
+            if (successMessage) {
+              console.log(successMessage, response);
+            }
+            resolve(response);
+            return;
+          }
+
+          const errorMessage = response && response.error ? response.error : 'No response';
+          reject(new Error(errorMessage));
+        });
+      });
+    }
+
     window.godsBookmarkExtension = {
       deleteBookmark: function (url) {
         console.log('[书签同步-Content] 通过API删除书签:', url);
-        sendMessageSafely({
+        return sendActionAsPromise({
           action: 'deleteBookmark',
           url: url
-        }, (response) => {
-          if (response && !response.error) {
-            console.log('[书签同步-Content] 删除成功:', response);
-          }
-        });
+        }, '[书签同步-Content] 删除成功:');
       },
 
       deleteBookmarkExact: function (url, name, category, folderPath) {
         console.log('[书签同步-Content] 通过API精确删除书签:', url, name, category, folderPath);
-        sendMessageSafely({
+        return sendActionAsPromise({
           action: 'deleteBookmarkExact',
           bookmark: {
             url: url,
@@ -399,88 +412,60 @@
             category: category,
             folderPath: folderPath
           }
-        }, (response) => {
-          if (response && !response.error) {
-            console.log('[书签同步-Content] 精确删除成功:', response);
-          }
-        });
+        }, '[书签同步-Content] 精确删除成功:');
       },
 
       syncServerBookmarks: function () {
-        return new Promise((resolve) => {
-          sendMessageSafely({
-            action: 'syncServerToBrowserNow'
-          }, (response) => {
-            resolve(response || { success: false, error: 'No response' });
-          });
-        });
+        return sendActionAsPromise({
+          action: 'syncServerToBrowserNow'
+        }, '[书签同步-Content] 服务端书签已同步到浏览器:');
       },
 
       moveBookmark: function (url, targetCategory, index) {
         console.log('[书签同步-Content] 通过API移动书签:', url, targetCategory, index);
-        sendMessageSafely({
+        return sendActionAsPromise({
           action: 'moveBookmark',
           url: url,
           targetCategory: targetCategory,
           index: index
-        }, (response) => {
-          if (response && !response.error) {
-            console.log('[书签同步-Content] 移动成功:', response);
-          }
-        });
+        }, '[书签同步-Content] 移动成功:');
       },
 
       updateBookmark: function (oldUrl, newUrl, newName) {
         console.log('[书签同步-Content] 通过API更新书签:', oldUrl, newUrl, newName);
-        sendMessageSafely({
+        return sendActionAsPromise({
           action: 'updateBookmark',
           oldUrl: oldUrl,
           newUrl: newUrl,
           newName: newName
-        }, (response) => {
-          if (response && !response.error) {
-            console.log('[书签同步-Content] 更新成功:', response);
-          }
-        });
+        }, '[书签同步-Content] 更新成功:');
       },
 
       addBookmark: function (url, name, category, index) {
         console.log('[书签同步-Content] 通过API添加书签:', url, name, category, index);
-        sendMessageSafely({
+        return sendActionAsPromise({
           action: 'addBookmark',
           url: url,
           name: name,
           category: category,
           index: index
-        }, (response) => {
-          if (response && !response.error) {
-            console.log('[书签同步-Content] 添加成功:', response);
-          }
-        });
+        }, '[书签同步-Content] 添加成功:');
       },
 
       deleteFolder: function (folderName) {
         console.log('[书签同步-Content] 通过API删除文件夹:', folderName);
-        sendMessageSafely({
+        return sendActionAsPromise({
           action: 'deleteFolder',
           folderName: folderName
-        }, (response) => {
-          if (response && !response.error) {
-            console.log('[书签同步-Content] 删除文件夹成功:', response);
-          }
-        });
+        }, '[书签同步-Content] 删除文件夹成功:');
       },
 
       addFolder: function (folderName) {
         console.log('[书签同步-Content] 通过API添加文件夹:', folderName);
-        sendMessageSafely({
+        return sendActionAsPromise({
           action: 'addFolder',
           folderName: folderName
-        }, (response) => {
-          if (response && !response.error) {
-            console.log('[书签同步-Content] 添加文件夹成功:', response);
-          }
-        });
+        }, '[书签同步-Content] 添加文件夹成功:');
       }
     };
 

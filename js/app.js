@@ -1016,8 +1016,48 @@ function setupControlCenterOutsideClick() {
 
 let bookmarksRealtimeSource = null;
 let bookmarksRealtimeRefreshTimer = null;
+let latestBookmarksMemoryCache = [];
+let suppressNextRealtimeBrowserFullSyncUntil = 0;
+
+function cloneBookmarksDataForCache(bookmarks) {
+    return (Array.isArray(bookmarks) ? bookmarks : []).map(category => ({
+        ...category,
+        items: (Array.isArray(category?.items) ? category.items : []).map(item => ({ ...item }))
+    }));
+}
+
+function updateBookmarksMemoryCache(bookmarks) {
+    latestBookmarksMemoryCache = cloneBookmarksDataForCache(bookmarks);
+    return cloneBookmarksDataForCache(latestBookmarksMemoryCache);
+}
+
+function getBookmarksMemoryCache() {
+    return cloneBookmarksDataForCache(latestBookmarksMemoryCache);
+}
+
+async function getBookmarksForInteractiveAction() {
+    if (Array.isArray(latestBookmarksMemoryCache) && latestBookmarksMemoryCache.length > 0) {
+        return getBookmarksMemoryCache();
+    }
+
+    const bookmarks = await dataManager.getBookmarks();
+    return updateBookmarksMemoryCache(bookmarks);
+}
+
+function markLocalRealtimeBrowserSyncWindow(durationMs = 2000) {
+    suppressNextRealtimeBrowserFullSyncUntil = Date.now() + durationMs;
+}
+
+function shouldSkipRealtimeBrowserFullSync() {
+    return Date.now() < suppressNextRealtimeBrowserFullSyncUntil;
+}
 
 async function refreshBookmarksFromRealtime(changeType) {
+    if (changeType === 'bookmarks-replaced' && shouldSkipRealtimeBrowserFullSync()) {
+        console.log('[RealtimeSync] Skip local refresh for self-originated full bookmark update');
+        return;
+    }
+
     if (bookmarksRealtimeRefreshTimer) {
         clearTimeout(bookmarksRealtimeRefreshTimer);
     }
@@ -1077,6 +1117,11 @@ async function syncRealtimeChangeToBrowser(change) {
             case 'folder-removed':
                 if (change.folderName) {
                     await syncDeleteFolderToBrowser(change.folderName);
+                }
+                break;
+            case 'bookmarks-replaced':
+                if (!shouldSkipRealtimeBrowserFullSync()) {
+                    await syncBrowserBookmarksFromServer();
                 }
                 break;
             default:
@@ -2866,6 +2911,397 @@ function mergeDuplicateBookmarksInPlace(bookmarks) {
     };
 }
 
+function getStableDuplicateBookmarkCategoryName(category) {
+    return normalizeDuplicateBookmarkName(category?.category) || '未分类';
+}
+
+function getStableDuplicateBookmarkSourceFolder(item, categoryName) {
+    const folderPath = normalizeDuplicateBookmarkName(item?.folderPath);
+    return folderPath || categoryName;
+}
+
+function createStableDuplicateBookmarkEntryId(name, url, categoryName, sourceFolder, occurrenceIndex) {
+    return [
+        normalizeDuplicateBookmarkName(name),
+        normalizeDuplicateBookmarkUrl(url),
+        normalizeDuplicateBookmarkName(categoryName),
+        normalizeDuplicateBookmarkName(sourceFolder),
+        String(occurrenceIndex || 1)
+    ].join('\u0001');
+}
+
+function cloneBookmarksForStableDuplicateMerge(bookmarks) {
+    return (Array.isArray(bookmarks) ? bookmarks : []).map(category => ({
+        ...category,
+        items: (Array.isArray(category?.items) ? category.items : []).map(item => ({ ...item }))
+    }));
+}
+
+function collectDuplicateBookmarkGroupsStable(bookmarks) {
+    const duplicateMap = new Map();
+    const entryOccurrenceMap = new Map();
+
+    (Array.isArray(bookmarks) ? bookmarks : []).forEach((category) => {
+        const categoryName = getStableDuplicateBookmarkCategoryName(category);
+        (Array.isArray(category?.items) ? category.items : []).forEach((item) => {
+            if (!item || !item.url) return;
+
+            const normalizedName = normalizeDuplicateBookmarkName(item.name);
+            const normalizedUrl = normalizeDuplicateBookmarkUrl(item.url);
+            if (!normalizedName || !normalizedUrl) return;
+
+            const sourceFolder = getStableDuplicateBookmarkSourceFolder(item, categoryName);
+            const occurrenceKey = [
+                normalizedName,
+                normalizedUrl,
+                categoryName,
+                sourceFolder
+            ].join('\u0001');
+            const occurrenceIndex = (entryOccurrenceMap.get(occurrenceKey) || 0) + 1;
+            entryOccurrenceMap.set(occurrenceKey, occurrenceIndex);
+
+            const groupKey = `${normalizedName}\u0001${normalizedUrl}`;
+            if (!duplicateMap.has(groupKey)) {
+                duplicateMap.set(groupKey, {
+                    name: normalizedName,
+                    url: normalizedUrl,
+                    groupKey,
+                    entries: []
+                });
+            }
+
+            duplicateMap.get(groupKey).entries.push({
+                entryId: createStableDuplicateBookmarkEntryId(
+                    normalizedName,
+                    normalizedUrl,
+                    categoryName,
+                    sourceFolder,
+                    occurrenceIndex
+                ),
+                categoryName,
+                folderPath: sourceFolder,
+                item: { ...item }
+            });
+        });
+    });
+
+    return Array.from(duplicateMap.values()).filter(group => group.entries.length > 1);
+}
+
+function buildDefaultDuplicateRemovalSelectionStable(groups) {
+    const selectedEntryIds = [];
+
+    (Array.isArray(groups) ? groups : []).forEach(group => {
+        group.entries.slice(1).forEach(entry => {
+            selectedEntryIds.push(entry.entryId);
+        });
+    });
+
+    return selectedEntryIds;
+}
+
+function mergeDuplicateBookmarksBySelectionStable(bookmarks, selectedEntryIds) {
+    const selectedEntryIdSet = selectedEntryIds instanceof Set
+        ? selectedEntryIds
+        : new Set(Array.isArray(selectedEntryIds) ? selectedEntryIds : []);
+
+    if (selectedEntryIdSet.size === 0) {
+        return {
+            bookmarks: cloneBookmarksForStableDuplicateMerge(bookmarks),
+            groupsMerged: 0,
+            duplicatesRemoved: 0,
+            removedEntries: []
+        };
+    }
+
+    const clonedBookmarks = cloneBookmarksForStableDuplicateMerge(bookmarks);
+    const entryOccurrenceMap = new Map();
+    const mergedGroupKeys = new Set();
+    let duplicatesRemoved = 0;
+    const removedEntries = [];
+
+    clonedBookmarks.forEach(category => {
+        const categoryName = getStableDuplicateBookmarkCategoryName(category);
+        const nextItems = [];
+
+        (Array.isArray(category?.items) ? category.items : []).forEach(item => {
+            if (!item || !item.url) {
+                nextItems.push(item);
+                return;
+            }
+
+            const normalizedName = normalizeDuplicateBookmarkName(item.name);
+            const normalizedUrl = normalizeDuplicateBookmarkUrl(item.url);
+            if (!normalizedName || !normalizedUrl) {
+                nextItems.push(item);
+                return;
+            }
+
+            const sourceFolder = getStableDuplicateBookmarkSourceFolder(item, categoryName);
+            const occurrenceKey = [
+                normalizedName,
+                normalizedUrl,
+                categoryName,
+                sourceFolder
+            ].join('\u0001');
+            const occurrenceIndex = (entryOccurrenceMap.get(occurrenceKey) || 0) + 1;
+            entryOccurrenceMap.set(occurrenceKey, occurrenceIndex);
+
+            const entryId = createStableDuplicateBookmarkEntryId(
+                normalizedName,
+                normalizedUrl,
+                categoryName,
+                sourceFolder,
+                occurrenceIndex
+            );
+
+            if (selectedEntryIdSet.has(entryId)) {
+                removedEntries.push({
+                    url: item.url || '',
+                    name: item.name || '',
+                    category: categoryName || '',
+                    folderPath: sourceFolder || categoryName || ''
+                });
+                duplicatesRemoved += 1;
+                mergedGroupKeys.add(`${normalizedName}\u0001${normalizedUrl}`);
+                return;
+            }
+
+            nextItems.push(item);
+        });
+
+        category.items = nextItems;
+    });
+
+    return {
+        bookmarks: clonedBookmarks,
+        groupsMerged: mergedGroupKeys.size,
+        duplicatesRemoved,
+        removedEntries
+    };
+}
+
+async function showDuplicateBookmarkMergeModalStable(groups) {
+    const defaultSelectedIds = buildDefaultDuplicateRemovalSelectionStable(groups);
+    const selectedEntryIds = new Set(defaultSelectedIds);
+
+    return new Promise((resolve) => {
+        let isClosed = false;
+        let keyHandler = null;
+
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'custom-modal-overlay show duplicate-merge-modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'custom-modal duplicate-merge-modal';
+
+        const renderGroupHtml = (group, groupIndex) => {
+            const entriesHtml = group.entries.map((entry, entryIndex) => {
+                const isSelected = selectedEntryIds.has(entry.entryId);
+                const displayName = entry.item?.name || group.name || '未命名书签';
+                const displayUrl = entry.item?.url || group.url || '';
+                const defaultBadge = entryIndex === 0
+                    ? '<span class="duplicate-merge-badge duplicate-merge-badge-keep">默认保留</span>'
+                    : '<span class="duplicate-merge-badge duplicate-merge-badge-delete">默认删除</span>';
+
+                return `
+                    <label class="duplicate-merge-entry ${isSelected ? 'is-selected' : ''}" data-entry-id="${escapeHtml(entry.entryId)}" data-group-index="${groupIndex}">
+                        <input type="checkbox" class="duplicate-merge-checkbox" data-entry-id="${escapeHtml(entry.entryId)}" ${isSelected ? 'checked' : ''}>
+                        <div class="duplicate-merge-entry-content">
+                            <div class="duplicate-merge-entry-title-row">
+                                <span class="duplicate-merge-entry-name">${escapeHtml(displayName)}</span>
+                                ${defaultBadge}
+                            </div>
+                            <div class="duplicate-merge-entry-url">${escapeHtml(displayUrl)}</div>
+                            <div class="duplicate-merge-entry-meta">
+                                <span class="duplicate-merge-badge">分类：${escapeHtml(entry.categoryName || '未分类')}</span>
+                                <span class="duplicate-merge-badge">来源文件夹：${escapeHtml(entry.folderPath || entry.categoryName || '未分类')}</span>
+                            </div>
+                        </div>
+                    </label>
+                `;
+            }).join('');
+
+            return `
+                <section class="duplicate-merge-group" data-group-index="${groupIndex}">
+                    <div class="duplicate-merge-group-header">
+                        <div>
+                            <div class="duplicate-merge-group-name">${escapeHtml(group.name || '未命名书签')}</div>
+                            <div class="duplicate-merge-group-url">${escapeHtml(group.url || '')}</div>
+                        </div>
+                        <span class="duplicate-merge-group-count">${group.entries.length} 条</span>
+                    </div>
+                    <div class="duplicate-merge-entry-list">
+                        ${entriesHtml}
+                    </div>
+                    <div class="duplicate-merge-group-warning" data-group-warning="${groupIndex}"></div>
+                </section>
+            `;
+        };
+
+        modal.innerHTML = `
+            <div class="duplicate-merge-modal-header">
+                <div>
+                    <h3>合并书签对比</h3>
+                    <p>默认保留每组第一条书签。你可以勾选要删除的条目，来源分类和文件夹都会单独标出。</p>
+                </div>
+                <button type="button" class="duplicate-merge-close-btn" aria-label="关闭">&times;</button>
+            </div>
+            <div class="duplicate-merge-summary" id="duplicate-merge-summary"></div>
+            <div class="duplicate-merge-groups">
+                ${groups.map(renderGroupHtml).join('')}
+            </div>
+            <div class="modal-actions duplicate-merge-actions">
+                <button type="button" class="btn btn-secondary" id="duplicate-merge-reset">恢复默认选择</button>
+                <button type="button" class="btn btn-secondary" id="duplicate-merge-cancel">取消</button>
+                <button type="button" class="btn" id="duplicate-merge-confirm">执行合并</button>
+            </div>
+        `;
+
+        modalOverlay.appendChild(modal);
+        document.body.appendChild(modalOverlay);
+
+        const summaryEl = modal.querySelector('#duplicate-merge-summary');
+        const confirmBtn = modal.querySelector('#duplicate-merge-confirm');
+        const cancelBtn = modal.querySelector('#duplicate-merge-cancel');
+        const resetBtn = modal.querySelector('#duplicate-merge-reset');
+        const closeBtn = modal.querySelector('.duplicate-merge-close-btn');
+        const groupEls = Array.from(modal.querySelectorAll('.duplicate-merge-group'));
+
+        const closeModal = (result) => {
+            if (isClosed) {
+                return false;
+            }
+
+            isClosed = true;
+            if (keyHandler) {
+                document.removeEventListener('keydown', keyHandler);
+            }
+            if (modalOverlay.parentNode) {
+                document.body.removeChild(modalOverlay);
+            }
+            resolve(result);
+            return true;
+        };
+
+        const updateSelectionState = () => {
+            let selectedCount = 0;
+            let invalidGroups = 0;
+
+            groupEls.forEach((groupEl, groupIndex) => {
+                const group = groups[groupIndex];
+                const warningEl = groupEl.querySelector(`[data-group-warning="${groupIndex}"]`);
+                const keptCount = group.entries.filter(entry => !selectedEntryIds.has(entry.entryId)).length;
+                const groupSelectedCount = group.entries.length - keptCount;
+
+                groupEl.classList.toggle('is-invalid', keptCount === 0);
+                if (warningEl) {
+                    warningEl.textContent = keptCount === 0 ? '这一组至少保留 1 条书签。' : '';
+                }
+
+                if (keptCount === 0) {
+                    invalidGroups += 1;
+                }
+
+                selectedCount += groupSelectedCount;
+            });
+
+            modal.querySelectorAll('.duplicate-merge-entry').forEach(entryEl => {
+                const entryId = entryEl.getAttribute('data-entry-id');
+                entryEl.classList.toggle('is-selected', selectedEntryIds.has(entryId));
+            });
+
+            if (summaryEl) {
+                summaryEl.textContent = `共发现 ${groups.length} 组重复书签，当前选中删除 ${selectedCount} 条。`;
+            }
+
+            if (confirmBtn) {
+                confirmBtn.disabled = invalidGroups > 0;
+            }
+        };
+
+        const syncCheckboxState = () => {
+            modal.querySelectorAll('.duplicate-merge-checkbox').forEach(checkbox => {
+                const entryId = checkbox.getAttribute('data-entry-id');
+                checkbox.checked = selectedEntryIds.has(entryId);
+            });
+            updateSelectionState();
+        };
+
+        modal.querySelectorAll('.duplicate-merge-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', (event) => {
+                const entryId = event.target.getAttribute('data-entry-id');
+                if (!entryId) {
+                    return;
+                }
+
+                if (event.target.checked) {
+                    selectedEntryIds.add(entryId);
+                } else {
+                    selectedEntryIds.delete(entryId);
+                }
+
+                updateSelectionState();
+            });
+        });
+
+        if (resetBtn) {
+            resetBtn.onclick = () => {
+                selectedEntryIds.clear();
+                defaultSelectedIds.forEach(entryId => selectedEntryIds.add(entryId));
+                syncCheckboxState();
+            };
+        }
+
+        if (cancelBtn) {
+            cancelBtn.onclick = () => {
+                closeModal({ confirmed: false, selectedEntryIds: [] });
+            };
+        }
+
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                closeModal({ confirmed: false, selectedEntryIds: [] });
+            };
+        }
+
+        if (confirmBtn) {
+            confirmBtn.onclick = () => {
+                const hasInvalidGroup = groups.some(group => group.entries.every(entry => selectedEntryIds.has(entry.entryId)));
+                if (hasInvalidGroup) {
+                    updateSelectionState();
+                    return;
+                }
+
+                closeModal({
+                    confirmed: true,
+                    selectedEntryIds: Array.from(selectedEntryIds)
+                });
+            };
+        }
+
+        modalOverlay.onclick = (event) => {
+            if (event.target === modalOverlay) {
+                closeModal({ confirmed: false, selectedEntryIds: [] });
+            }
+        };
+
+        keyHandler = (event) => {
+            if (event.key === 'Escape') {
+                closeModal({ confirmed: false, selectedEntryIds: [] });
+            }
+        };
+        document.addEventListener('keydown', keyHandler);
+
+        updateSelectionState();
+        setTimeout(() => {
+            if (confirmBtn) {
+                confirmBtn.focus();
+            }
+        }, 50);
+    });
+}
+
 async function syncMergedDuplicateBookmarksToBrowser(removedEntries) {
     if (!Array.isArray(removedEntries) || removedEntries.length === 0) {
         return;
@@ -2878,7 +3314,7 @@ async function syncMergedDuplicateBookmarksToBrowser(removedEntries) {
 
         try {
             if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.deleteBookmarkExact === 'function') {
-                window.godsBookmarkExtension.deleteBookmarkExact(
+                await window.godsBookmarkExtension.deleteBookmarkExact(
                     entry.url,
                     entry.name || '',
                     entry.category || '',
@@ -2960,6 +3396,58 @@ async function mergeBookmarksManually() {
 }
 
 window.mergeBookmarksManually = mergeBookmarksManually;
+
+async function mergeBookmarksManuallyStable() {
+    if (duplicateBookmarkPromptActive || duplicateBookmarkMergeInProgress) {
+        return;
+    }
+
+    const bookmarks = await getBookmarksForInteractiveAction();
+    const duplicateGroups = collectDuplicateBookmarkGroupsStable(bookmarks);
+
+    if (!duplicateGroups.length) {
+        await showCustomAlert('未发现可合并书签。', '合并书签');
+        return;
+    }
+
+    duplicateBookmarkPromptActive = true;
+    const mergeSelection = await showDuplicateBookmarkMergeModalStable(duplicateGroups);
+    duplicateBookmarkPromptActive = false;
+
+    if (!mergeSelection?.confirmed) {
+        return;
+    }
+
+    if (!Array.isArray(mergeSelection.selectedEntryIds) || mergeSelection.selectedEntryIds.length === 0) {
+        await showCustomAlert('未选择要删除的重复书签。', '合并书签');
+        return;
+    }
+
+    duplicateBookmarkMergeInProgress = true;
+    try {
+        const latestBookmarks = getBookmarksMemoryCache();
+        const mergedResult = mergeDuplicateBookmarksBySelectionStable(latestBookmarks, mergeSelection.selectedEntryIds);
+        if (mergedResult.duplicatesRemoved <= 0) {
+            await showCustomAlert('未发现可执行的合并项，书签列表可能已经变化，请重新打开合并书签。', '合并书签');
+            return;
+        }
+
+        updateBookmarksMemoryCache(mergedResult.bookmarks);
+        markLocalRealtimeBrowserSyncWindow();
+        await dataManager.saveBookmarks(mergedResult.bookmarks);
+        await syncMergedDuplicateBookmarksToBrowser(mergedResult.removedEntries);
+        duplicateBookmarkDismissedSignature = '';
+        await loadBookmarks();
+        await showCustomAlert(
+            `已合并 ${mergedResult.groupsMerged} 组书签，移除 ${mergedResult.duplicatesRemoved} 条重复项。`,
+            '合并书签完成'
+        );
+    } finally {
+        duplicateBookmarkMergeInProgress = false;
+    }
+}
+
+window.mergeBookmarksManually = mergeBookmarksManuallyStable;
 
 async function checkDuplicateBookmarksAndPrompt() {
     if (duplicateBookmarkPromptActive || duplicateBookmarkMergeInProgress) {
@@ -3140,6 +3628,7 @@ async function loadBookmarks() {
         }
 
         if (bookmarksData) {
+            updateBookmarksMemoryCache(bookmarksData);
             // 获取配置以检查隐藏和折叠状态
             let bookmarkLayoutConfig = [];
             try {
@@ -3158,6 +3647,7 @@ async function loadBookmarks() {
                 html += `
                 <div class="glass-card bookmark-card ${isCollapsed ? 'bookmark-card-collapsed' : ''}" 
                      data-category="${cat.category}" 
+                     data-cat-index="${catIndex}"
                      style="${isHidden ? 'display: none !important;' : ''}">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 10px;">
                         ${isAdmin && isSettingsMode ? `
@@ -3423,6 +3913,7 @@ async function loadBookmarks() {
         // 恢复书签卡片布局设置
         setTimeout(async () => {
             await restoreBookmarkStyles();
+            clampRenderedBookmarkCardWidths();
             // 恢复书签缩放比例
             if (typeof window.restoreBookmarkScale === 'function') {
                 await window.restoreBookmarkScale();
@@ -3457,6 +3948,7 @@ async function loadBookmarks() {
             }
 
             // 检查并显示/隐藏滚动条
+            clampRenderedBookmarkCardWidths();
             updateBookmarkScrollbars();
         }, 100);
     } catch (error) {
@@ -3535,6 +4027,117 @@ function enableBookmarkDragAndDrop() {
 
 // 书签拖拽开始
 let draggedBookmark = null;
+
+function clearBookmarkDragIndicators() {
+    document.querySelectorAll(
+        '.bookmark-card.drag-over, .bookmark-grid.drag-over, .bookmark-item-wrapper.bookmark-drop-before, .bookmark-item-wrapper.bookmark-drop-after'
+    ).forEach(el => {
+        el.classList.remove('drag-over', 'bookmark-drop-before', 'bookmark-drop-after');
+    });
+}
+
+function getBookmarkDropPosition(targetWrapper, clientY) {
+    if (!targetWrapper) {
+        return 'after';
+    }
+
+    const rect = targetWrapper.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+    return clientY < midpoint ? 'before' : 'after';
+}
+
+function resolveBookmarkDropTarget(event, targetGrid) {
+    if (!targetGrid) {
+        return { targetWrapper: null, dropPosition: 'after' };
+    }
+
+    const targetWrapper = event.target.closest('.bookmark-item-wrapper');
+    if (!targetWrapper || !targetGrid.contains(targetWrapper)) {
+        return { targetWrapper: null, dropPosition: 'after' };
+    }
+
+    return {
+        targetWrapper,
+        dropPosition: getBookmarkDropPosition(targetWrapper, event.clientY)
+    };
+}
+
+function updateBookmarkItemIndexesInCard(card, catIndex) {
+    if (!card) {
+        return;
+    }
+
+    const parsedCardIndex = parseInt(card.getAttribute('data-cat-index'), 10);
+    const numericCatIndex = Number.isFinite(catIndex)
+        ? catIndex
+        : (Number.isFinite(parsedCardIndex) ? parsedCardIndex : 0);
+    const wrappers = Array.from(card.querySelectorAll('.bookmark-grid .bookmark-item-wrapper'));
+
+    wrappers.forEach((wrapper, itemIndex) => {
+        wrapper.dataset.catIndex = numericCatIndex;
+        wrapper.dataset.itemIndex = itemIndex;
+
+        const item = wrapper.querySelector('.bookmark-item');
+        if (item) {
+            item.setAttribute('data-cat-index', String(numericCatIndex));
+            item.setAttribute('data-item-index', String(itemIndex));
+        }
+    });
+}
+
+function getBookmarkCardByCategoryName(categoryName) {
+    if (!categoryName) {
+        return null;
+    }
+
+    return Array.from(document.querySelectorAll('#bookmarks-container .bookmark-card'))
+        .find(card => card.dataset.category === categoryName) || null;
+}
+
+async function applyBookmarkMoveToDom(dragInfo, targetCategoryName, insertIndex) {
+    const movedWrapper = dragInfo?.wrapper || null;
+    const sourceCard = movedWrapper ? movedWrapper.closest('.bookmark-card') : null;
+    const targetCard = getBookmarkCardByCategoryName(targetCategoryName);
+    const targetGrid = targetCard?.querySelector('.bookmark-grid') || null;
+
+    if (!movedWrapper || !targetCard || !targetGrid) {
+        await loadBookmarks();
+        return;
+    }
+
+    const sourceCategoryName = sourceCard?.dataset.category || '';
+    const targetChildren = Array.from(targetGrid.querySelectorAll(':scope > .bookmark-item-wrapper'))
+        .filter(wrapper => wrapper !== movedWrapper);
+    const safeInsertIndex = clampNumber(insertIndex, 0, targetChildren.length);
+    const referenceNode = targetChildren[safeInsertIndex] || null;
+
+    if (referenceNode) {
+        targetGrid.insertBefore(movedWrapper, referenceNode);
+    } else {
+        targetGrid.appendChild(movedWrapper);
+    }
+
+    movedWrapper.classList.remove('dragging', 'bookmark-drop-before', 'bookmark-drop-after');
+    movedWrapper.style.removeProperty('opacity');
+    movedWrapper.style.removeProperty('transform');
+
+    const sourceCardAfterMove = sourceCategoryName ? getBookmarkCardByCategoryName(sourceCategoryName) : sourceCard;
+    const sourceCatIndex = parseInt(dragInfo?.wrapper?.dataset?.catIndex || dragInfo?.catIndex, 10);
+    const targetCatIndex = parseInt(targetCard.getAttribute('data-cat-index'), 10);
+
+    updateBookmarkItemIndexesInCard(targetCard, targetCatIndex);
+    if (sourceCardAfterMove && sourceCardAfterMove !== targetCard) {
+        updateBookmarkItemIndexesInCard(sourceCardAfterMove, sourceCatIndex);
+    }
+
+    if (typeof refreshBookmarksCache === 'function') {
+        await refreshBookmarksCache();
+    }
+
+    updateBookmarkScrollbars();
+    scheduleDuplicateBookmarkCheck();
+}
+
 function handleBookmarkDragStart(e) {
     console.log('[书签拖拽] dragstart事件触发', this);
 
@@ -3571,9 +4174,7 @@ function handleBookmarkDragEnd(e) {
     document.body.classList.remove('is-dragging-bookmark');
 
     // 清除所有拖拽悬停样式
-    document.querySelectorAll('.bookmark-card.drag-over, .bookmark-grid.drag-over').forEach(el => {
-        el.classList.remove('drag-over');
-    });
+    clearBookmarkDragIndicators();
 
     // 延迟清空draggedBookmark，确保drop事件能访问到数据
     // drop事件会在dragend之前或之后触发，但顺序不确定，所以延迟清空更安全
@@ -3590,11 +4191,18 @@ function handleBookmarkDragOver(e) {
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
 
+    clearBookmarkDragIndicators();
+
     // 添加悬停样式
     const card = this.closest('.bookmark-card');
     const grid = this.closest('.bookmark-grid') || this;
     if (card) card.classList.add('drag-over');
     if (grid && grid !== card) grid.classList.add('drag-over');
+
+    const { targetWrapper, dropPosition } = resolveBookmarkDropTarget(e, grid && grid.classList.contains('bookmark-grid') ? grid : card?.querySelector('.bookmark-grid'));
+    if (targetWrapper && targetWrapper !== draggedBookmark.wrapper) {
+        targetWrapper.classList.add(dropPosition === 'before' ? 'bookmark-drop-before' : 'bookmark-drop-after');
+    }
 }
 
 // 书签拖拽离开
@@ -3605,6 +4213,10 @@ function handleBookmarkDragLeave(e) {
         const grid = this.closest('.bookmark-grid') || this;
         if (card) card.classList.remove('drag-over');
         if (grid) grid.classList.remove('drag-over');
+
+        if (this.classList?.contains('bookmark-item-wrapper')) {
+            this.classList.remove('bookmark-drop-before', 'bookmark-drop-after');
+        }
     }
 }
 
@@ -3636,9 +4248,7 @@ async function handleBookmarkDrop(e) {
     const targetGrid = targetCard ? targetCard.querySelector('.bookmark-grid') : null;
 
     // 移除悬停样式
-    document.querySelectorAll('.bookmark-card.drag-over, .bookmark-grid.drag-over').forEach(el => {
-        el.classList.remove('drag-over');
-    });
+    clearBookmarkDragIndicators();
 
     if (!targetCard) {
         console.log('[书签拖拽] 未找到目标卡片', e.target, this);
@@ -3679,35 +4289,34 @@ async function handleBookmarkDrop(e) {
 
         // 确定插入位置
         let insertIndex = bookmarks[targetCatIndex].items.length; // 默认追加到尾部
+        const { targetWrapper: targetBookmarkWrapper, dropPosition } = resolveBookmarkDropTarget(e, targetGrid);
 
-        // 检查是否拖到了某个书签项上
-        let targetBookmarkWrapper = e.target.closest('.bookmark-item-wrapper');
-
-        // 如果target是bookmark-item，向上查找wrapper
-        if (!targetBookmarkWrapper && e.target.classList.contains('bookmark-item')) {
-            targetBookmarkWrapper = e.target.closest('.bookmark-item-wrapper');
+        if (targetBookmarkWrapper === dragInfo.wrapper) {
+            console.log('[书签拖拽] 原地不动');
+            return;
         }
 
         if (targetBookmarkWrapper && targetGrid && targetGrid.contains(targetBookmarkWrapper)) {
-            // 拖到了其他书签上，插入到该位置
+            // 拖到了其他书签上，按落点前后插入
             const targetItem = targetBookmarkWrapper.querySelector('.bookmark-item');
             if (targetItem) {
                 const targetCatIdx = parseInt(targetItem.getAttribute('data-cat-index'));
                 const targetItemIdx = parseInt(targetItem.getAttribute('data-item-index'));
 
                 if (!isNaN(targetCatIdx) && !isNaN(targetItemIdx) && targetCatIdx === targetCatIndex) {
-                    // 如果是在同一分类内移动，需要调整索引
-                    if (srcCatIndex === targetCatIndex && srcItemIndex < targetItemIdx) {
-                        // 从前面移动到后面，目标索引不变（因为先删除源，索引会自动调整）
-                        insertIndex = targetItemIdx;
-                    } else if (srcCatIndex === targetCatIndex && srcItemIndex === targetItemIdx) {
-                        // 原地不动，不做任何操作
+                    insertIndex = targetItemIdx + (dropPosition === 'after' ? 1 : 0);
+
+                    // 同一分类内移动时，先删除源项会让后续索引左移一位
+                    if (srcCatIndex === targetCatIndex && srcItemIndex < insertIndex) {
+                        insertIndex -= 1;
+                    }
+
+                    if (srcCatIndex === targetCatIndex && insertIndex === srcItemIndex) {
                         console.log('[书签拖拽] 原地不动');
                         return;
-                    } else {
-                        insertIndex = targetItemIdx;
                     }
-                    console.log('[书签拖拽] 插入到位置:', insertIndex);
+
+                    console.log('[书签拖拽] 插入到位置:', insertIndex, 'dropPosition:', dropPosition);
                 }
             }
         } else {
@@ -3720,13 +4329,18 @@ async function handleBookmarkDrop(e) {
         // 插入到目标位置
         bookmarks[targetCatIndex].items.splice(insertIndex, 0, itemData);
 
-        // 保存并重新加载
+        // 先标记本地变更，避免自己的实时流把当前拖拽结果又刷新回去
+        markLocalRealtimeBrowserSyncWindow();
+
+        // 保存并做局部更新，避免整块书签区域重渲染
         await dataManager.saveBookmarks(bookmarks);
+        updateBookmarksMemoryCache(bookmarks);
+        await applyBookmarkMoveToDom(dragInfo, targetCategoryName, insertIndex);
 
-        // 同步书签位置到浏览器
-        await syncBookmarkMoveToBrowser(itemData.url, targetCategoryName, insertIndex);
-
-        loadBookmarks();
+        // 浏览器后台同步放到局部更新之后，优先保证当前页面手感稳定
+        syncBookmarkMoveToBrowser(itemData.url, targetCategoryName, insertIndex).catch(error => {
+            console.error('[书签拖拽] 同步书签位置到浏览器失败:', error);
+        });
 
     } catch (error) {
         console.error('[书签拖拽] 保存失败:', error);
@@ -4341,7 +4955,8 @@ async function syncDeleteToBrowser(url) {
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.deleteBookmark === 'function') {
             console.log('[书签删除] 通过扩展API删除浏览器书签:', url);
-            window.godsBookmarkExtension.deleteBookmark(url);
+            markLocalRealtimeBrowserSyncWindow();
+            await window.godsBookmarkExtension.deleteBookmark(url);
             return;
         }
 
@@ -4366,7 +4981,8 @@ async function syncBookmarkMoveToBrowser(url, targetCategory, index) {
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.moveBookmark === 'function') {
             console.log('[书签同步] 通过扩展API移动浏览器书签:', url);
-            window.godsBookmarkExtension.moveBookmark(url, targetCategory, index);
+            markLocalRealtimeBrowserSyncWindow();
+            await window.godsBookmarkExtension.moveBookmark(url, targetCategory, index);
             return;
         }
 
@@ -4393,7 +5009,8 @@ async function syncBookmarkUpdateToBrowser(oldUrl, newUrl, newName) {
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.updateBookmark === 'function') {
             console.log('[书签同步] 通过扩展API更新浏览器书签:', oldUrl);
-            window.godsBookmarkExtension.updateBookmark(oldUrl, newUrl, newName);
+            markLocalRealtimeBrowserSyncWindow();
+            await window.godsBookmarkExtension.updateBookmark(oldUrl, newUrl, newName);
             return;
         }
 
@@ -4420,7 +5037,8 @@ async function syncBookmarkAddToBrowser(url, name, category, index) {
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.addBookmark === 'function') {
             console.log('[书签同步] 通过扩展API添加浏览器书签:', url);
-            window.godsBookmarkExtension.addBookmark(url, name, category, index);
+            markLocalRealtimeBrowserSyncWindow();
+            await window.godsBookmarkExtension.addBookmark(url, name, category, index);
             return;
         }
 
@@ -4448,7 +5066,8 @@ async function syncDeleteFolderToBrowser(folderName) {
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.deleteFolder === 'function') {
             console.log('[书签同步] 通过扩展API删除浏览器文件夹:', folderName);
-            window.godsBookmarkExtension.deleteFolder(folderName);
+            markLocalRealtimeBrowserSyncWindow();
+            await window.godsBookmarkExtension.deleteFolder(folderName);
             return;
         }
 
@@ -4473,7 +5092,8 @@ async function syncAddFolderToBrowser(folderName) {
         // 方法1: 尝试使用content script注入的全局函数
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.addFolder === 'function') {
             console.log('[书签同步] 通过扩展API添加浏览器文件夹:', folderName);
-            window.godsBookmarkExtension.addFolder(folderName);
+            markLocalRealtimeBrowserSyncWindow();
+            await window.godsBookmarkExtension.addFolder(folderName);
             return;
         }
 
@@ -4579,7 +5199,9 @@ async function restoreBookmarkStyles() {
                         }
                     }
                     if (w) {
-                        card.style.setProperty('width', w, 'important');
+                        const clampedWidth = clampBookmarkCardWidthValue(w);
+                        const finalWidth = clampedWidth !== null ? `${clampedWidth}px` : w;
+                        card.style.setProperty('width', finalWidth, 'important');
                         console.log('[恢复样式] 已设置宽度:', categoryName, w);
                     }
                 }
@@ -4711,7 +5333,10 @@ window.handleBookmarkImport = async function (input) {
                     console.log('[导入] 准备保存书签，数据量:', merged.length, '个分类，共', totalBookmarks, '个书签');
                     console.log('[导入] 数据大小估算:', JSON.stringify(merged).length, '字符');
 
+                    markLocalRealtimeBrowserSyncWindow();
                     await dataManager.saveBookmarks(merged);
+                    updateBookmarksMemoryCache(merged);
+                    await syncBrowserBookmarksFromServer();
                     console.log('[导入] 书签保存成功');
                 } catch (error) {
                     console.error('保存书签失败:', error);
@@ -4786,265 +5411,178 @@ window.handleBookmarkImport = async function (input) {
     }
 };
 
-// 解析书签HTML文件（完整解析所有分类和书签，包括嵌套文件夹）
+// 解析书签HTML文件（完整保留原始分类路径）
 function parseBookmarkHTML(html) {
-    const categories = [];
-
-    // 使用 DOMParser 更准确地解析
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
+    const rootDl = doc.querySelector('dl');
 
-    // 查找根 DL 元素
-    const rootDl = doc.querySelector('body > dl, html > body > dl, dl');
     if (!rootDl) {
-        // 如果找不到，尝试用正则解析
         return parseBookmarkHTMLRegex(html);
     }
 
-    // 递归处理所有 DT 元素
-    function processDl(dl) {
-        const result = [];
-
-        Array.from(dl.children).forEach(dt => {
-            if (dt.tagName !== 'DT') return;
-
-            const h3 = dt.querySelector('h3');
-            const link = dt.querySelector('a');
-
-            if (h3) {
-                // 这是一个文件夹
-                const folderName = h3.textContent.trim();
-                const subDl = dt.querySelector('dl');
-
-                if (subDl && folderName) {
-                    const folderItems = [];
-                    const subFolders = [];
-
-                    // 处理该文件夹下的所有元素
-                    Array.from(subDl.children).forEach(subDt => {
-                        if (subDt.tagName !== 'DT') return;
-
-                        const subH3 = subDt.querySelector('h3');
-                        const subLink = subDt.querySelector('a');
-
-                        if (subH3) {
-                            // 子文件夹，递归处理
-                            const subFolderName = subH3.textContent.trim();
-                            const subSubDl = subDt.querySelector('dl');
-                            if (subSubDl) {
-                                const subFolderResult = processDl(subSubDl);
-                                // 子文件夹作为独立分类
-                                subFolders.push(...subFolderResult);
-                            }
-                        } else if (subLink) {
-                            // 书签
-                            const url = subLink.getAttribute('href') || subLink.href;
-                            const name = subLink.textContent.trim();
-
-                            if (name && url) {
-                                try {
-                                    if (isLocalUrl(url)) {
-                                        folderItems.push({ name, url, icon: '🔗' });
-                                    } else {
-                                        const domain = new URL(url).hostname;
-                                        const icon = buildBookmarkFaviconImg(url, '🔗');
-                                        folderItems.push({ name, url, icon });
-                                    }
-                                } catch (e) {
-                                    folderItems.push({ name, url, icon: '🔗' });
-                                }
-                            }
-                        }
-                    });
-
-                    // 如果该文件夹有书签，添加该分类
-                    if (folderItems.length > 0) {
-                        result.push({ category: folderName, items: folderItems });
-                    }
-
-                    // 添加所有子文件夹分类
-                    result.push(...subFolders);
-                }
-            } else if (link) {
-                // 这是一个书签（根级别的）
-                const url = link.getAttribute('href') || link.href;
-                const name = link.textContent.trim();
-
-                if (name && url) {
-                    try {
-                        let icon;
-                        if (isLocalUrl(url)) {
-                            icon = '🔗';
-                        } else {
-                            const domain = new URL(url).hostname;
-                            icon = buildBookmarkFaviconImg(url, '🔗');
-                        }
-                        // 根级别书签
-                        let rootCategory = result.find(c => c.category === '导入书签');
-                        if (!rootCategory) {
-                            rootCategory = { category: '导入书签', items: [] };
-                            result.push(rootCategory);
-                        }
-                        rootCategory.items.push({ name, url, icon });
-                    } catch (e) {
-                        let rootCategory = result.find(c => c.category === '导入书签');
-                        if (!rootCategory) {
-                            rootCategory = { category: '导入书签', items: [] };
-                            result.push(rootCategory);
-                        }
-                        rootCategory.items.push({ name, url, icon: '🔗' });
-                    }
-                }
-            }
-        });
-
-        return result;
-    }
-
-    const result = processDl(rootDl);
-    categories.push(...result);
-
-    // 如果没有解析到任何内容，尝试正则方式
-    if (categories.length === 0) {
-        return parseBookmarkHTMLRegex(html);
-    }
-
-    return categories;
+    const parsedCategories = parseBookmarkDlTree(rootDl, []);
+    return parsedCategories.length > 0 ? parsedCategories : parseBookmarkHTMLRegex(html);
 }
 
-// 备用：使用正则表达式解析（用于处理非标准HTML）
+function normalizeImportedCategoryName(pathSegments) {
+    const cleaned = (Array.isArray(pathSegments) ? pathSegments : [])
+        .map(segment => String(segment || '').trim())
+        .filter(Boolean);
+
+    return cleaned.length > 0 ? cleaned.join(' / ') : '导入书签';
+}
+
+function createImportedBookmarkItem(name, url, categoryPath) {
+    const normalizedName = String(name || '').trim();
+    const normalizedUrl = String(url || '').trim();
+    const normalizedCategoryPath = normalizeImportedCategoryName(categoryPath);
+
+    if (!normalizedName || !normalizedUrl) {
+        return null;
+    }
+
+    let icon = '🔗';
+    try {
+        if (!isLocalUrl(normalizedUrl)) {
+            icon = buildBookmarkFaviconImg(normalizedUrl, '🔗');
+        }
+    } catch (error) {
+        icon = '🔗';
+    }
+
+    return {
+        name: normalizedName,
+        url: normalizedUrl,
+        icon,
+        folderPath: normalizedCategoryPath
+    };
+}
+
+function mergeImportedCategoryEntries(entries) {
+    const categoryMap = new Map();
+
+    (Array.isArray(entries) ? entries : []).forEach(entry => {
+        const categoryName = normalizeImportedCategoryName([entry?.category]);
+        if (!categoryMap.has(categoryName)) {
+            categoryMap.set(categoryName, {
+                category: categoryName,
+                items: []
+            });
+        }
+
+        const category = categoryMap.get(categoryName);
+        const existingUrls = new Set(category.items.map(item => item.url));
+
+        (Array.isArray(entry?.items) ? entry.items : []).forEach(item => {
+            if (!item?.url || existingUrls.has(item.url)) {
+                return;
+            }
+            category.items.push({ ...item, folderPath: item.folderPath || categoryName });
+            existingUrls.add(item.url);
+        });
+    });
+
+    return Array.from(categoryMap.values()).filter(category => category.items.length > 0);
+}
+
+function parseBookmarkDlTree(dl, parentPath = []) {
+    if (!dl) {
+        return [];
+    }
+
+    const categories = [];
+    const currentFolderItems = [];
+    const children = Array.from(dl.children);
+
+    for (let index = 0; index < children.length; index += 1) {
+        const node = children[index];
+        if (!node || node.tagName !== 'DT') {
+            continue;
+        }
+
+        const directFolder = Array.from(node.children).find(child => child.tagName === 'H3');
+        const directLink = Array.from(node.children).find(child => child.tagName === 'A');
+        const nestedDl = Array.from(node.children).find(child => child.tagName === 'DL')
+            || (children[index + 1]?.tagName === 'DL' ? children[index + 1] : null);
+
+        if (directFolder) {
+            const folderName = directFolder.textContent.trim();
+            const folderPath = folderName ? [...parentPath, folderName] : parentPath;
+            const childCategories = parseBookmarkDlTree(nestedDl, folderPath);
+            categories.push(...childCategories);
+            continue;
+        }
+
+        if (directLink) {
+            const item = createImportedBookmarkItem(
+                directLink.textContent.trim(),
+                directLink.getAttribute('href') || directLink.href,
+                parentPath
+            );
+            if (item) {
+                currentFolderItems.push(item);
+            }
+        }
+    }
+
+    if (currentFolderItems.length > 0) {
+        categories.unshift({
+            category: normalizeImportedCategoryName(parentPath),
+            items: currentFolderItems
+        });
+    }
+
+    return mergeImportedCategoryEntries(categories);
+}
+
+// 备用：非标准HTML时也尽量按层级解析
 function parseBookmarkHTMLRegex(html) {
+    const lines = String(html || '')
+        .replace(/\r/g, '')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    const folderStack = [];
     const categories = [];
 
-    // 匹配 <DT><H3>文件夹名</H3><DL>...</DL></DT> 结构
-    const folderRegex = /<DT><H3[^>]*>(.*?)<\/H3>\s*<DL[^>]*>(.*?)<\/DL><\/DT>/gs;
-
-    // 匹配 <DT><A HREF="url">名称</A></DT> 结构
-    const bookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
-
-    // 提取所有文件夹
-    let folderMatch;
-    const processedFolders = new Set();
-
-    while ((folderMatch = folderRegex.exec(html)) !== null) {
-        const folderName = folderMatch[1].trim();
-        const folderContent = folderMatch[2];
-
-        if (processedFolders.has(folderName)) continue;
-        processedFolders.add(folderName);
-
-        const items = [];
-
-        // 提取该文件夹下的直接书签（不包含子文件夹中的）
-        const directBookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
-        let bookmarkMatch;
-        while ((bookmarkMatch = directBookmarkRegex.exec(folderContent)) !== null) {
-            const url = bookmarkMatch[1].trim();
-            let name = bookmarkMatch[2];
-            // 移除HTML标签
-            name = name.replace(/<[^>]+>/g, '').trim();
-
-            if (name && url) {
-                try {
-                    let icon;
-                    if (isLocalUrl(url)) {
-                        icon = '🔗';
-                    } else {
-                        const domain = new URL(url).hostname;
-                        icon = buildBookmarkFaviconImg(url, '🔗');
-                    }
-                    items.push({ name, url, icon });
-                } catch (e) {
-                    items.push({ name, url, icon: '🔗' });
-                }
+    lines.forEach(line => {
+        const folderMatch = line.match(/<H3[^>]*>(.*?)<\/H3>/i);
+        if (folderMatch) {
+            const folderName = folderMatch[1].replace(/<[^>]+>/g, '').trim();
+            if (folderName) {
+                folderStack.push(folderName);
             }
+            return;
         }
 
-        // 递归处理子文件夹
-        const subFolders = parseSubFolders(folderContent);
-        subFolders.forEach(subFolder => {
-            if (subFolder.items.length > 0) {
-                categories.push(subFolder);
+        if (/<\/DL>/i.test(line) || /<\/DL><p>/i.test(line)) {
+            if (folderStack.length > 0) {
+                folderStack.pop();
             }
+            return;
+        }
+
+        const bookmarkMatch = line.match(/<A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A>/i);
+        if (!bookmarkMatch) {
+            return;
+        }
+
+        const url = bookmarkMatch[1].trim();
+        const name = bookmarkMatch[2].replace(/<[^>]+>/g, '').trim();
+        const item = createImportedBookmarkItem(name, url, folderStack);
+        if (!item) {
+            return;
+        }
+
+        categories.push({
+            category: normalizeImportedCategoryName(folderStack),
+            items: [item]
         });
+    });
 
-        if (items.length > 0) {
-            categories.push({ category: folderName, items });
-        }
-    }
-
-    // 提取根级别的书签（不在任何文件夹中的）
-    const rootBookmarks = [];
-    // 移除所有文件夹内容
-    const withoutFolders = html.replace(/<DT><H3[^>]*>.*?<\/H3>\s*<DL[^>]*>.*?<\/DL><\/DT>/gs, '');
-    let rootMatch;
-    while ((rootMatch = bookmarkRegex.exec(withoutFolders)) !== null) {
-        const url = rootMatch[1].trim();
-        let name = rootMatch[2];
-        name = name.replace(/<[^>]+>/g, '').trim();
-
-        if (name && url) {
-            try {
-                const domain = new URL(url).hostname;
-                const icon = buildBookmarkFaviconImg(url, '🔗');
-                rootBookmarks.push({ name, url, icon });
-            } catch (e) {
-                rootBookmarks.push({ name, url, icon: '🔗' });
-            }
-        }
-    }
-
-    if (rootBookmarks.length > 0) {
-        categories.push({ category: '导入书签', items: rootBookmarks });
-    }
-
-    return categories;
-}
-
-// 递归解析子文件夹
-function parseSubFolders(html) {
-    const subFolders = [];
-    const folderRegex = /<DT><H3[^>]*>(.*?)<\/H3>\s*<DL[^>]*>(.*?)<\/DL><\/DT>/gs;
-
-    let match;
-    while ((match = folderRegex.exec(html)) !== null) {
-        const folderName = match[1].trim();
-        const folderContent = match[2];
-
-        const items = [];
-        const bookmarkRegex = /<DT><A[^>]+HREF\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/A><\/DT>/gi;
-        let bookmarkMatch;
-
-        while ((bookmarkMatch = bookmarkRegex.exec(folderContent)) !== null) {
-            const url = bookmarkMatch[1].trim();
-            const name = bookmarkMatch[2].replace(/<[^>]+>/g, '').trim();
-
-            if (name && url) {
-                try {
-                    let icon;
-                    if (isLocalUrl(url)) {
-                        icon = '🔗';
-                    } else {
-                        const domain = new URL(url).hostname;
-                        icon = buildBookmarkFaviconImg(url, '🔗');
-                    }
-                    items.push({ name, url, icon });
-                } catch (e) {
-                    items.push({ name, url, icon: '🔗' });
-                }
-            }
-        }
-
-        // 递归处理嵌套子文件夹
-        const nested = parseSubFolders(folderContent);
-        subFolders.push(...nested);
-
-        if (items.length > 0) {
-            subFolders.push({ category: folderName, items });
-        }
-    }
-
-    return subFolders;
+    return mergeImportedCategoryEntries(categories);
 }
 
 // 合并书签到现有分类
@@ -6107,7 +6645,7 @@ function getBookmarkCardResizeMetrics(card) {
         .sort((a, b) => a.value - b.value);
 
     const minWidth = Math.max(180, Math.min(220, widthSnapPoints[0]?.value || 220));
-    const maxWidth = Math.max(minWidth, containerWidth);
+    const maxWidth = Math.max(minWidth, containerWidth - 6);
 
     return {
         minWidth,
@@ -6116,6 +6654,46 @@ function getBookmarkCardResizeMetrics(card) {
         maxHeight: BOOKMARK_CARD_MAX_HEIGHT,
         widthSnapPoints
     };
+}
+
+function clampBookmarkCardWidthValue(rawWidth) {
+    const container = document.getElementById('bookmarks-container');
+    const containerWidth = container ? Math.round(container.clientWidth) : 0;
+    const numericWidth = parseInt(String(rawWidth || '').replace(/[^\d]/g, ''), 10);
+
+    if (!Number.isFinite(numericWidth)) {
+        return null;
+    }
+
+    if (!containerWidth) {
+        return Math.max(180, numericWidth);
+    }
+
+    return clampNumber(numericWidth, 180, Math.max(220, containerWidth - 6));
+}
+
+function clampRenderedBookmarkCardWidths() {
+    document.querySelectorAll('#bookmarks-container .bookmark-card').forEach(card => {
+        const inlineWidth = card.style.width;
+        if (!inlineWidth) {
+            return;
+        }
+
+        const clampedWidth = clampBookmarkCardWidthValue(inlineWidth);
+        if (clampedWidth !== null) {
+            card.style.setProperty('width', `${clampedWidth}px`, 'important');
+        }
+    });
+}
+
+if (!window.__bookmarkCardWidthClampBound) {
+    window.__bookmarkCardWidthClampBound = true;
+    window.addEventListener('resize', () => {
+        window.requestAnimationFrame(() => {
+            clampRenderedBookmarkCardWidths();
+            updateBookmarkScrollbars();
+        });
+    });
 }
 
 function snapBookmarkCardWidth(rawWidth, metrics) {

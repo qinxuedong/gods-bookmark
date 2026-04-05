@@ -15,6 +15,7 @@ let cachedServerUrl = DEFAULT_CONFIG.serverUrl;
 const BOOKMARK_NODE_CACHE_KEY = 'bookmarkNodeCache';
 let bookmarkCacheRefreshTimer = null;
 let serverToBrowserReconcileTimer = null;
+let browserToServerReconcileTimer = null;
 
 // 获取配置
 async function getConfig() {
@@ -844,6 +845,11 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
     console.log('[书签同步] 检查同步标记失败，继续同步:', error.message);
   }
 
+  // 无论是单个删除还是批量删除，最终都做一次防抖全量对账，避免 Chrome 批量删除时漏事件或缺少节点信息
+  if (config.syncOnRemove) {
+    scheduleBrowserToServerReconcile('bookmark-removed');
+  }
+
   // 获取被删除的书签节点信息
   let deletedNode = removeInfo.node || cachedDeletedNode;
   
@@ -859,12 +865,12 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
         console.log('[书签同步] 通过ID获取到书签信息:', deletedNode.title);
       } else {
         console.warn('[书签同步] 无法获取已删除书签的信息，ID:', id);
-        // 即使无法获取节点信息，也记录这个删除事件
-        console.log('[书签同步] 警告：删除事件无法同步，因为无法获取书签信息');
+        console.log('[书签同步] 将依赖稍后的全量对账来同步这次删除');
         return;
       }
     } catch (error) {
       console.error('[书签同步] 获取已删除书签信息失败:', error);
+      console.log('[书签同步] 将依赖稍后的全量对账来同步这次删除');
       return;
     }
   }
@@ -876,41 +882,7 @@ chrome.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
 
   // 如果是文件夹（没有URL），同步删除网站分类
   if (!deletedNode.url) {
-    if (config.syncOnRemove) {
-      const folderName = deletedNode.title;
-      console.log('[书签同步] 检测到文件夹删除:', folderName);
-
-      // 获取当前登录用户ID
-      const userId = await getCurrentUserId(config);
-
-      try {
-        const response = await fetch(`${config.serverUrl}/api/bookmark/sync-folder`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            action: 'removed',
-            folderName: folderName,
-            userId: userId
-          })
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          console.log('[书签同步] 文件夹删除同步成功:', folderName);
-
-          // 刷新服务器页面
-          await refreshServerPage(config);
-        } else {
-          const errorText = await response.text();
-          console.error('[书签同步] 文件夹删除同步失败:', response.status, response.statusText, errorText);
-        }
-      } catch (error) {
-        console.error('[书签同步] 文件夹删除同步失败:', error);
-      }
-    }
+    console.log('[书签同步] 检测到文件夹删除，将通过全量对账同步:', deletedNode.title);
     return;
   }
 
@@ -1201,6 +1173,21 @@ function scheduleServerToBrowserReconcile(reason = 'unknown', delayMs = 1200) {
       console.log('[书签同步] 移动后全量对账完成:', reason);
     }).catch(error => {
       console.error('[书签同步] 移动后全量对账失败:', reason, error);
+    });
+  }, delayMs);
+}
+
+function scheduleBrowserToServerReconcile(reason = 'unknown', delayMs = 1500) {
+  if (browserToServerReconcileTimer) {
+    clearTimeout(browserToServerReconcileTimer);
+  }
+
+  browserToServerReconcileTimer = setTimeout(() => {
+    browserToServerReconcileTimer = null;
+    syncBrowserToServer().then(() => {
+      console.log('[书签同步] 删除后浏览器 -> 网站全量对账完成:', reason);
+    }).catch(error => {
+      console.error('[书签同步] 删除后浏览器 -> 网站全量对账失败:', reason, error);
     });
   }, delayMs);
 }

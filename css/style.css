@@ -1154,6 +1154,33 @@ body.sidebar-open .admin-sidebar-close-btn {
     background: rgba(139, 92, 246, 0.1);
 }
 
+.bookmark-item-wrapper.bookmark-drop-before,
+.bookmark-item-wrapper.bookmark-drop-after {
+    position: relative;
+}
+
+.bookmark-item-wrapper.bookmark-drop-before::before,
+.bookmark-item-wrapper.bookmark-drop-after::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--accent-color);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+    z-index: 2;
+    pointer-events: none;
+}
+
+.bookmark-item-wrapper.bookmark-drop-before::before {
+    top: -6px;
+}
+
+.bookmark-item-wrapper.bookmark-drop-after::after {
+    bottom: -6px;
+}
+
 /* 拖拽时的占位符效果 */
 .bookmark-card.drag-over {
     border: 2px dashed var(--accent-color);
@@ -2724,6 +2751,240 @@ select.input-field option {
 #custom-confirm-ok:focus {
     outline: 2px solid #ef4444;
     outline-offset: 2px;
+}
+
+#bookmarks-container {
+    padding-left: 3px;
+    padding-right: 3px;
+    overflow: visible;
+    box-sizing: border-box;
+}
+
+.duplicate-merge-modal-overlay {
+    z-index: 100003 !important;
+    align-items: center;
+    justify-content: center;
+}
+
+.duplicate-merge-modal {
+    width: min(960px, 94vw);
+    max-width: min(960px, 94vw);
+    max-height: 88vh;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    text-align: left;
+}
+
+.duplicate-merge-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.duplicate-merge-modal-header h3 {
+    margin: 0 0 0.5rem 0;
+}
+
+.duplicate-merge-modal-header p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.duplicate-merge-close-btn {
+    background: transparent;
+    border: 1px solid var(--card-border);
+    color: var(--text-secondary);
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 1.35rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.duplicate-merge-summary {
+    padding: 0.85rem 1rem;
+    border-radius: 0.75rem;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.22);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.duplicate-merge-groups {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding-right: 0.25rem;
+}
+
+.duplicate-merge-group {
+    border: 1px solid var(--card-border);
+    border-radius: 0.9rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.duplicate-merge-group.is-invalid {
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.duplicate-merge-group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+
+.duplicate-merge-group-name {
+    color: var(--text-primary);
+    font-weight: 700;
+    word-break: break-word;
+}
+
+.duplicate-merge-group-url {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-top: 0.35rem;
+    word-break: break-all;
+}
+
+.duplicate-merge-group-count {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.duplicate-merge-entry-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.duplicate-merge-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 0.85rem;
+    border-radius: 0.8rem;
+    border: 1px solid transparent;
+    background: rgba(15, 23, 42, 0.28);
+    cursor: pointer;
+}
+
+.duplicate-merge-entry:hover {
+    border-color: rgba(59, 130, 246, 0.28);
+}
+
+.duplicate-merge-entry.is-selected {
+    border-color: rgba(239, 68, 68, 0.38);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.duplicate-merge-checkbox {
+    margin-top: 0.15rem;
+    width: 18px;
+    height: 18px;
+    accent-color: #ef4444;
+    flex-shrink: 0;
+}
+
+.duplicate-merge-entry-content {
+    min-width: 0;
+    flex: 1;
+}
+
+.duplicate-merge-entry-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.duplicate-merge-entry-name {
+    color: var(--text-primary);
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.duplicate-merge-entry-url {
+    margin-top: 0.35rem;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    word-break: break-all;
+}
+
+.duplicate-merge-entry-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.7rem;
+}
+
+.duplicate-merge-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--card-border);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.duplicate-merge-badge-keep {
+    color: #10b981;
+    border-color: rgba(16, 185, 129, 0.3);
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.duplicate-merge-badge-delete {
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.3);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.duplicate-merge-group-warning {
+    min-height: 1rem;
+    margin-top: 0.75rem;
+    color: #f87171;
+    font-size: 0.82rem;
+}
+
+.duplicate-merge-actions {
+    justify-content: flex-end;
+}
+
+#duplicate-merge-confirm[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+    .duplicate-merge-modal {
+        width: min(96vw, 96vw);
+        max-height: 92vh;
+        padding: 1rem;
+    }
+
+    .duplicate-merge-modal-header,
+    .duplicate-merge-entry-title-row,
+    .duplicate-merge-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .duplicate-merge-close-btn {
+        align-self: flex-end;
+    }
 }
 
 /* ===== Admin Hub (Top Center) ===== */

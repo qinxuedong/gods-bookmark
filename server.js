@@ -654,7 +654,7 @@ app.post('/api/users/login', async (req, res) => {
         
         console.log('[USER LOGIN] Login successful for user:', username, 'ID:', user.id);
         console.log('[USER LOGIN] ========== Login attempt completed ==========');
-        res.json({
+        res.json({ 
             success: true,
             user: {
                 id: user.id,
@@ -1349,51 +1349,24 @@ app.post('/api/bookmark/sync-all', requireAuth, async (req, res) => {
         }
         
         // 统计信息
-        let totalAdded = 0;
-        let totalUpdated = 0;
-        let categoriesCreated = 0;
-        
-        // 处理每个分类
-        for (const [categoryName, bookmarkList] of Object.entries(bookmarksByCategory)) {
-            if (!Array.isArray(bookmarkList) || bookmarkList.length === 0) {
-                continue;
-            }
-            
-            // 查找或创建分类
-            let categoryIndex = existingBookmarks.findIndex(cat => cat.category === categoryName);
-            
-            if (categoryIndex === -1) {
-                // 创建新分类
-                existingBookmarks.push({
-                    category: categoryName,
-                    items: []
-                });
-                categoryIndex = existingBookmarks.length - 1;
-                categoriesCreated++;
-            }
-            
-            const categoryItems = existingBookmarks[categoryIndex].items;
-            const existingUrls = new Set(categoryItems.map(item => item.url));
-            
-            // 添加或更新书签
-            for (const bookmark of bookmarkList) {
-                if (!bookmark || !bookmark.url) {
-                    continue;
-                }
-                
-                const existingIndex = categoryItems.findIndex(item => item.url === bookmark.url);
-                
-                if (existingIndex >= 0) {
-                    // 如果已存在相同URL的书签，跳过同步（不更新）
-                    console.log('[书签同步-批量] 跳过同步：分类', categoryName, '中已存在相同URL的书签:', bookmark.url);
-                    continue;
-                } else {
-                    // 添加新书签
-                    categoryItems.push(bookmark);
-                    totalAdded++;
-                }
-            }
-        }
+        const rebuiltBookmarks = Object.entries(bookmarksByCategory)
+            .map(([categoryName, bookmarkList]) => ({
+                category: categoryName || '书签栏',
+                items: (Array.isArray(bookmarkList) ? bookmarkList : [])
+                    .filter(bookmark => bookmark && bookmark.url)
+                    .map(bookmark => ({ ...bookmark }))
+            }))
+            .filter(category => category.items.length > 0 || category.category);
+        const previousCategoryCount = Array.isArray(existingBookmarks) ? existingBookmarks.length : 0;
+        const previousBookmarkCount = Array.isArray(existingBookmarks)
+            ? existingBookmarks.reduce((sum, category) => sum + (Array.isArray(category?.items) ? category.items.length : 0), 0)
+            : 0;
+        existingBookmarks = rebuiltBookmarks;
+        const totalCategories = existingBookmarks.length;
+        const totalBookmarks = existingBookmarks.reduce((sum, category) => sum + category.items.length, 0);
+        const categoriesCreated = Math.max(0, totalCategories - previousCategoryCount);
+        const totalAdded = Math.max(0, totalBookmarks - previousBookmarkCount);
+        const totalUpdated = totalBookmarks;
         
         // 保存书签到user_data表
         await db.run("INSERT OR REPLACE INTO user_data (user_id, key, value) VALUES (?, ?, ?)", 
@@ -1405,18 +1378,21 @@ app.post('/api/bookmark/sync-all', requireAuth, async (req, res) => {
                 ['bookmarks', JSON.stringify(existingBookmarks)]);
         }
         
-        const totalCategories = Object.keys(bookmarksByCategory).length;
-        const totalBookmarks = Object.values(bookmarksByCategory).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+        const syncAllCategoryCount = totalCategories;
+        const syncAllBookmarkCount = totalBookmarks;
+        broadcastBookmarkChange(targetUserId, {
+            type: 'bookmarks-replaced'
+        });
         
-        console.log(`[书签同步-批量] 用户 ${targetUserId} 同步完成: ${totalCategories} 个分类, ${totalBookmarks} 个书签 (新增: ${totalAdded}, 更新: ${totalUpdated}, 新分类: ${categoriesCreated})`);
+        console.log(`[书签同步-批量] 用户 ${targetUserId} 同步完成: ${syncAllCategoryCount} 个分类, ${syncAllBookmarkCount} 个书签 (新增: ${totalAdded}, 更新: ${totalUpdated}, 新分类: ${categoriesCreated})`);
         
         res.json({ 
             success: true,
             message: '批量同步完成',
             stats: {
-                categories: totalCategories,
+                categories: syncAllCategoryCount,
                 categoriesCreated: categoriesCreated,
-                totalBookmarks: totalBookmarks,
+                totalBookmarks: syncAllBookmarkCount,
                 added: totalAdded,
                 updated: totalUpdated
             }
