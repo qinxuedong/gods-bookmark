@@ -8,8 +8,8 @@
 
 ## 当前版本
 
-- Web 应用：`1.1.1`
-- 浏览器扩展：`1.1.1`
+- Web 应用：`1.1.2`
+- 浏览器扩展：`1.1.2`
 
 ## 核心能力
 
@@ -56,7 +56,7 @@ docker-compose up -d
 
 ## 浏览器扩展
 
-扩展目录位于 [extension/README.md](extension/README.md)，当前版本 `1.1.1`。
+扩展目录位于 [extension/README.md](extension/README.md)，当前版本 `1.1.2`。
 
 主要能力：
 
@@ -109,6 +109,7 @@ npm run build-extension
 - [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
 - [BACKUP_CRON_GUIDE.md](BACKUP_CRON_GUIDE.md)
 - [EXTENSION_CHECK_REPORT.md](EXTENSION_CHECK_REPORT.md)
+- [RELEASE_NOTES_v1.1.2.md](RELEASE_NOTES_v1.1.2.md)
 - [RELEASE_NOTES_v1.1.1.md](RELEASE_NOTES_v1.1.1.md)
 - [RELEASE_NOTES_v1.1.0.md](RELEASE_NOTES_v1.1.0.md)
 - [extension/README.md](extension/README.md)
