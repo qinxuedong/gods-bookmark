@@ -13,8 +13,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const bookmarkStreamClients = new Map();
 const faviconCache = new Map();
+const faviconInflightRequests = new Map();
 const FAVICON_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const FAVICON_FETCH_TIMEOUT_MS = 8000;
+const FAVICON_FETCH_TIMEOUT_MS = 1500;
+const FAVICON_MAX_PAGE_ICON_CANDIDATES = 4;
 const DEFAULT_FAVICON_SVG = Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
         <rect width="32" height="32" rx="8" fill="#1f2937"/>
@@ -438,6 +440,13 @@ function setCachedFavicon(targetUrl, result) {
     }
 }
 
+function getDefaultFaviconPayload() {
+    return {
+        body: DEFAULT_FAVICON_SVG,
+        contentType: 'image/svg+xml'
+    };
+}
+
 function extractHtmlAttribute(tag, attributeName) {
     const pattern = new RegExp(`${attributeName}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
     const match = tag.match(pattern);
@@ -516,61 +525,111 @@ async function resolveFaviconCandidates(targetUrl) {
         console.warn('[FAVICON] Failed to resolve icon links from page:', targetUrl, error.message);
     }
 
+    return [...new Set(candidates.filter(isAllowedFaviconTarget))].slice(0, FAVICON_MAX_PAGE_ICON_CANDIDATES);
+}
+
+async function fetchSingleFaviconCandidate(candidateUrl) {
     try {
-        const pageOrigin = new URL(pageUrl).origin;
-        candidates.push(new URL('/favicon.ico', pageOrigin).toString());
-        candidates.push(new URL('/apple-touch-icon.png', pageOrigin).toString());
+        const response = await fetchWithTimeout(candidateUrl, {
+            headers: {
+                'User-Agent': 'GodsBookmark/1.0 favicon-fetcher',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            }
+        });
+
+        if (!response.ok || !isAllowedFaviconTarget(response.url || candidateUrl)) {
+            return null;
+        }
+
+        const contentTypeHeader = (response.headers.get('content-type') || '').toLowerCase();
+        if (
+            contentTypeHeader &&
+            !contentTypeHeader.startsWith('image/') &&
+            !contentTypeHeader.includes('icon') &&
+            !contentTypeHeader.includes('octet-stream')
+        ) {
+            return null;
+        }
+
+        const body = Buffer.from(await response.arrayBuffer());
+        if (!body.length) {
+            return null;
+        }
+
+        return {
+            body,
+            contentType: contentTypeHeader.split(';')[0] || 'image/x-icon'
+        };
+    } catch (error) {
+        console.warn('[FAVICON] Failed to fetch candidate:', candidateUrl, error.message);
+        return null;
+    }
+}
+
+async function fetchFirstAvailableFavicon(candidates) {
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+        return null;
+    }
+
+    const tasks = candidates.map(async (candidateUrl) => {
+        const result = await fetchSingleFaviconCandidate(candidateUrl);
+        if (!result) {
+            throw new Error(`favicon candidate failed: ${candidateUrl}`);
+        }
+        return result;
+    });
+
+    try {
+        return await Promise.any(tasks);
+    } catch (error) {
+        return null;
+    }
+}
+
+async function fetchFaviconPayload(targetUrl) {
+    let quickCandidates = [];
+
+    try {
+        const pageOrigin = new URL(targetUrl).origin;
+        quickCandidates = [
+            new URL('/favicon.ico', pageOrigin).toString(),
+            new URL('/apple-touch-icon.png', pageOrigin).toString()
+        ].filter(isAllowedFaviconTarget);
     } catch (error) {
         // Ignore malformed origin.
     }
 
-    return [...new Set(candidates.filter(isAllowedFaviconTarget))];
-}
-
-async function fetchFaviconPayload(targetUrl) {
-    const candidates = await resolveFaviconCandidates(targetUrl);
-
-    for (const candidateUrl of candidates) {
-        try {
-            const response = await fetchWithTimeout(candidateUrl, {
-                headers: {
-                    'User-Agent': 'GodsBookmark/1.0 favicon-fetcher',
-                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-                }
-            });
-
-            if (!response.ok || !isAllowedFaviconTarget(response.url || candidateUrl)) {
-                continue;
-            }
-
-            const contentTypeHeader = (response.headers.get('content-type') || '').toLowerCase();
-            if (
-                contentTypeHeader &&
-                !contentTypeHeader.startsWith('image/') &&
-                !contentTypeHeader.includes('icon') &&
-                !contentTypeHeader.includes('octet-stream')
-            ) {
-                continue;
-            }
-
-            const body = Buffer.from(await response.arrayBuffer());
-            if (!body.length) {
-                continue;
-            }
-
-            return {
-                body,
-                contentType: contentTypeHeader.split(';')[0] || 'image/x-icon'
-            };
-        } catch (error) {
-            console.warn('[FAVICON] Failed to fetch candidate:', candidateUrl, error.message);
-        }
+    const quickResult = await fetchFirstAvailableFavicon([...new Set(quickCandidates)]);
+    if (quickResult) {
+        return quickResult;
     }
 
-    return {
-        body: DEFAULT_FAVICON_SVG,
-        contentType: 'image/svg+xml'
+    const pageCandidates = await resolveFaviconCandidates(targetUrl);
+    const fallbackCandidates = pageCandidates.filter(candidate => !quickCandidates.includes(candidate));
+    const fallbackResult = await fetchFirstAvailableFavicon(fallbackCandidates);
+    if (fallbackResult) {
+        return fallbackResult;
+    }
+
+    return getDefaultFaviconPayload();
+}
+
+async function getOrFetchFaviconPayload(targetUrl) {
+    const inflight = faviconInflightRequests.get(targetUrl);
+    if (inflight) {
+        return inflight;
     };
+
+    const requestPromise = (async () => {
+        try {
+            return await fetchFaviconPayload(targetUrl);
+        } finally {
+            faviconInflightRequests.delete(targetUrl);
+        }
+    })();
+
+    faviconInflightRequests.set(targetUrl, requestPromise);
+    return requestPromise;
 }
 
 function sendFaviconResponse(res, result) {
@@ -946,10 +1005,7 @@ app.get('/api/favicon', async (req, res) => {
     const rawUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
 
     if (!rawUrl || rawUrl.length > 2048 || !isAllowedFaviconTarget(rawUrl)) {
-        return sendFaviconResponse(res, {
-            body: DEFAULT_FAVICON_SVG,
-            contentType: 'image/svg+xml'
-        });
+        return sendFaviconResponse(res, getDefaultFaviconPayload());
     }
 
     const cached = getCachedFavicon(rawUrl);
@@ -958,15 +1014,12 @@ app.get('/api/favicon', async (req, res) => {
     }
 
     try {
-        const result = await fetchFaviconPayload(rawUrl);
+        const result = await getOrFetchFaviconPayload(rawUrl);
         setCachedFavicon(rawUrl, result);
         return sendFaviconResponse(res, result);
     } catch (error) {
         console.error('[FAVICON] Unhandled favicon fetch error:', rawUrl, error);
-        return sendFaviconResponse(res, {
-            body: DEFAULT_FAVICON_SVG,
-            contentType: 'image/svg+xml'
-        });
+        return sendFaviconResponse(res, getDefaultFaviconPayload());
     }
 });
 

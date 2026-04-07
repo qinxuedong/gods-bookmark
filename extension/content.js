@@ -529,5 +529,33 @@
         action: 'openSearchOverlay'
       });
     }, 120);
+    const event = { data: null };
+    if (event.data && event.data.type === 'SYNC_SERVER_BOOKMARKS') {
+      console.log('[涔︾鍚屾-Content] 鏀跺埌缃戠珯鍒版祻瑙堝櫒鍏ㄩ噺瀵硅处璇锋眰');
+
+      sendMessageSafely({
+        action: 'syncServerToBrowserNow'
+      }, (response) => {
+        if (response && !response.error) {
+          console.log('[涔︾鍚屾-Content] 鍏ㄩ噺瀵硅处缁撴灉:', response);
+        }
+      });
+    }
   });
 })();
+
+window.addEventListener('message', function (event) {
+  if (event.source !== window) {
+    return;
+  }
+
+  if (!event.data || event.data.type !== 'SYNC_SERVER_BOOKMARKS') {
+    return;
+  }
+
+  if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.syncServerBookmarks === 'function') {
+    window.godsBookmarkExtension.syncServerBookmarks().catch((error) => {
+      console.error('[书签同步-Content] 全量对账触发失败:', error);
+    });
+  }
+});

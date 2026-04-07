@@ -434,6 +434,9 @@ async function renderCardControls() {
     if (window.enableBookmarkCardSort) {
         window.enableBookmarkCardSort();
     }
+    if (window.addBookmarkCardResizeHandles) {
+        window.addBookmarkCardResizeHandles();
+    }
 
     // 布局编辑默认开启（仅启用可视上的联动逻辑，不再启用监控卡片拖拽）
     // enableLayoutEditing();
@@ -600,7 +603,6 @@ function bindDashboardLayoutEvents(container) {
         });
     }
 
-    // 便签待办显示/隐藏按钮
     const todosVisibilityBtn = container.querySelector('#todos-visibility-btn');
     if (todosVisibilityBtn) {
         todosVisibilityBtn.addEventListener('click', () => {
@@ -1782,6 +1784,9 @@ async function toggleBookmarkCardVisibility(categoryName) {
 
         await dataManagerInstance.saveDashboardConfig(config);
         console.log('[toggleBookmarkCardVisibility] Config saved');
+        if (window.updateBookmarkCardVisualOrder) {
+            window.updateBookmarkCardVisualOrder();
+        }
 
         // 更新设置面板中的按钮状态
         const btn = document.querySelector(`.toggle-bookmark-visibility-btn[data-category-name="${categoryName}"]`);
@@ -1878,12 +1883,94 @@ window.toggleBookmarkCardCollapse = async function(categoryName) {
         }
 
         await dataManager.saveDashboardConfig(config);
+        if (window.updateBookmarkCardVisualOrder) {
+            window.updateBookmarkCardVisualOrder();
+        }
     } catch (error) {
         console.error('切换书签卡片折叠状态失败:', error);
     }
 };
 
 // 手动保存设置函数（已改为自动保存，此函数保留兼容性）
+window.toggleBookmarkCardCollapse = async function(categoryName) {
+    try {
+        const card = document.querySelector(`.bookmark-card[data-category="${categoryName}"]`);
+        if (!card) return;
+
+        const grid = card.querySelector('.bookmark-grid');
+        if (!grid) return;
+
+        const isCollapsed = card.classList.contains('bookmark-card-collapsed');
+
+        if (isCollapsed) {
+            card.classList.remove('bookmark-card-collapsed');
+            grid.classList.remove('bookmark-grid-collapsed');
+            grid.style.display = 'grid';
+
+            card.style.width = '';
+            card.style.height = card.dataset.originalHeight || '';
+            card.dataset.cardWidthPreset = card.dataset.originalWidthPreset || '1/4';
+
+            delete card.dataset.originalWidth;
+            delete card.dataset.originalWidthPreset;
+            delete card.dataset.originalHeight;
+        } else {
+            const currentWidth = card.style.width;
+            const currentHeight = card.style.height;
+            const currentWidthPreset = card.dataset.cardWidthPreset || '1/4';
+
+            if (currentWidth && currentWidth !== '100px') {
+                card.dataset.originalWidth = currentWidth;
+            }
+            if (currentHeight && currentHeight !== '70px') {
+                card.dataset.originalHeight = currentHeight;
+            }
+
+            card.dataset.originalWidthPreset = currentWidthPreset;
+            card.classList.add('bookmark-card-collapsed');
+            grid.classList.add('bookmark-grid-collapsed');
+            grid.style.display = 'none';
+            card.dataset.cardWidthPreset = 'collapsed';
+            card.style.width = '100px';
+            card.style.height = '70px';
+        }
+
+        const config = await dataManager.getDashboardConfig();
+        if (!config.bookmarkLayout) {
+            config.bookmarkLayout = [];
+        }
+
+        let layoutItem = config.bookmarkLayout.find(item => item.category === categoryName);
+        if (!layoutItem) {
+            layoutItem = {
+                category: categoryName,
+                index: 999,
+                hidden: false,
+                collapsed: false
+            };
+            config.bookmarkLayout.push(layoutItem);
+        }
+
+        layoutItem.collapsed = !isCollapsed;
+        layoutItem.widthPreset = !isCollapsed
+            ? (card.dataset.originalWidthPreset || layoutItem.widthPreset || '1/4')
+            : (card.dataset.cardWidthPreset && card.dataset.cardWidthPreset !== 'collapsed'
+                ? card.dataset.cardWidthPreset
+                : (card.dataset.originalWidthPreset || layoutItem.widthPreset || '1/4'));
+
+        await dataManager.saveDashboardConfig(config);
+
+        if (window.syncBookmarkCardWidthsToContainer) {
+            window.syncBookmarkCardWidthsToContainer();
+        }
+        if (window.updateBookmarkCardVisualOrder) {
+            window.updateBookmarkCardVisualOrder();
+        }
+    } catch (error) {
+        console.error('切换书签卡片折叠状态失败:', error);
+    }
+};
+
 window.saveSettings = async function() {
     try {
         await saveLayoutState();
@@ -2001,6 +2088,10 @@ async function saveLayoutState() {
                             (existingItem?.width !== undefined && existingItem.width !== null && existingItem.width !== '' ? existingItem.width : '');
             let finalHeight = heightToSave !== null ? heightToSave : 
                              (existingItem?.height !== undefined && existingItem.height !== null && existingItem.height !== '' ? existingItem.height : '');
+            const widthPreset = child.dataset.originalWidthPreset
+                || (child.dataset.cardWidthPreset && child.dataset.cardWidthPreset !== 'collapsed' ? child.dataset.cardWidthPreset : '')
+                || existingItem?.widthPreset
+                || '1/4';
             
             bookmarkCards.push({
                 category: categoryName,
@@ -2009,6 +2100,7 @@ async function saveLayoutState() {
                 // 如果配置中已有值，即使当前DOM中没有值，也保留配置中的值
                 // 只有当配置中也没有值，且当前DOM中也没有值时，才保存为空字符串
                 width: finalWidth,
+                widthPreset,
                 height: finalHeight,
                 color: child.dataset.customColor || '',
                 opacity: child.dataset.customOpacity || '0.7', // 保存透明度
@@ -2021,6 +2113,95 @@ async function saveLayoutState() {
 
     await dataManager.saveDashboardConfig(config);
 }
+
+saveLayoutState = async function () {
+    const config = await dataManager.getDashboardConfig();
+
+    const monitorSection = document.getElementById('monitor-section');
+    const monitorContainer = monitorSection?.querySelector('.grid');
+
+    const widgets = [];
+    if (monitorContainer) {
+        [...monitorContainer.children].forEach(child => {
+            if (child.id) {
+                let span = 1;
+                if (child.classList.contains('span-2')) span = 2;
+                if (child.classList.contains('span-3')) span = 3;
+
+                widgets.push({
+                    id: child.id,
+                    span,
+                    width: child.style.width || '',
+                    height: child.style.height || ''
+                });
+            }
+        });
+    }
+    config.layout = widgets;
+
+    const bookmarksContainer = document.getElementById('bookmarks-container');
+    if (bookmarksContainer) {
+        const bookmarkCards = [];
+        [...bookmarksContainer.children].forEach((child, index) => {
+            let categoryName = child.dataset.category;
+            if (!categoryName) {
+                const h3 = child.querySelector('h3');
+                categoryName = h3 ? h3.textContent.trim() : `bookmark-${index}`;
+            } else {
+                categoryName = categoryName.trim();
+            }
+
+            let span = 1;
+            if (child.classList.contains('span-2')) span = 2;
+            if (child.classList.contains('span-3')) span = 3;
+            if (child.classList.contains('span-4')) span = 4;
+
+            const isHidden = child.style.display === 'none';
+            const isCollapsed = child.classList.contains('bookmark-card-collapsed');
+            const existingItem = config.bookmarkLayout?.find(item => item.category === categoryName);
+            const widthPreset = child.dataset.originalWidthPreset
+                || (child.dataset.cardWidthPreset && child.dataset.cardWidthPreset !== 'collapsed' ? child.dataset.cardWidthPreset : '')
+                || existingItem?.widthPreset
+                || '1/4';
+
+            let heightToSave = null;
+            if (isCollapsed) {
+                if (child.dataset.originalHeight) {
+                    const heightMatch = child.dataset.originalHeight.match(/(\d+)/);
+                    if (heightMatch) {
+                        heightToSave = parseInt(heightMatch[1], 10);
+                    }
+                }
+            } else {
+                const currentHeight = child.style.height || '';
+                if (currentHeight) {
+                    const heightMatch = currentHeight.match(/(\d+)/);
+                    if (heightMatch) {
+                        heightToSave = parseInt(heightMatch[1], 10);
+                    }
+                }
+            }
+
+            bookmarkCards.push({
+                category: categoryName,
+                index,
+                span,
+                width: '',
+                widthPreset,
+                height: heightToSave !== null
+                    ? heightToSave
+                    : (existingItem?.height !== undefined && existingItem.height !== null ? existingItem.height : ''),
+                color: child.dataset.customColor || '',
+                opacity: child.dataset.customOpacity || '0.7',
+                hidden: isHidden || false,
+                collapsed: isCollapsed || false
+            });
+        });
+        config.bookmarkLayout = bookmarkCards;
+    }
+
+    await dataManager.saveDashboardConfig(config);
+};
 
 async function restoreLayout() {
     const config = await dataManager.getDashboardConfig();
@@ -2282,6 +2463,8 @@ function bindCardClickEvents() {
             if (e.target.classList.contains('resize-handle') || 
                 e.target.classList.contains('bookmark-resize-handle-right') ||
                 e.target.classList.contains('bookmark-resize-handle-bottom') ||
+                e.target.closest('.bookmark-resize-handle-left-edge') ||
+                e.target.closest('.bookmark-resize-handle-top-edge') ||
                 e.target.closest('.bookmark-resize-handle-right-edge') ||
                 e.target.closest('.bookmark-resize-handle-bottom-edge')) return;
             
@@ -2469,6 +2652,127 @@ async function saveBookmarkScale(scale) {
 }
 
 // 恢复书签缩放比例
+async function saveBookmarkAutoAlign(enabled) {
+    try {
+        const config = await dataManager.getDashboardConfig();
+        config.bookmarkAutoAlign = enabled;
+        await dataManager.saveDashboardConfig(config);
+        if (window.applyBookmarkCardAutoAlign) {
+            window.applyBookmarkCardAutoAlign(enabled);
+        }
+    } catch (error) {
+        console.error('[书签自动上移] 保存失败:', error);
+    }
+}
+
+window.toggleBookmarkCardCollapse = async function(categoryName) {
+    try {
+        const card = document.querySelector(`.bookmark-card[data-category="${categoryName}"]`);
+        if (!card) return;
+
+        const grid = card.querySelector('.bookmark-grid');
+        const isCollapsed = card.classList.contains('bookmark-card-collapsed');
+
+        if (isCollapsed) {
+            card.classList.remove('bookmark-card-collapsed');
+            if (grid) {
+                grid.classList.remove('bookmark-grid-collapsed');
+                grid.style.display = 'grid';
+            }
+            card.style.width = '';
+            card.style.height = '';
+        } else {
+            card.classList.add('bookmark-card-collapsed');
+            if (grid) {
+                grid.classList.add('bookmark-grid-collapsed');
+                grid.style.display = 'none';
+            }
+            card.dataset.layoutWidth = '100';
+            card.dataset.layoutHeight = '70';
+            card.style.width = '100px';
+            card.style.height = '70px';
+        }
+
+        const config = await dataManager.getDashboardConfig();
+        if (!Array.isArray(config.bookmarkLayout)) {
+            config.bookmarkLayout = [];
+        }
+
+        let layoutItem = config.bookmarkLayout.find(item => item.category === categoryName);
+        if (!layoutItem) {
+            layoutItem = {
+                category: categoryName,
+                index: 999,
+                hidden: false,
+                collapsed: false
+            };
+            config.bookmarkLayout.push(layoutItem);
+        }
+
+        layoutItem.collapsed = !isCollapsed;
+        layoutItem.width = parseInt(card.dataset.layoutWidth || card.style.width || '100', 10) || 100;
+        layoutItem.height = parseInt(card.dataset.layoutHeight || card.style.height || '70', 10) || 70;
+        layoutItem.x = parseInt(card.dataset.layoutX || '0', 10) || 0;
+        layoutItem.y = parseInt(card.dataset.layoutY || '0', 10) || 0;
+
+        await dataManager.saveDashboardConfig(config);
+
+        if (window.syncBookmarkCardWidthsToContainer) {
+            window.syncBookmarkCardWidthsToContainer();
+        }
+    } catch (error) {
+        console.error('切换书签卡片折叠状态失败:', error);
+    }
+};
+
+saveLayoutState = async function () {
+    const config = await dataManager.getDashboardConfig();
+
+    const monitorSection = document.getElementById('monitor-section');
+    const monitorContainer = monitorSection?.querySelector('.grid');
+    const widgets = [];
+
+    if (monitorContainer) {
+        [...monitorContainer.children].forEach(child => {
+            if (!child.id) return;
+
+            let span = 1;
+            if (child.classList.contains('span-2')) span = 2;
+            if (child.classList.contains('span-3')) span = 3;
+
+            widgets.push({
+                id: child.id,
+                span,
+                width: child.style.width || '',
+                height: child.style.height || ''
+            });
+        });
+    }
+
+    config.layout = widgets;
+
+    const bookmarksContainer = document.getElementById('bookmarks-container');
+    if (bookmarksContainer) {
+        config.bookmarkLayout = [...bookmarksContainer.querySelectorAll('.bookmark-card')].map((child, index) => ({
+            category: (child.dataset.category || '').trim() || `bookmark-${index}`,
+            index,
+            span: 1,
+            width: parseInt(child.dataset.layoutWidth || child.style.width || '', 10) || '',
+            height: parseInt(child.dataset.layoutHeight || child.style.height || '', 10) || '',
+            x: parseInt(child.dataset.layoutX || '0', 10) || 0,
+            y: parseInt(child.dataset.layoutY || '0', 10) || 0,
+            color: child.dataset.customColor || '',
+            opacity: child.dataset.customOpacity || '0.7',
+            hidden: child.style.display === 'none',
+            collapsed: child.classList.contains('bookmark-card-collapsed')
+        }));
+    }
+
+    await dataManager.saveDashboardConfig(config);
+};
+
+window.saveLayoutState = saveLayoutState;
+
 async function restoreBookmarkScale() {
     try {
         const config = await dataManager.getDashboardConfig();
@@ -2495,7 +2799,24 @@ function autoSave() {
 // 暴露到全局
 window.openSettingsSidebar = openSettingsSidebar;
 window.toggleSettingsSidebar = toggleSettingsSidebar;
-window.closeSettingsSidebar = closeSettingsSidebar;
+window.closeSettingsSidebar = async function (...args) {
+    await closeSettingsSidebar(...args);
+
+    await new Promise(resolve => {
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(resolve);
+        });
+    });
+
+    if (window.syncBookmarkCardWidthsToContainer) {
+        window.syncBookmarkCardWidthsToContainer();
+    }
+    if (window.updateBookmarkScrollbars) {
+        window.updateBookmarkScrollbars();
+    }
+
+    autoSave();
+};
 window.renderCardControls = renderCardControls;
 window.previewCardOpacity = previewCardOpacity;
 window.updateCardOpacity = updateCardOpacity;
@@ -2519,6 +2840,87 @@ window.showBackupManagementModal = showBackupManagementModal;
 window.hideBackupManagementModal = hideBackupManagementModal;
 window.showUserProfileModal = showUserProfileModal;
 window.hideUserProfileModal = hideUserProfileModal;
+
+function collectCurrentBookmarkFreeLayout(config) {
+    const bookmarksContainer = document.getElementById('bookmarks-container');
+    if (!bookmarksContainer) {
+        return Array.isArray(config?.bookmarkLayout) ? config.bookmarkLayout : [];
+    }
+
+    const existingLayout = Array.isArray(config?.bookmarkLayout) ? config.bookmarkLayout : [];
+    return [...bookmarksContainer.querySelectorAll('.bookmark-card')].map((child, index) => {
+        const category = (child.dataset.category || '').trim() || `bookmark-${index}`;
+        const existingItem = existingLayout.find(item => (item.category || '').trim() === category) || {};
+
+        return {
+            category,
+            index,
+            span: 1,
+            width: parseInt(child.dataset.layoutWidth || child.style.width || '', 10) || existingItem.width || '',
+            height: parseInt(child.dataset.layoutHeight || child.style.height || '', 10) || existingItem.height || '',
+            x: parseInt(child.dataset.layoutX || '0', 10) || 0,
+            y: parseInt(child.dataset.layoutY || '0', 10) || 0,
+            widthPreset: child.dataset.originalWidthPreset
+                || (child.dataset.cardWidthPreset && child.dataset.cardWidthPreset !== 'collapsed' ? child.dataset.cardWidthPreset : '')
+                || existingItem.widthPreset
+                || '1/4',
+            color: child.dataset.customColor || existingItem.color || '',
+            opacity: child.dataset.customOpacity || existingItem.opacity || '0.7',
+            hidden: child.style.display === 'none',
+            collapsed: child.classList.contains('bookmark-card-collapsed')
+        };
+    });
+}
+
+saveLayoutState = async function () {
+    const config = await dataManager.getDashboardConfig();
+
+    const monitorSection = document.getElementById('monitor-section');
+    const monitorContainer = monitorSection?.querySelector('.grid');
+    const widgets = [];
+
+    if (monitorContainer) {
+        [...monitorContainer.children].forEach(child => {
+            if (!child.id) return;
+
+            let span = 1;
+            if (child.classList.contains('span-2')) span = 2;
+            if (child.classList.contains('span-3')) span = 3;
+
+            widgets.push({
+                id: child.id,
+                span,
+                width: child.style.width || '',
+                height: child.style.height || ''
+            });
+        });
+    }
+
+    config.layout = widgets;
+    config.bookmarkLayout = collectCurrentBookmarkFreeLayout(config);
+    await dataManager.saveDashboardConfig(config);
+};
+
+window.saveLayoutState = saveLayoutState;
+
+window.closeSettingsSidebar = async function (...args) {
+    await closeSettingsSidebar(...args);
+
+    await new Promise(resolve => {
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(resolve);
+        });
+    });
+
+    if (window.syncBookmarkCardWidthsToContainer) {
+        window.syncBookmarkCardWidthsToContainer();
+    }
+    if (window.updateBookmarkScrollbars) {
+        window.updateBookmarkScrollbars();
+    }
+
+    await saveLayoutState();
+};
 
 // ===== 主题切换功能 =====
 // 应用主题
@@ -2969,6 +3371,10 @@ async function syncBookmarkCardOrder(bookmarkLayout) {
             container.appendChild(card);
         }
     });
+
+    if (window.updateBookmarkCardVisualOrder) {
+        window.updateBookmarkCardVisualOrder();
+    }
 }
 
 let draggedBookmarkCard = null;
@@ -3154,7 +3560,7 @@ function handleBookmarkCardSortDragStart(e) {
         return;
     }
 
-    if (e.target.closest('.bookmark-item-wrapper, .bookmark-item, button, input, textarea, label, a, .category-name-input, .bookmark-resize-handle-right-edge, .bookmark-resize-handle-bottom-edge')) {
+    if (e.target.closest('.bookmark-item-wrapper, .bookmark-item, button, input, textarea, label, a, .category-name-input, .bookmark-resize-handle-left-edge, .bookmark-resize-handle-top-edge, .bookmark-resize-handle-right-edge, .bookmark-resize-handle-bottom-edge')) {
         return;
     }
 
@@ -3236,7 +3642,7 @@ function handleBookmarkCardSortPointerDown(e) {
         return;
     }
 
-    if (e.target.closest('.bookmark-item-wrapper, .bookmark-item, button, input, textarea, label, a, .category-name-input, .bookmark-resize-handle-right-edge, .bookmark-resize-handle-bottom-edge')) {
+    if (e.target.closest('.bookmark-item-wrapper, .bookmark-item, button, input, textarea, label, a, .category-name-input, .bookmark-resize-handle-left-edge, .bookmark-resize-handle-top-edge, .bookmark-resize-handle-right-edge, .bookmark-resize-handle-bottom-edge')) {
         return;
     }
 
