@@ -515,12 +515,12 @@ nav a.active {
     color: var(--text-secondary);
     font-size: 1.25rem;
     cursor: pointer;
-    padding: 0.5rem;
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
-    border-radius: 0.375rem;
+    border-radius: 0.625rem;
     width: 40px;
     height: 40px;
     position: relative;
@@ -536,18 +536,27 @@ nav a.active {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
+    width: 40px;
+    height: 40px;
 }
 
 .control-center-icon svg {
     width: 100%;
     height: 100%;
+    transition: transform 0.18s ease, filter 0.18s ease;
+}
+
+.control-center-icon-image {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
     transition: transform 0.2s ease;
 }
 
-.control-center-btn:hover .control-center-icon svg {
-    transform: rotate(90deg);
+.control-center-btn:hover .control-center-icon svg,
+.control-center-btn:hover .control-center-icon-image {
+    transform: scale(1.12);
 }
 
 .control-center-menu {
@@ -3045,16 +3054,18 @@ select.input-field option {
     max-width: none;
 }
 
-body.sidebar-open #bookmarks-container.bookmarks-free-layout {
+#bookmarks-container.bookmarks-free-layout {
+    padding-top: 0;
+    margin-top: calc(-1.5rem - 5px);
     background-image:
-        linear-gradient(rgba(129, 140, 248, 0.08) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(129, 140, 248, 0.08) 1px, transparent 1px);
+        linear-gradient(rgba(129, 140, 248, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(129, 140, 248, 0.04) 1px, transparent 1px);
     background-size: 24px 24px;
     background-position: 12px 0;
     border-radius: 1rem;
 }
 
-body.sidebar-open #bookmarks-container.bookmarks-free-layout::before {
+#bookmarks-container.bookmarks-free-layout::before {
     content: '';
     position: absolute;
     inset: 0;
