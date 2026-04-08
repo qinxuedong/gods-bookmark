@@ -5800,13 +5800,15 @@ window.restoreBookmarkStyles = restoreBookmarkStyles;
     function clearBookmarkCardResizeHandlesFinal() {
         document.querySelectorAll('#bookmarks-container .bookmark-card').forEach((bookmarkCard) => {
             bookmarkCard.classList.remove(
+                'resizable',
+                'resizing',
                 'bookmark-card-resizable',
                 'bookmark-card-resizing',
                 'bookmark-card-resizing-width',
                 'bookmark-card-resizing-height'
             );
             bookmarkCard.querySelectorAll(
-                '.bookmark-resize-handle-right-edge, .bookmark-resize-handle-left-edge, .bookmark-resize-handle-top-edge, .bookmark-resize-handle-bottom-edge'
+                '.bookmark-resize-handle-right-edge, .bookmark-resize-handle-left-edge, .bookmark-resize-handle-top-edge, .bookmark-resize-handle-bottom-edge, .bookmark-resize-handle-right, .bookmark-resize-handle-bottom, .resize-handle, .resize-handle-edge, .resize-handle-top, .resize-handle-bottom, .resize-handle-left, .resize-handle-right, .resize-handle-corner, .resize-handle-top-left, .resize-handle-top-right, .resize-handle-bottom-left, .resize-handle-bottom-right'
             ).forEach((handle) => handle.remove());
         });
         document.body.classList.remove('bookmark-card-resizing-active');
@@ -8277,6 +8279,8 @@ function beginBookmarkFreeDrag(pendingState, clientX, clientY) {
     card.classList.add('bookmark-card-free-dragging');
     card.style.zIndex = '2500';
     card.style.pointerEvents = 'none';
+    card.style.transition = 'none';
+    card.style.animation = 'none';
 
     document.addEventListener('mousemove', handleBookmarkFreeDragMove);
     document.addEventListener('mouseup', handleBookmarkFreeDragEnd);
@@ -8302,6 +8306,8 @@ function cleanupBookmarkFreeDragState() {
         activeBookmarkFreeDrag.card.style.transform = '';
         activeBookmarkFreeDrag.card.style.opacity = '';
         activeBookmarkFreeDrag.card.style.boxShadow = '';
+        activeBookmarkFreeDrag.card.style.transition = '';
+        activeBookmarkFreeDrag.card.style.animation = '';
     }
     activeBookmarkFreeDrag = null;
 }

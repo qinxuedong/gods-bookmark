@@ -34,6 +34,23 @@ function clearCardControlHighlights() {
     }
 }
 
+function forceClearBookmarkCardResizeArtifacts() {
+    document.querySelectorAll('#bookmarks-container .bookmark-card').forEach(card => {
+        card.classList.remove(
+            'resizable',
+            'resizing',
+            'bookmark-card-resizable',
+            'bookmark-card-resizing',
+            'bookmark-card-resizing-width',
+            'bookmark-card-resizing-height'
+        );
+        card.querySelectorAll(
+            '.bookmark-resize-handle-right-edge, .bookmark-resize-handle-left-edge, .bookmark-resize-handle-top-edge, .bookmark-resize-handle-bottom-edge, .bookmark-resize-handle-right, .bookmark-resize-handle-bottom, .resize-handle, .resize-handle-edge, .resize-handle-top, .resize-handle-bottom, .resize-handle-left, .resize-handle-right, .resize-handle-corner, .resize-handle-top-left, .resize-handle-top-right, .resize-handle-bottom-left, .resize-handle-bottom-right'
+        ).forEach(handle => handle.remove());
+    });
+    document.body.classList.remove('bookmark-card-resizing-active');
+}
+
 function bindSettingsCardSelectionDelegation() {
     if (settingsCardSelectionClickBound) {
         return;
@@ -95,11 +112,13 @@ async function closeSettingsSidebar() {
             await window.flushBookmarkLayoutRealtimeSave();
         }
 
-        sidebar.classList.remove('open');
-        document.body.classList.remove('sidebar-open');
-        
         // 关闭设置面板时，清除所有卡片和控制项的高亮状态
         clearCardControlHighlights();
+        
+        clearCardControlHighlights();
+        forceClearBookmarkCardResizeArtifacts();
+        sidebar.classList.remove('open');
+        document.body.classList.remove('sidebar-open');
         if (window.disableBookmarkCardSort) {
             window.disableBookmarkCardSort();
         }
@@ -117,9 +136,7 @@ async function closeSettingsSidebar() {
         if (window.syncBookmarkCardWidthsToContainer) {
             window.syncBookmarkCardWidthsToContainer();
         }
-        if (window.clearBookmarkCardResizeHandles) {
-            window.clearBookmarkCardResizeHandles();
-        }
+        forceClearBookmarkCardResizeArtifacts();
         if (window.updateBookmarkScrollbars) {
             window.updateBookmarkScrollbars();
         }

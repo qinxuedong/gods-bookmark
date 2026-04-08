@@ -573,6 +573,7 @@ nav a.active {
     transform: translateX(-10px) scale(0.95);
     opacity: 0;
     transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+    overflow-x: hidden;
     overflow-y: auto;
     overflow-x: hidden;
     pointer-events: auto;
@@ -2119,7 +2120,7 @@ body.sidebar-open header .container {
     box-shadow: 0 0 32px rgba(129, 140, 248, 0.85),
                 0 0 48px rgba(129, 140, 248, 0.6) !important;
     z-index: 10;
-    transition: all 0.3s ease;
+    transition: outline-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     animation: breathing-glow 2s ease-in-out infinite;
 }
 
@@ -2431,6 +2432,27 @@ body.sidebar-open .bookmark-card.bookmark-card-resizable .bookmark-resize-handle
 body.sidebar-open .bookmark-card.bookmark-card-resizable .bookmark-resize-handle-top-edge:hover::before {
     background: rgba(129, 140, 248, 0.52);
     box-shadow: 0 0 10px rgba(129, 140, 248, 0.28);
+}
+
+body:not(.sidebar-open) .bookmark-resize-handle-right-edge,
+body:not(.sidebar-open) .bookmark-resize-handle-left-edge,
+body:not(.sidebar-open) .bookmark-resize-handle-top-edge,
+body:not(.sidebar-open) .bookmark-resize-handle-bottom-edge,
+body:not(.sidebar-open) .bookmark-resize-handle-right,
+body:not(.sidebar-open) .bookmark-resize-handle-bottom,
+body:not(.sidebar-open) .resize-handle,
+body:not(.sidebar-open) .resize-handle-edge,
+body:not(.sidebar-open) .resize-handle-top,
+body:not(.sidebar-open) .resize-handle-bottom,
+body:not(.sidebar-open) .resize-handle-left,
+body:not(.sidebar-open) .resize-handle-right,
+body:not(.sidebar-open) .resize-handle-corner,
+body:not(.sidebar-open) .resize-handle-top-left,
+body:not(.sidebar-open) .resize-handle-top-right,
+body:not(.sidebar-open) .resize-handle-bottom-left,
+body:not(.sidebar-open) .resize-handle-bottom-right {
+    display: none !important;
+    pointer-events: none !important;
 }
 
 :root[data-theme="light"] .bookmark-card.bookmark-card-resizable .bookmark-resize-handle-right-edge::before,
@@ -3046,6 +3068,14 @@ body.sidebar-open .bookmark-card.bookmark-card-free-dragging {
     transform: none;
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
     z-index: 2500 !important;
+    transition: none !important;
+    animation: none !important;
+    will-change: left, top;
+}
+
+body.sidebar-open .bookmark-card.highlighted-card.bookmark-card-free-dragging {
+    transition: none !important;
+    animation: none !important;
 }
 
 body.sidebar-open .bookmark-card.bookmark-card-swap-target {
