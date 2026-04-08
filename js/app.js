@@ -3340,6 +3340,10 @@ async function syncMergedDuplicateBookmarksToBrowser(removedEntries) {
 async function syncBrowserBookmarksFromServer() {
     try {
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.syncServerBookmarks === 'function') {
+            if (typeof window.godsBookmarkExtension.isReady === 'function' &&
+                !window.godsBookmarkExtension.isReady()) {
+                return;
+            }
             await window.godsBookmarkExtension.syncServerBookmarks();
         }
     } catch (error) {
@@ -3763,6 +3767,18 @@ async function loadBookmarks() {
                     e.stopPropagation();
                     return;
                 }
+                if (document.body.classList.contains('sidebar-open')) {
+                    const bookmarkCard = e.currentTarget.closest('.bookmark-card');
+                    const cardIndex = bookmarkCard && typeof window.getCardControlIndex === 'function'
+                        ? window.getCardControlIndex(bookmarkCard)
+                        : -1;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (cardIndex >= 0 && typeof window.highlightCardControl === 'function') {
+                        window.highlightCardControl(cardIndex, true, false);
+                    }
+                    return;
+                }
                 if (window.handleBookmarkClick) {
                     window.handleBookmarkClick(e, cIdx, iIdx);
                 }
@@ -3816,15 +3832,27 @@ async function loadBookmarks() {
             });
         }
 
-        // 设置模式下，点击标题可编辑
-        if (isSettingsMode && isAdmin) {
-            // 定义标题编辑处理函数
-            function makeTitleEditable(titleElement) {
-                titleElement.addEventListener('click', function handleTitleClick(e) {
-                    e.stopPropagation();
-                    const categoryName = titleElement.textContent.trim();
-                    const catIndex = parseInt(titleElement.getAttribute('data-category-index'));
-                    const parent = titleElement.parentElement;
+            // 设置模式下，点击标题可编辑
+            if (isSettingsMode && isAdmin) {
+                // 定义标题编辑处理函数
+                function makeTitleEditable(titleElement) {
+                    titleElement.addEventListener('click', function handleTitleClick(e) {
+                        const bookmarkCard = titleElement.closest('.bookmark-card');
+                        const currentIndex = typeof window.getCardControlIndex === 'function'
+                            ? window.getCardControlIndex(bookmarkCard)
+                            : -1;
+                        if (currentIndex !== -1 && typeof window.highlightCardControl === 'function') {
+                            window.highlightCardControl(currentIndex, true, false);
+                        }
+
+                        e.stopPropagation();
+                        if (e.detail < 2) {
+                            return;
+                        }
+                        e.preventDefault();
+                        const categoryName = titleElement.textContent.trim();
+                        const catIndex = parseInt(titleElement.getAttribute('data-category-index'));
+                        const parent = titleElement.parentElement;
 
                     // 创建输入框
                     const input = document.createElement('input');
@@ -4856,10 +4884,11 @@ window.handleBookmarkClick = async function (event, catIndex, itemIndex) {
     // 在设置模式下，如果点击的是书签卡片本身（不是书签项），高亮对应的布局设置项
     if (isSettingsMode && isAdmin) {
         const bookmarkCard = event.target.closest('.bookmark-card');
-        if (bookmarkCard && !event.target.closest('.bookmark-item')) {
+        if (bookmarkCard) {
             // 找到对应的卡片索引
-            const allCards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
-            const cardIndex = Array.from(allCards).indexOf(bookmarkCard);
+            const cardIndex = typeof window.getCardControlIndex === 'function'
+                ? window.getCardControlIndex(bookmarkCard)
+                : Array.from(document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card')).indexOf(bookmarkCard);
             if (cardIndex >= 0) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -4872,11 +4901,6 @@ window.handleBookmarkClick = async function (event, catIndex, itemIndex) {
         }
 
         // 在设置模式下，点击书签项时防止链接跳转，改为打开编辑
-        if (event.target.closest('.bookmark-item')) {
-            event.preventDefault();
-            window.editBookmark(catIndex, itemIndex);
-            return false;
-        }
     }
 
     // 记录点击统计和自动获取logo（异步，不阻塞跳转）
@@ -5850,6 +5874,10 @@ window.refreshBookmarkCardResizeHandles = refreshBookmarkCardResizeHandlesFinal;
 syncBrowserBookmarksFromServer = async function () {
     try {
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.syncServerBookmarks === 'function') {
+            if (typeof window.godsBookmarkExtension.isReady === 'function' &&
+                !window.godsBookmarkExtension.isReady()) {
+                return;
+            }
             await window.godsBookmarkExtension.syncServerBookmarks();
             return;
         }
@@ -7711,6 +7739,9 @@ const BOOKMARK_LAYOUT_COLLAPSED_HEIGHT = 70;
 
 let activeBookmarkFreeDrag = null;
 let bookmarkFreeDragAnimationFrame = null;
+let pendingBookmarkFreeDrag = null;
+let bookmarkLayoutRealtimeSaveTimer = null;
+let bookmarkLayoutRealtimeSavePromise = null;
 
 function getBookmarkLayoutContainerMetrics() {
     const container = document.getElementById('bookmarks-container');
@@ -7751,9 +7782,12 @@ function getDefaultBookmarkLayoutWidth(metrics) {
     return Math.max(BOOKMARK_LAYOUT_MIN_WIDTH, snapBookmarkLayoutValue(estimated));
 }
 
-function clampBookmarkLayoutWidth(width, metrics) {
+function clampBookmarkLayoutWidth(width, metrics, maxWidth = null) {
     const innerWidth = metrics?.innerWidth || BOOKMARK_LAYOUT_MIN_WIDTH;
-    return Math.max(BOOKMARK_LAYOUT_MIN_WIDTH, Math.min(snapBookmarkLayoutValue(width), innerWidth));
+    const upperBound = Number.isFinite(maxWidth)
+        ? Math.max(BOOKMARK_LAYOUT_MIN_WIDTH, snapBookmarkLayoutValue(maxWidth))
+        : innerWidth;
+    return Math.max(BOOKMARK_LAYOUT_MIN_WIDTH, Math.min(snapBookmarkLayoutValue(width), upperBound));
 }
 
 function clampBookmarkLayoutHeight(height) {
@@ -7863,12 +7897,13 @@ function getMaxBookmarkLayoutBottomFromPlaced(placedEntries) {
 }
 
 function normalizeBookmarkLayout(layout, metrics) {
-    const width = clampBookmarkLayoutWidth(layout.width, metrics);
+    const snappedX = Math.max(0, snapBookmarkLayoutValue(layout.x));
+    const width = clampBookmarkLayoutWidth(layout.width, metrics, metrics.innerWidth - snappedX);
     const height = clampBookmarkLayoutHeight(layout.height);
     const maxX = Math.max(0, metrics.innerWidth - width);
 
     return {
-        x: Math.max(0, Math.min(snapBookmarkLayoutValue(layout.x), maxX)),
+        x: Math.max(0, Math.min(snappedX, maxX)),
         y: Math.max(0, snapBookmarkLayoutValue(layout.y)),
         width,
         height
@@ -8218,6 +8253,36 @@ function queueBookmarkFreeDragFrame(clientX, clientY) {
     bookmarkFreeDragAnimationFrame = requestAnimationFrame(renderBookmarkFreeDragFrame);
 }
 
+function cleanupPendingBookmarkFreeDrag() {
+    document.removeEventListener('mousemove', handlePendingBookmarkFreeDragMove);
+    document.removeEventListener('mouseup', handlePendingBookmarkFreeDragEnd);
+    pendingBookmarkFreeDrag = null;
+}
+
+function beginBookmarkFreeDrag(pendingState, clientX, clientY) {
+    const { card, pointerOffsetX, pointerOffsetY, pendingLayout } = pendingState;
+
+    activeBookmarkFreeDrag = {
+        card,
+        pointerOffsetX,
+        pointerOffsetY,
+        startClientX: pendingState.startClientX,
+        startClientY: pendingState.startClientY,
+        lastClientX: clientX,
+        lastClientY: clientY,
+        pendingLayout,
+        swapTarget: null
+    };
+
+    card.classList.add('bookmark-card-free-dragging');
+    card.style.zIndex = '2500';
+    card.style.pointerEvents = 'none';
+
+    document.addEventListener('mousemove', handleBookmarkFreeDragMove);
+    document.addEventListener('mouseup', handleBookmarkFreeDragEnd);
+    queueBookmarkFreeDragFrame(clientX, clientY);
+}
+
 function cleanupBookmarkFreeDragState() {
     if (bookmarkFreeDragAnimationFrame !== null) {
         cancelAnimationFrame(bookmarkFreeDragAnimationFrame);
@@ -8247,11 +8312,36 @@ function handleBookmarkFreeDragMove(event) {
     queueBookmarkFreeDragFrame(event.clientX, event.clientY);
 }
 
+function handlePendingBookmarkFreeDragMove(event) {
+    if (!pendingBookmarkFreeDrag) return;
+
+    const movedX = Math.abs(event.clientX - pendingBookmarkFreeDrag.startClientX);
+    const movedY = Math.abs(event.clientY - pendingBookmarkFreeDrag.startClientY);
+    if (Math.max(movedX, movedY) < 6) {
+        return;
+    }
+
+    const pendingState = pendingBookmarkFreeDrag;
+    cleanupPendingBookmarkFreeDrag();
+    event.preventDefault();
+    event.stopPropagation();
+    beginBookmarkFreeDrag(pendingState, event.clientX, event.clientY);
+}
+
+function handlePendingBookmarkFreeDragEnd() {
+    cleanupPendingBookmarkFreeDrag();
+}
+
 async function handleBookmarkFreeDragEnd(event) {
     if (!activeBookmarkFreeDrag) return;
 
     const dragState = activeBookmarkFreeDrag;
     const sourceCard = dragState.card;
+    const cardIndex = sourceCard && typeof window.getCardControlIndex === 'function'
+        ? window.getCardControlIndex(sourceCard)
+        : -1;
+    const movedX = Math.abs((dragState.lastClientX || 0) - (dragState.startClientX || 0));
+    const movedY = Math.abs((dragState.lastClientY || 0) - (dragState.startClientY || 0));
     const sourceCategory = sourceCard.dataset.category;
     const sourceStartX = parseBookmarkLayoutNumber(sourceCard.dataset.layoutX) || 0;
     const sourceStartY = parseBookmarkLayoutNumber(sourceCard.dataset.layoutY) || 0;
@@ -8259,6 +8349,13 @@ async function handleBookmarkFreeDragEnd(event) {
     const swapTarget = dragState.swapTarget;
 
     cleanupBookmarkFreeDragState();
+
+    if (Math.max(movedX, movedY) < 6) {
+        if (cardIndex >= 0 && typeof window.highlightCardControl === 'function') {
+            window.highlightCardControl(cardIndex, true, false);
+        }
+        return;
+    }
 
     if (swapTarget) {
         const targetLayout = getBookmarkCardLayoutData(swapTarget, getBookmarkLayoutContainerMetrics());
@@ -8292,27 +8389,19 @@ function handleBookmarkFreeDragStart(event) {
     const card = event.currentTarget;
     if (!card || card.classList.contains('bookmark-card-collapsed')) return;
 
-    event.preventDefault();
-    event.stopPropagation();
-
     const rect = card.getBoundingClientRect();
-    activeBookmarkFreeDrag = {
+
+    pendingBookmarkFreeDrag = {
         card,
         pointerOffsetX: event.clientX - rect.left,
         pointerOffsetY: event.clientY - rect.top,
-        lastClientX: event.clientX,
-        lastClientY: event.clientY,
         pendingLayout: getBookmarkCardLayoutData(card, getBookmarkLayoutContainerMetrics()),
-        swapTarget: null
+        startClientX: event.clientX,
+        startClientY: event.clientY
     };
 
-    card.classList.add('bookmark-card-free-dragging');
-    card.style.zIndex = '2500';
-    card.style.pointerEvents = 'none';
-
-    document.addEventListener('mousemove', handleBookmarkFreeDragMove);
-    document.addEventListener('mouseup', handleBookmarkFreeDragEnd);
-    queueBookmarkFreeDragFrame(event.clientX, event.clientY);
+    document.addEventListener('mousemove', handlePendingBookmarkFreeDragMove);
+    document.addEventListener('mouseup', handlePendingBookmarkFreeDragEnd);
 }
 
 window.enableBookmarkCardSort = function () {
@@ -8330,6 +8419,7 @@ window.disableBookmarkCardSort = function () {
         delete card.dataset.bookmarkFreeMoveBound;
         card.classList.remove('bookmark-card-free-dragging', 'bookmark-card-swap-target');
     });
+    cleanupPendingBookmarkFreeDrag();
     cleanupBookmarkFreeDragState();
     if (window.clearBookmarkCardResizeHandles) {
         window.clearBookmarkCardResizeHandles();
@@ -8388,6 +8478,24 @@ startBookmarkCardResize = function (event, card, options = {}) {
     let pendingY = startY;
     let animationFrameId = null;
     const affectedCategories = new Set(categoryName ? [categoryName] : []);
+
+    const scheduleRealtimeLayoutSave = () => {
+        if (bookmarkLayoutRealtimeSaveTimer) {
+            clearTimeout(bookmarkLayoutRealtimeSaveTimer);
+        }
+        bookmarkLayoutRealtimeSaveTimer = setTimeout(() => {
+            bookmarkLayoutRealtimeSaveTimer = null;
+            if (typeof window.saveLayoutState === 'function') {
+                bookmarkLayoutRealtimeSavePromise = Promise.resolve(window.saveLayoutState())
+                    .catch((error) => {
+                        console.error('[书签布局] 实时保存失败:', error);
+                    })
+                    .finally(() => {
+                        bookmarkLayoutRealtimeSavePromise = null;
+                    });
+            }
+        }, 120);
+    };
 
     document.body.classList.add('bookmark-card-resizing-active');
     document.body.style.userSelect = 'none';
@@ -8450,6 +8558,7 @@ startBookmarkCardResize = function (event, card, options = {}) {
         latestWidth = nextLayout.width;
         latestHeight = nextLayout.height;
         layoutBookmarkCardsFreeform();
+        scheduleRealtimeLayoutSave();
     };
 
     const queueResizeFrame = () => {
@@ -8485,6 +8594,13 @@ startBookmarkCardResize = function (event, card, options = {}) {
                 .filter(Boolean)
                 .map((affectedCategory) => saveBookmarkCardFreeLayout(affectedCategory))
         );
+        if (bookmarkLayoutRealtimeSaveTimer) {
+            clearTimeout(bookmarkLayoutRealtimeSaveTimer);
+            bookmarkLayoutRealtimeSaveTimer = null;
+        }
+        if (bookmarkLayoutRealtimeSavePromise) {
+            await bookmarkLayoutRealtimeSavePromise;
+        }
         if (window.updateBookmarkScrollbars) {
             window.updateBookmarkScrollbars();
         }
@@ -8507,6 +8623,26 @@ saveBookmarkCardSize = async function (categoryName, width, height) {
 
     layoutBookmarkCardsFreeform();
     await saveBookmarkCardFreeLayout(categoryName);
+};
+
+window.flushBookmarkLayoutRealtimeSave = async function () {
+    if (bookmarkLayoutRealtimeSaveTimer) {
+        clearTimeout(bookmarkLayoutRealtimeSaveTimer);
+        bookmarkLayoutRealtimeSaveTimer = null;
+        if (typeof window.saveLayoutState === 'function') {
+            bookmarkLayoutRealtimeSavePromise = Promise.resolve(window.saveLayoutState())
+                .catch((error) => {
+                    console.error('[书签布局] 关闭前保存失败:', error);
+                })
+                .finally(() => {
+                    bookmarkLayoutRealtimeSavePromise = null;
+                });
+        }
+    }
+
+    if (bookmarkLayoutRealtimeSavePromise) {
+        await bookmarkLayoutRealtimeSavePromise;
+    }
 };
 
 window.addBookmarkCardResizeHandles = function (card) {

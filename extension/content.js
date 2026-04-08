@@ -378,6 +378,11 @@
 
     function sendActionAsPromise(payload, successMessage) {
       return new Promise((resolve, reject) => {
+        if (!isExtensionContextValid()) {
+          resolve({ skipped: true, error: 'Extension context invalidated' });
+          return;
+        }
+
         sendMessageSafely(payload, (response) => {
           if (response && !response.error && response.success !== false) {
             if (successMessage) {
@@ -388,12 +393,20 @@
           }
 
           const errorMessage = response && response.error ? response.error : 'No response';
+          if (errorMessage && errorMessage.includes('Extension context invalidated')) {
+            resolve({ skipped: true, error: errorMessage });
+            return;
+          }
           reject(new Error(errorMessage));
         });
       });
     }
 
     window.godsBookmarkExtension = {
+      isReady: function () {
+        return isExtensionContextValid();
+      },
+
       deleteBookmark: function (url) {
         console.log('[书签同步-Content] 通过API删除书签:', url);
         return sendActionAsPromise({
@@ -553,8 +566,17 @@ window.addEventListener('message', function (event) {
     return;
   }
 
+  if (!window.godsBookmarkExtension ||
+      typeof window.godsBookmarkExtension.isReady !== 'function' ||
+      !window.godsBookmarkExtension.isReady()) {
+    return;
+  }
+
   if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.syncServerBookmarks === 'function') {
     window.godsBookmarkExtension.syncServerBookmarks().catch((error) => {
+      if (error && error.message && error.message.includes('Extension context invalidated')) {
+        return;
+      }
       console.error('[书签同步-Content] 全量对账触发失败:', error);
     });
   }

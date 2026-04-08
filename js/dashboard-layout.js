@@ -5,6 +5,8 @@
 
 let isLayoutEditing = false;
 let draggedItem = null;
+let cardHighlightOutsideClickBound = false;
+let settingsCardSelectionClickBound = false;
 
 // ===== 侧边栏控制 =====
 async function toggleSettingsSidebar() {
@@ -20,6 +22,68 @@ async function toggleSettingsSidebar() {
     }
 }
 
+function clearCardControlHighlights() {
+    document.querySelectorAll('.card-control-item').forEach(item => {
+        item.classList.remove('highlighted');
+    });
+    document.querySelectorAll('.highlighted-card').forEach(card => {
+        card.classList.remove('highlighted-card');
+    });
+    if (window.clearBookmarkCardResizeHandles) {
+        window.clearBookmarkCardResizeHandles();
+    }
+}
+
+function bindSettingsCardSelectionDelegation() {
+    if (settingsCardSelectionClickBound) {
+        return;
+    }
+
+    settingsCardSelectionClickBound = true;
+    const handleSettingsCardSelection = (e) => {
+        const sidebar = document.getElementById('admin-sidebar');
+        if (!sidebar || !sidebar.classList.contains('open')) {
+            return;
+        }
+
+        if (Date.now() < bookmarkCardSortSuppressClickUntil) {
+            return;
+        }
+
+        if (e.target.closest('#admin-sidebar')) {
+            return;
+        }
+
+        const card = e.target.closest('#monitor-section .glass-card, #bookmarks-container .bookmark-card');
+        if (!card) {
+            clearCardControlHighlights();
+            return;
+        }
+
+        if (e.target.closest('.bookmark-resize-handle-left-edge, .bookmark-resize-handle-top-edge, .bookmark-resize-handle-right-edge, .bookmark-resize-handle-bottom-edge, .resize-handle, .bookmark-resize-handle-right, .bookmark-resize-handle-bottom')) {
+            return;
+        }
+
+        if (e.target.closest('.category-name-input, button, input, textarea, label')) {
+            return;
+        }
+
+        if (e.target.closest('.bookmark-item, .bookmark-item-wrapper a')) {
+            e.preventDefault();
+        }
+
+        const currentIndex = getCardControlIndex(card);
+        if (currentIndex === -1) {
+            return;
+        }
+
+        e.stopPropagation();
+        highlightCardControl(currentIndex, true, false);
+    };
+
+    document.addEventListener('click', handleSettingsCardSelection, true);
+}
+
 async function openSettingsSidebar() {
     await toggleSettingsSidebar();
 }
@@ -27,19 +91,15 @@ async function openSettingsSidebar() {
 async function closeSettingsSidebar() {
     const sidebar = document.getElementById('admin-sidebar');
     if (sidebar) {
+        if (window.flushBookmarkLayoutRealtimeSave) {
+            await window.flushBookmarkLayoutRealtimeSave();
+        }
+
         sidebar.classList.remove('open');
         document.body.classList.remove('sidebar-open');
         
         // 关闭设置面板时，清除所有卡片和控制项的高亮状态
-        document.querySelectorAll('.card-control-item').forEach(item => {
-            item.classList.remove('highlighted');
-        });
-        document.querySelectorAll('.highlighted-card').forEach(card => {
-            card.classList.remove('highlighted-card');
-        });
-        if (window.clearBookmarkCardResizeHandles) {
-            window.clearBookmarkCardResizeHandles();
-        }
+        clearCardControlHighlights();
         if (window.disableBookmarkCardSort) {
             window.disableBookmarkCardSort();
         }
@@ -47,6 +107,23 @@ async function closeSettingsSidebar() {
             clearTimeout(autoSaveTimer);
             autoSaveTimer = null;
         }
+
+        await new Promise(resolve => {
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(resolve);
+            });
+        });
+
+        if (window.syncBookmarkCardWidthsToContainer) {
+            window.syncBookmarkCardWidthsToContainer();
+        }
+        if (window.clearBookmarkCardResizeHandles) {
+            window.clearBookmarkCardResizeHandles();
+        }
+        if (window.updateBookmarkScrollbars) {
+            window.updateBookmarkScrollbars();
+        }
+
         try {
             await saveLayoutState();
         } catch (error) {
@@ -2444,6 +2521,7 @@ async function renameCard(index, newName) {
 
 // ===== 卡片点击高亮并滚动 (仅设置模式) =====
 function bindCardClickEvents() {
+    bindSettingsCardSelectionDelegation();
     const cards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
 
     cards.forEach((card) => {
@@ -2459,6 +2537,11 @@ function bindCardClickEvents() {
                 return;
             }
 
+            const sidebarEl = document.getElementById('admin-sidebar');
+            if (!sidebarEl || !sidebarEl.classList.contains('open')) {
+                return;
+            }
+
             // 忽略拖拽或调整大小时的点击
             if (e.target.classList.contains('resize-handle') || 
                 e.target.classList.contains('bookmark-resize-handle-right') ||
@@ -2469,14 +2552,12 @@ function bindCardClickEvents() {
                 e.target.closest('.bookmark-resize-handle-bottom-edge')) return;
             
             // 忽略点击书签项内部链接的点击（让链接正常跳转，由 handleBookmarkClick 处理）
-            if (e.target.closest('.bookmark-item')) {
-                return;
+            if (e.target.closest('.bookmark-item, .bookmark-item-wrapper a')) {
+                e.preventDefault();
             }
 
-            // 忽略点击标题和输入框（标题有自己的双击事件，输入框有自己的点击事件）
-            if (e.target.classList.contains('bookmark-card-title') || 
-                e.target.classList.contains('bookmark-card-title-editable') ||
-                e.target.classList.contains('category-name-input')) {
+            // 忽略输入框点击，避免编辑分类名称时触发联动
+            if (e.target.closest('.category-name-input, button, input, textarea, label')) {
                 return;
             }
 
@@ -2493,7 +2574,9 @@ function bindCardClickEvents() {
     });
 
     // 在全局编辑模式下，点击左侧空白区域时清除所有高亮
-    document.addEventListener('click', (e) => {
+    if (!cardHighlightOutsideClickBound) {
+        cardHighlightOutsideClickBound = true;
+        document.addEventListener('click', (e) => {
         // 仅在设置侧边栏打开时生效
         const sidebar = document.getElementById('admin-sidebar');
         if (!sidebar || !sidebar.classList.contains('open')) return;
@@ -2505,16 +2588,9 @@ function bindCardClickEvents() {
         }
 
         // 清除左侧卡片和右侧控制项的高亮状态
-        document.querySelectorAll('.highlighted-card').forEach(card => {
-            card.classList.remove('highlighted-card');
-        });
-        document.querySelectorAll('.card-control-item').forEach(item => {
-            item.classList.remove('highlighted');
-        });
-        if (window.clearBookmarkCardResizeHandles) {
-            window.clearBookmarkCardResizeHandles();
-        }
-    }, true);
+            clearCardControlHighlights();
+        }, true);
+    }
 }
 
 function highlightCardControl(index, shouldScroll = true, scrollLeftCard = true) {
@@ -2826,6 +2902,7 @@ window.setCardSpan = setCardSpan;
 window.autoSaveLayout = autoSave;
 window.applyCardGradient = applyCardGradient;
 window.highlightCardControl = highlightCardControl;
+window.getCardControlIndex = getCardControlIndex;
 window.toggleBookmarkCardVisibility = toggleBookmarkCardVisibility;
 window.applyBookmarkScale = applyBookmarkScale;
 window.restoreBookmarkScale = restoreBookmarkScale;
@@ -2905,21 +2982,6 @@ window.saveLayoutState = saveLayoutState;
 
 window.closeSettingsSidebar = async function (...args) {
     await closeSettingsSidebar(...args);
-
-    await new Promise(resolve => {
-        window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(resolve);
-        });
-    });
-
-    if (window.syncBookmarkCardWidthsToContainer) {
-        window.syncBookmarkCardWidthsToContainer();
-    }
-    if (window.updateBookmarkScrollbars) {
-        window.updateBookmarkScrollbars();
-    }
-
-    await saveLayoutState();
 };
 
 // ===== 主题切换功能 =====
@@ -3647,6 +3709,12 @@ function handleBookmarkCardSortPointerDown(e) {
     }
 
     cleanupPendingBookmarkCardSortStart();
+
+    const currentIndex = getCardControlIndex(this);
+    if (currentIndex !== -1 && typeof highlightCardControl === 'function') {
+        highlightCardControl(currentIndex, false, false);
+    }
+
     pendingBookmarkCardSortCard = this;
     pendingBookmarkCardSortStartX = e.clientX;
     pendingBookmarkCardSortStartY = e.clientY;
