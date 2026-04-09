@@ -13,6 +13,8 @@
     --warning-color: #f59e0b;
     --font-family: 'Inter', system-ui, -apple-system, sans-serif;
     --sidebar-width: 280px;
+    --bookmark-layout-grid-size: 24px;
+    --bookmark-layout-edge-gap: calc(var(--bookmark-layout-grid-size) / 2);
 }
 
 /* 亮色主题 - Morpher AI 风格 */
@@ -274,6 +276,10 @@ body.articles-page main.container::after {
 
 /* 书签卡片容器 - 在黑洞上方 */
 #bookmarks-container {
+    padding-top: var(--bookmark-layout-edge-gap);
+    padding-left: var(--bookmark-layout-edge-gap);
+    padding-right: var(--bookmark-layout-edge-gap);
+    margin-top: calc(var(--bookmark-layout-edge-gap) * -1);
     position: relative;
     z-index: 1; /* 在黑洞上方 */
     border-top: 1px solid var(--card-border); /* 顶部横线分隔 */
@@ -805,8 +811,8 @@ body.sidebar-open #bookmarks-container {
     /* 完全保持原有样式，不进行任何位置或对齐调整 */
     margin-left: 0 !important;
     margin-right: 0 !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
+    padding-left: var(--bookmark-layout-edge-gap) !important;
+    padding-right: var(--bookmark-layout-edge-gap) !important;
     position: relative !important;
     left: 0 !important;
     right: 0 !important;
@@ -3033,8 +3039,10 @@ select.input-field option {
 }
 
 #bookmarks-container {
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-top: var(--bookmark-layout-edge-gap);
+    padding-left: var(--bookmark-layout-edge-gap);
+    padding-right: var(--bookmark-layout-edge-gap);
+    margin-top: calc(var(--bookmark-layout-edge-gap) * -1);
     overflow: visible;
     box-sizing: border-box;
     position: relative;
@@ -3055,13 +3063,13 @@ select.input-field option {
 }
 
 #bookmarks-container.bookmarks-free-layout {
-    padding-top: 0;
-    margin-top: calc(-1.5rem - 5px);
+    padding-top: var(--bookmark-layout-edge-gap);
+    margin-top: calc(var(--bookmark-layout-edge-gap) * -1);
     background-image:
         linear-gradient(rgba(129, 140, 248, 0.04) 1px, transparent 1px),
         linear-gradient(90deg, rgba(129, 140, 248, 0.04) 1px, transparent 1px);
-    background-size: 24px 24px;
-    background-position: 12px 0;
+    background-size: var(--bookmark-layout-grid-size) var(--bookmark-layout-grid-size);
+    background-position: var(--bookmark-layout-edge-gap) var(--bookmark-layout-edge-gap);
     border-radius: 1rem;
 }
 

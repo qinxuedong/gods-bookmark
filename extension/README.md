@@ -1,6 +1,6 @@
 # God's Bookmark 浏览器扩展
 
-版本：`2.0.0`
+版本：`2.0.1`
 
 这个扩展用于把 Chrome / Edge 书签和 God's Bookmark 网站联动起来，并提供跨页面快捷搜索能力。
 
@@ -71,6 +71,12 @@ npm run build-extension
 会生成 `extension.zip`，可直接用于本地分发或上传到商店后台。
 
 ## 更新记录
+
+### v2.0.1
+
+- Align bookmark board top/left/right outer spacing to half a grid step (12px).
+- Fix the issue where a single card shrinks slightly after refresh when resized to the right boundary.
+- Unified release version to `2.0.1`.
 
 ### v2.0.0
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "God's Bookmark 书签同步",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "自动将浏览器书签与 God's Bookmark 实时同步",
   "permissions": [
     "bookmarks",

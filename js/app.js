@@ -7098,6 +7098,11 @@ function clampBookmarkCardWidthValue(rawWidth) {
 }
 
 function clampRenderedBookmarkCardWidths() {
+    const container = document.getElementById('bookmarks-container');
+    if (container?.classList.contains('bookmarks-free-layout')) {
+        return;
+    }
+
     document.querySelectorAll('#bookmarks-container .bookmark-card').forEach(card => {
         const inlineWidth = card.style.width;
         if (!inlineWidth) {
@@ -7112,6 +7117,12 @@ function clampRenderedBookmarkCardWidths() {
 }
 
 function syncBookmarkCardWidthsToContainer() {
+    const container = document.getElementById('bookmarks-container');
+    if (container?.classList.contains('bookmarks-free-layout')) {
+        layoutBookmarkCardsFreeform();
+        return;
+    }
+
     document.querySelectorAll('#bookmarks-container .bookmark-card').forEach(card => {
         if (card.classList.contains('bookmark-card-collapsed')) {
             applyBookmarkCardWidthPreset(card, 'collapsed');
@@ -7134,7 +7145,12 @@ if (!window.__bookmarkCardWidthClampBound) {
     window.__bookmarkCardWidthClampBound = true;
     window.addEventListener('resize', () => {
         window.requestAnimationFrame(() => {
-            syncBookmarkCardWidthsToContainer();
+            const container = document.getElementById('bookmarks-container');
+            if (container?.classList.contains('bookmarks-free-layout')) {
+                layoutBookmarkCardsFreeform();
+            } else {
+                syncBookmarkCardWidthsToContainer();
+            }
             updateBookmarkScrollbars();
         });
     });
