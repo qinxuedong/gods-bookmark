@@ -356,9 +356,7 @@ async function renderCardControls() {
 
     allCards.forEach((card, globalIndex) => {
         const cardId = card.id || `card-${globalIndex}`;
-        const cardName = getCardName(card);
-        const currentOpacity = card.dataset.customOpacity || '0.7';
-        const currentColor = card.dataset.customColor || '#8b5cf6';
+        const cardName = getCardName(card, config, globalIndex);
         
         // 判断是否是书签卡片
         const isBookmarkCard = card.classList.contains('bookmark-card');
@@ -373,21 +371,23 @@ async function renderCardControls() {
             }
         }
 
-        // 获取卡片的实际背景颜色（如果有渐变或填充色）
-        let cardBackgroundColor = currentColor;
-        // 检查卡片是否有渐变背景
-        const cardComputedStyle = window.getComputedStyle(card);
-        const cardBgImage = cardComputedStyle.backgroundImage;
-        if (cardBgImage && cardBgImage !== 'none') {
-            // 如果有渐变背景，使用自定义颜色
-            cardBackgroundColor = currentColor;
-        } else {
-            // 如果没有渐变，尝试获取背景色
-            const bgColor = cardComputedStyle.backgroundColor;
-            if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)' && bgColor !== 'transparent') {
-                cardBackgroundColor = bgColor;
+        const bookmarkLayout = config.bookmarkLayout || [];
+        const bookmarkLayoutItem = bookmarkLayout.find(item => {
+            if (isBookmarkCard && bookmarkCategoryIndex !== null) {
+                return item.category === bookmarkCategoryIndex;
             }
-        }
+            return false;
+        });
+        const savedCardConfig = config.cards?.[cardId] || null;
+        const currentOpacity = isBookmarkCard
+            ? (bookmarkLayoutItem?.opacity || card.dataset.customOpacity || '0.7')
+            : (savedCardConfig?.opacity || card.dataset.customOpacity || '0.7');
+        const currentColor = isBookmarkCard
+            ? (bookmarkLayoutItem?.color || card.dataset.customColor || '#8b5cf6')
+            : (savedCardConfig?.color || card.dataset.customColor || '#8b5cf6');
+
+        // 获取卡片的实际背景颜色（如果有渐变或填充色）
+        const cardBackgroundColor = currentColor;
         
         // 计算合适的边框颜色和背景透明度（与书签面板一致）
         const borderColor = cardBackgroundColor;
@@ -453,21 +453,17 @@ async function renderCardControls() {
         }
 
         // 获取隐藏状态
-        const bookmarkLayout = config.bookmarkLayout || [];
-        const bookmarkLayoutItem = bookmarkLayout.find(item => {
-            if (isBookmarkCard && bookmarkCategoryIndex) {
-                return item.category === bookmarkCategoryIndex;
-            }
-            return false;
-        });
         const isHidden = bookmarkLayoutItem?.hidden === true;
         
         const deleteBtnStyle = isLightTheme
             ? 'width: 20px; height: 20px; padding: 0; background: rgba(255,255,255,0.5); color: var(--text-secondary); border: 1px solid rgba(226,232,240,0.8); border-radius: 4px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 2px rgba(15,23,42,0.05);'
             : 'width: 20px; height: 20px; padding: 0; background: rgba(30,41,59,0.9); color: rgba(248,113,113,0.95); border: 1px solid rgba(248,113,113,0.8); border-radius: 4px; cursor: pointer; transition: all 0.2s; font-size: 0.6rem; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 400; box-shadow: 0 1px 3px rgba(15,23,42,0.35);';
         
+        const cardRefType = isBookmarkCard ? 'bookmark' : 'widget';
+        const cardRef = isBookmarkCard ? bookmarkCategoryIndex : (card.id || `card-${globalIndex}`);
+
         html += `
-            <div class="card-control-item" data-card-index="${globalIndex}" ${isBookmarkCard && bookmarkCategoryIndex !== null ? `data-bookmark-category="${bookmarkCategoryIndex}"` : ''}
+            <div class="card-control-item" data-card-index="${globalIndex}" data-card-ref-type="${cardRefType}" data-card-ref="${cardRef}" ${isBookmarkCard && bookmarkCategoryIndex !== null ? `data-bookmark-category="${bookmarkCategoryIndex}"` : ''}
                 style="border-bottom: ${globalIndex < allCards.length - 1 ? '1px solid var(--card-border)' : 'none'}; 
                        padding-bottom: ${globalIndex < allCards.length - 1 ? '1rem' : '0'}; 
                        margin-bottom: ${globalIndex < allCards.length - 1 ? '1rem' : '0'}; 
@@ -476,7 +472,7 @@ async function renderCardControls() {
                        box-shadow: 0 0 10px ${borderColor}40;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; position: relative;">
                     <div class="drag-handle-container" style="display:flex; align-items:center; gap:4px; min-width: 0;">
-                    <h4 style="margin: 0; font-size: 0.85rem; color: ${borderColor};">${cardName}</h4>
+                    <h4 class="card-control-title" style="margin: 0; font-size: 0.85rem; color: ${borderColor}; cursor: text;">${cardName}</h4>
                     </div>
                     <div style="display: flex; gap: 4px; position: absolute; top: 0; right: 0;">
                         ${isBookmarkCard && bookmarkCategoryIndex !== null ? `
@@ -493,11 +489,6 @@ async function renderCardControls() {
                         ` : ''}
                     </div>
                 </div>
-                <label for="card-name-input-${globalIndex}" class="sr-only">卡片名称</label>
-                <input type="text" id="card-name-input-${globalIndex}" class="card-name-input" data-card-index="${globalIndex}" value="${cardName}" 
-                    style="width: 100%; margin-bottom: 0.35rem; padding: 0.2rem; background: rgba(0,0,0,0.2); border: 1px solid var(--card-border); color: var(--text-primary); border-radius: 0.25rem; font-size: 0.75rem;"
-                    aria-label="卡片名称">
-                
                 <div class="control-row" style="margin-bottom: 0;">
                     <label for="card-opacity-range-${globalIndex}" style="width: 50px; font-size: 0.7rem;">透明/色</label>
                     <input type="range" id="card-opacity-range-${globalIndex}" class="card-opacity-range" data-card-index="${globalIndex}" min="0.1" max="1" step="0.1" value="${currentOpacity}"
@@ -767,19 +758,93 @@ function bindDashboardLayoutEvents(container) {
     });
 
     // 处理所有卡片名称输入框
-    container.querySelectorAll('.card-name-input').forEach((input, index) => {
-        const cardIndex = parseInt(input.getAttribute('data-card-index'));
-        if (!isNaN(cardIndex)) {
-            input.addEventListener('change', (e) => {
-                const value = e.target.value;
-                if (window.renameCard) {
-                    window.renameCard(cardIndex, value);
+    container.querySelectorAll('.card-control-title').forEach((title) => {
+        title.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const controlItem = title.closest('.card-control-item');
+            if (!controlItem || controlItem.dataset.renaming === 'true') {
+                return;
+            }
+
+            const refType = controlItem.dataset.cardRefType;
+            const refValue = controlItem.dataset.cardRef;
+            const originalName = title.textContent.trim();
+            const input = document.createElement('input');
+            let finished = false;
+            const originalTransition = controlItem.style.transition || '';
+            const originalTransform = controlItem.style.transform || '';
+            const originalBoxShadow = controlItem.style.boxShadow || '';
+            const originalBackground = controlItem.style.background || '';
+
+            controlItem.dataset.renaming = 'true';
+            controlItem.style.transition = 'transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease';
+            controlItem.style.transform = 'translateY(-1px) scale(1.01)';
+            controlItem.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--accent-color) 65%, transparent), 0 12px 28px rgba(15, 23, 42, 0.22)';
+            controlItem.style.background = 'linear-gradient(135deg, color-mix(in srgb, var(--accent-color) 16%, transparent) 0%, color-mix(in srgb, var(--accent-color) 7%, transparent) 100%)';
+            input.type = 'text';
+            input.value = originalName;
+            input.className = 'card-control-title-input';
+            input.setAttribute('aria-label', '卡片名称');
+            input.style.cssText = 'width: 100%; padding: 0.3rem 0.45rem; background: color-mix(in srgb, var(--accent-color) 10%, rgba(15,23,42,0.92)); border: 1px solid color-mix(in srgb, var(--accent-color) 82%, white 18%); color: var(--text-primary); border-radius: 0.45rem; font-size: 0.82rem; font-weight: 700; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 18%, transparent);';
+            title.replaceWith(input);
+            input.focus();
+            input.select();
+
+            const finishRename = async (shouldSave) => {
+                if (finished) {
+                    return;
+                }
+                finished = true;
+                controlItem.dataset.renaming = 'false';
+                controlItem.style.transition = originalTransition;
+                controlItem.style.transform = originalTransform;
+                controlItem.style.boxShadow = originalBoxShadow;
+                controlItem.style.background = originalBackground;
+
+                const nextName = String(input.value || '').trim() || originalName;
+                title.textContent = shouldSave ? nextName : originalName;
+                input.replaceWith(title);
+
+                if (!shouldSave || nextName === originalName) {
+                    return;
+                }
+
+                const result = await renameCardByReference(refType, refValue, nextName);
+                if (!result?.success) {
+                    title.textContent = originalName;
+                    return;
+                }
+
+                if (result.refType === 'bookmark') {
+                    controlItem.dataset.cardRef = result.refValue;
+                    controlItem.dataset.bookmarkCategory = result.refValue;
+
+                    controlItem.querySelectorAll('.toggle-bookmark-visibility-btn, .delete-category-btn').forEach((button) => {
+                        button.setAttribute('data-category-name', result.refValue);
+                    });
+                }
+
+                controlItem.classList.add('highlighted');
+            };
+
+            input.addEventListener('click', (event) => {
+                event.stopPropagation();
+            });
+            input.addEventListener('blur', () => {
+                finishRename(true).catch(error => console.error('rename card title failed:', error));
+            });
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    finishRename(true).catch(error => console.error('rename card title failed:', error));
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    finishRename(false).catch(error => console.error('rename card title failed:', error));
                 }
             });
-            input.addEventListener('click', (e) => {
-                e.stopPropagation();
-            });
-        }
+        });
     });
 
     // 处理所有透明度滑块
@@ -824,7 +889,12 @@ function bindDashboardLayoutEvents(container) {
 
 }
 
-function getCardName(card) {
+function getCardName(card, config = null, index = null) {
+    const cardId = card.id || (index !== null ? `card-${index}` : '');
+    const savedName = cardId && config?.cards?.[cardId]?.name;
+    if (savedName && String(savedName).trim()) {
+        return String(savedName).trim();
+    }
     if (card.id === 'cpu-gauge') return 'CPU 使用率';
     if (card.id === 'ram-gauge') return '内存使用率';
     if (card.id === 'storage-gauge') return '存储空间';
@@ -2328,6 +2398,13 @@ async function restoreLayout() {
             const card = document.getElementById(cardId);
             const cardConfig = config.cards[cardId];
             if (card && cardConfig) {
+                if (cardConfig.name) {
+                    const title = card.querySelector('h3');
+                    if (title) {
+                        title.textContent = cardConfig.name;
+                    }
+                }
+
                 const opacity = cardConfig.opacity || '0.7';
                 const color = cardConfig.color || '#8b5cf6';
 
@@ -2501,39 +2578,93 @@ function highlightCard(index) {
 }
 
 // ===== 重命名卡片 =====
-async function renameCard(index, newName) {
-    if (!newName) return;
-    const cards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
-    const card = cards[index];
-    if (!card) return;
+async function renameCardByReference(refType, refValue, newName) {
+    const trimmedName = String(newName || '').trim();
+    if (!trimmedName) {
+        return { success: false };
+    }
 
-    const h3 = card.querySelector('h3');
-    if (h3) h3.textContent = newName;
+    if (refType === 'bookmark') {
+        const previousCategoryName = String(refValue || '').trim();
+        if (!previousCategoryName) {
+            return { success: false };
+        }
 
-    // 如果是书签卡片，需要更新数据源和布局状态
-    if (card.classList.contains('bookmark-card')) {
-        // 获取旧名字用于查找 (或者通过 index)
-        // 为了安全，重新读取数据并按索引更新
         const bookmarks = await dataManager.getBookmarks();
-        // 注意：这里的 index 混合了 monitor 和 bookmark cards。
-        // 需要计算 bookmark index.
-        const monitorCardsCount = document.querySelectorAll('#monitor-section .glass-card').length;
-        const bookmarkIndex = index - monitorCardsCount;
+        const bookmarkIndex = bookmarks.findIndex(item => String(item.category || '').trim() === previousCategoryName);
+        if (bookmarkIndex === -1) {
+            return { success: false };
+        }
 
-        if (bookmarkIndex >= 0 && bookmarks[bookmarkIndex]) {
-            bookmarks[bookmarkIndex].category = newName;
-            await dataManager.saveBookmarks(bookmarks);
-            
-            // 更新 dataset.category，以便布局状态保存时使用正确的分类名称
-            card.dataset.category = newName;
-            
-            // 自动保存布局状态（包括分类名称的更新）
-            autoSave();
+        bookmarks[bookmarkIndex].category = trimmedName;
+        await dataManager.saveBookmarks(bookmarks);
+
+        const config = await dataManager.getDashboardConfig();
+        if (Array.isArray(config.bookmarkLayout)) {
+            config.bookmarkLayout.forEach(item => {
+                if (String(item.category || '').trim() === previousCategoryName) {
+                    item.category = trimmedName;
+                }
+            });
+        }
+        await dataManager.saveDashboardConfig(config);
+
+        const bookmarkCard = document.querySelector(`.bookmark-card[data-category="${CSS.escape(previousCategoryName)}"]`);
+        if (bookmarkCard) {
+            bookmarkCard.dataset.category = trimmedName;
+            const title = bookmarkCard.querySelector('.bookmark-card-title, .bookmark-card-title-editable, h3');
+            if (title) {
+                title.textContent = trimmedName;
+                title.setAttribute('data-category', trimmedName);
+            }
+        }
+
+        if (typeof window.renderRightNav === 'function') {
+            window.renderRightNav();
+        }
+
+        autoSave();
+        return { success: true, refType: 'bookmark', refValue: trimmedName };
+    }
+
+    const cardId = String(refValue || '').trim();
+    if (!cardId) {
+        return { success: false };
+    }
+
+    const card = document.getElementById(cardId);
+    if (card) {
+        const h3 = card.querySelector('h3');
+        if (h3) {
+            h3.textContent = trimmedName;
         }
     }
 
-    // 重新渲染控制面板以更新名字
-    // renderCardControls(); // 这会导致 input失去焦点，暂不刷新或仅更新部分
+    const config = await dataManager.getDashboardConfig();
+    if (!config.cards) {
+        config.cards = {};
+    }
+    config.cards[cardId] = {
+        ...config.cards[cardId],
+        name: trimmedName
+    };
+    await dataManager.saveDashboardConfig(config);
+
+    autoSave();
+    return { success: true, refType: 'widget', refValue: cardId };
+}
+
+async function renameCard(index, newName) {
+    const cards = document.querySelectorAll('#monitor-section .glass-card, #bookmarks-container .glass-card');
+    const card = cards[index];
+    if (!card) return { success: false };
+
+    const refType = card.classList.contains('bookmark-card') ? 'bookmark' : 'widget';
+    const refValue = refType === 'bookmark'
+        ? String(card.dataset.category || '').trim()
+        : (card.id || `card-${index}`);
+
+    return renameCardByReference(refType, refValue, newName);
 }
 
 // ===== 卡片点击高亮并滚动 (仅设置模式) =====
@@ -2942,7 +3073,7 @@ function collectCurrentBookmarkFreeLayout(config) {
     }
 
     const existingLayout = Array.isArray(config?.bookmarkLayout) ? config.bookmarkLayout : [];
-    return [...bookmarksContainer.querySelectorAll('.bookmark-card')].map((child, index) => {
+    return getBookmarkCardVisualOrder(bookmarksContainer).map((child, index) => {
         const category = (child.dataset.category || '').trim() || `bookmark-${index}`;
         const existingItem = existingLayout.find(item => (item.category || '').trim() === category) || {};
 
@@ -3145,6 +3276,29 @@ function cleanupCardControlsDragState() {
 
     document.removeEventListener('mousemove', handleCardControlsDrag);
     document.removeEventListener('mouseup', stopCardControlsDrag);
+}
+
+function getBookmarkCardVisualOrder(container = document.getElementById('bookmarks-container')) {
+    if (!container) {
+        return [];
+    }
+
+    const domOrder = Array.from(container.querySelectorAll('.bookmark-card'));
+    return [...domOrder].sort((a, b) => {
+        const ay = parseInt(a.dataset.layoutY || '0', 10) || 0;
+        const by = parseInt(b.dataset.layoutY || '0', 10) || 0;
+        if (ay !== by) {
+            return ay - by;
+        }
+
+        const ax = parseInt(a.dataset.layoutX || '0', 10) || 0;
+        const bx = parseInt(b.dataset.layoutX || '0', 10) || 0;
+        if (ax !== bx) {
+            return ax - bx;
+        }
+
+        return domOrder.indexOf(a) - domOrder.indexOf(b);
+    });
 }
 
 // 启用设置面板中的卡片拖拽排序
@@ -3419,10 +3573,9 @@ async function stopCardControlsDrag(e) {
         }
     });
     
-    await dataManager.saveDashboardConfig(config);
-    
     // 同步更新左侧书签卡片位置
     await syncBookmarkCardOrder(config.bookmarkLayout);
+    await dataManager.saveDashboardConfig(config);
     cleanupCardControlsDragState();
     await renderCardControls();
     
@@ -3435,21 +3588,37 @@ async function stopCardControlsDrag(e) {
 async function syncBookmarkCardOrder(bookmarkLayout) {
     const container = document.getElementById('bookmarks-container');
     if (!container) return;
-    
+
+    const visualCards = getBookmarkCardVisualOrder(container);
+    const visualSlots = visualCards.map((card, index) => ({
+        x: parseInt(card.dataset.layoutX || '0', 10) || 0,
+        y: parseInt(card.dataset.layoutY || '0', 10) || 0,
+        fallbackY: index * 120
+    }));
+
     // 按index排序
     const sortedLayout = [...bookmarkLayout].sort((a, b) => {
         const aIndex = a.index !== undefined ? a.index : 999;
         const bIndex = b.index !== undefined ? b.index : 999;
         return aIndex - bIndex;
     });
-    
-    // 重新排序DOM元素
-    sortedLayout.forEach(layoutItem => {
+
+    // 重新排序DOM元素并同步到当前视觉槽位
+    sortedLayout.forEach((layoutItem, orderIndex) => {
         const card = container.querySelector(`.bookmark-card[data-category="${layoutItem.category}"]`);
         if (card) {
+            const slot = visualSlots[orderIndex] || { x: 0, y: orderIndex * 120, fallbackY: orderIndex * 120 };
+            card.dataset.layoutX = String(slot.x);
+            card.dataset.layoutY = String(slot.y ?? slot.fallbackY);
+            layoutItem.x = slot.x;
+            layoutItem.y = slot.y ?? slot.fallbackY;
             container.appendChild(card);
         }
     });
+
+    if (window.syncBookmarkCardWidthsToContainer) {
+        window.syncBookmarkCardWidthsToContainer();
+    }
 
     if (window.updateBookmarkCardVisualOrder) {
         window.updateBookmarkCardVisualOrder();
@@ -4970,3 +5139,145 @@ function bindUserAndBackupEvents() {
         });
     }
 }
+
+// Override duplicate collapse logic with stable behavior: keep size before collapse and restore on expand.
+(() => {
+    const collapseToggleState = new Map();
+
+    window.toggleBookmarkCardCollapse = async function (categoryName) {
+        const now = Date.now();
+        const state = collapseToggleState.get(categoryName) || { inProgress: false, lastToggleAt: 0 };
+        if (state.inProgress || (now - state.lastToggleAt) < 220) {
+            return;
+        }
+
+        state.inProgress = true;
+        state.lastToggleAt = now;
+        collapseToggleState.set(categoryName, state);
+
+        try {
+            const card = document.querySelector(`.bookmark-card[data-category="${categoryName}"]`);
+            if (!card) {
+                return;
+            }
+
+            const grid = card.querySelector('.bookmark-grid');
+            const isCollapsed = card.classList.contains('bookmark-card-collapsed');
+
+            const config = await dataManager.getDashboardConfig();
+            if (!Array.isArray(config.bookmarkLayout)) {
+                config.bookmarkLayout = [];
+            }
+
+            let layoutItem = config.bookmarkLayout.find(item => item.category === categoryName);
+            if (!layoutItem) {
+                layoutItem = {
+                    category: categoryName,
+                    index: 999,
+                    hidden: false,
+                    collapsed: false
+                };
+                config.bookmarkLayout.push(layoutItem);
+            }
+
+            const parseLayoutNumber = (value) => {
+                const parsed = parseInt(String(value ?? '').replace(/[^\d-]/g, ''), 10);
+                return Number.isFinite(parsed) ? parsed : null;
+            };
+
+            if (isCollapsed) {
+                card.classList.remove('bookmark-card-collapsed');
+                if (grid) {
+                    grid.classList.remove('bookmark-grid-collapsed');
+                    grid.style.display = 'grid';
+                }
+
+                const restoreLayoutWidth = parseLayoutNumber(card.dataset.originalLayoutWidth)
+                    || parseLayoutNumber(layoutItem.width)
+                    || parseLayoutNumber(card.dataset.layoutWidth)
+                    || BOOKMARK_LAYOUT_MIN_WIDTH;
+                const restoreLayoutHeight = parseLayoutNumber(card.dataset.originalLayoutHeight)
+                    || parseLayoutNumber(layoutItem.height)
+                    || parseLayoutNumber(card.dataset.layoutHeight)
+                    || BOOKMARK_CARD_MIN_HEIGHT;
+                const restorePreset = card.dataset.originalWidthPreset || layoutItem.widthPreset || '1/4';
+
+                card.dataset.layoutWidth = String(restoreLayoutWidth);
+                card.dataset.layoutHeight = String(restoreLayoutHeight);
+                card.dataset.cardWidthPreset = restorePreset;
+
+                if (typeof window.applyBookmarkCardWidthPreset === 'function') {
+                    window.applyBookmarkCardWidthPreset(card, restorePreset);
+                } else {
+                    card.style.width = `${restoreLayoutWidth}px`;
+                }
+
+                card.style.width = `${restoreLayoutWidth}px`;
+                card.style.height = `${restoreLayoutHeight}px`;
+                layoutItem.collapsed = false;
+                layoutItem.width = restoreLayoutWidth;
+                layoutItem.height = restoreLayoutHeight;
+                layoutItem.widthPreset = restorePreset;
+            } else {
+                const currentPreset = (card.dataset.cardWidthPreset && card.dataset.cardWidthPreset !== 'collapsed')
+                    ? card.dataset.cardWidthPreset
+                    : (layoutItem.widthPreset || '1/4');
+                const currentRect = card.getBoundingClientRect();
+                const originalLayoutWidth = parseLayoutNumber(card.dataset.layoutWidth)
+                    || parseLayoutNumber(layoutItem.width)
+                    || Math.round(currentRect.width)
+                    || BOOKMARK_LAYOUT_MIN_WIDTH;
+                const originalLayoutHeight = parseLayoutNumber(card.dataset.layoutHeight)
+                    || parseLayoutNumber(layoutItem.height)
+                    || Math.round(currentRect.height)
+                    || BOOKMARK_CARD_MIN_HEIGHT;
+
+                card.dataset.originalWidthPreset = currentPreset;
+                card.dataset.originalHeight = card.style.height || '';
+                card.dataset.originalLayoutWidth = String(originalLayoutWidth);
+                card.dataset.originalLayoutHeight = String(originalLayoutHeight);
+
+                card.classList.add('bookmark-card-collapsed');
+                if (grid) {
+                    grid.classList.add('bookmark-grid-collapsed');
+                    grid.style.display = 'none';
+                }
+
+                card.dataset.layoutWidth = String(BOOKMARK_LAYOUT_COLLAPSED_WIDTH);
+                card.dataset.layoutHeight = String(BOOKMARK_LAYOUT_COLLAPSED_HEIGHT);
+                card.dataset.cardWidthPreset = 'collapsed';
+                if (typeof window.applyBookmarkCardWidthPreset === 'function') {
+                    window.applyBookmarkCardWidthPreset(card, 'collapsed');
+                } else {
+                    card.style.width = `${BOOKMARK_LAYOUT_COLLAPSED_WIDTH}px`;
+                }
+                card.style.width = `${BOOKMARK_LAYOUT_COLLAPSED_WIDTH}px`;
+                card.style.height = `${BOOKMARK_LAYOUT_COLLAPSED_HEIGHT}px`;
+
+                layoutItem.collapsed = true;
+                layoutItem.width = originalLayoutWidth;
+                layoutItem.height = originalLayoutHeight;
+                layoutItem.widthPreset = currentPreset;
+            }
+
+            layoutItem.x = parseInt(card.dataset.layoutX || '0', 10) || 0;
+            layoutItem.y = parseInt(card.dataset.layoutY || '0', 10) || 0;
+
+            await dataManager.saveDashboardConfig(config);
+
+            if (window.syncBookmarkCardWidthsToContainer) {
+                window.syncBookmarkCardWidthsToContainer();
+            }
+        } catch (error) {
+            console.error('toggle bookmark card collapse failed:', error);
+        } finally {
+            const latestState = collapseToggleState.get(categoryName);
+            if (latestState) {
+                latestState.inProgress = false;
+                latestState.lastToggleAt = Date.now();
+                collapseToggleState.set(categoryName, latestState);
+            }
+        }
+    };
+})();
+

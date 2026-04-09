@@ -3654,22 +3654,12 @@ async function loadBookmarks() {
                      data-cat-index="${catIndex}"
                      style="${isHidden ? 'display: none !important;' : ''}">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 10px;">
-                        ${isAdmin && isSettingsMode ? `
-                            <h3 class="bookmark-card-title-editable" 
-                                data-category="${cat.category}"
-                                data-category-index="${catIndex}"
-                                style="color: var(--accent-color); user-select: none; cursor: pointer; flex: 1; min-width: 0;" 
-                                title="点击编辑名称">
-                                ${cat.category}
-                            </h3>
-                        ` : `
-                            <h3 class="bookmark-card-title" 
-                                data-category="${cat.category}"
-                                style="color: var(--accent-color); user-select: none; cursor: pointer;" 
-                                title="双击折叠/展开">
-                                ${cat.category}
-                            </h3>
-                        `}
+                        <h3 class="bookmark-card-title" 
+                            data-category="${cat.category}"
+                            style="color: var(--accent-color); user-select: none; cursor: ${isSettingsMode ? 'default' : 'pointer'}; flex: 1; min-width: 0;" 
+                            title="${isSettingsMode ? '请在右侧卡片标题双击重命名' : '双击折叠/展开'}">
+                            ${cat.category}
+                        </h3>
                         
                         ${isAdmin ? `
                             <button class="add-bookmark-btn" data-category-index="${catIndex}" 
@@ -3829,105 +3819,6 @@ async function loadBookmarks() {
                         lastClickTime = currentTime;
                     }
                 });
-            });
-        }
-
-            // 设置模式下，点击标题可编辑
-            if (isSettingsMode && isAdmin) {
-                // 定义标题编辑处理函数
-                function makeTitleEditable(titleElement) {
-                    titleElement.addEventListener('click', function handleTitleClick(e) {
-                        const bookmarkCard = titleElement.closest('.bookmark-card');
-                        const currentIndex = typeof window.getCardControlIndex === 'function'
-                            ? window.getCardControlIndex(bookmarkCard)
-                            : -1;
-                        if (currentIndex !== -1 && typeof window.highlightCardControl === 'function') {
-                            window.highlightCardControl(currentIndex, true, false);
-                        }
-
-                        e.stopPropagation();
-                        if (e.detail < 2) {
-                            return;
-                        }
-                        e.preventDefault();
-                        const categoryName = titleElement.textContent.trim();
-                        const catIndex = parseInt(titleElement.getAttribute('data-category-index'));
-                        const parent = titleElement.parentElement;
-
-                    // 创建输入框
-                    const input = document.createElement('input');
-                    input.type = 'text';
-                    input.value = categoryName;
-                    input.className = 'category-name-input';
-                    input.setAttribute('data-category-index', catIndex.toString());
-                    input.setAttribute('aria-label', '分类名称');
-                    input.style.cssText = 'background: rgba(255,255,255,0.1); border: 1px solid var(--accent-color); color: var(--accent-color); font-size: 1.1rem; font-weight: bold; width: 100%; border-radius: 4px; padding: 2px 5px; flex: 1; min-width: 0;';
-
-                    // 替换标题为输入框
-                    parent.replaceChild(input, titleElement);
-
-                    // 聚焦并选中文本
-                    input.focus();
-                    input.select();
-
-                    // 保存修改
-                    const saveEdit = async () => {
-                        const newValue = input.value.trim();
-                        const finalValue = newValue || categoryName;
-
-                        if (newValue && newValue !== categoryName) {
-                            if (window.renameCategory) {
-                                await window.renameCategory(catIndex, finalValue);
-                            }
-                        }
-
-                        // 恢复为标题
-                        const newTitle = document.createElement('h3');
-                        newTitle.className = 'bookmark-card-title-editable';
-                        newTitle.setAttribute('data-category', finalValue);
-                        newTitle.setAttribute('data-category-index', catIndex.toString());
-                        newTitle.textContent = finalValue;
-                        newTitle.style.cssText = 'color: var(--accent-color); user-select: none; cursor: pointer; flex: 1; min-width: 0;';
-                        newTitle.title = '点击编辑名称';
-                        parent.replaceChild(newTitle, input);
-
-                        // 重新绑定事件
-                        makeTitleEditable(newTitle);
-                    };
-
-                    // 取消编辑
-                    const cancelEdit = () => {
-                        const newTitle = document.createElement('h3');
-                        newTitle.className = 'bookmark-card-title-editable';
-                        newTitle.setAttribute('data-category', categoryName);
-                        newTitle.setAttribute('data-category-index', catIndex.toString());
-                        newTitle.textContent = categoryName;
-                        newTitle.style.cssText = 'color: var(--accent-color); user-select: none; cursor: pointer; flex: 1; min-width: 0;';
-                        newTitle.title = '点击编辑名称';
-                        parent.replaceChild(newTitle, input);
-
-                        // 重新绑定事件
-                        makeTitleEditable(newTitle);
-                    };
-
-                    input.addEventListener('blur', saveEdit);
-
-                    // 回车保存，ESC取消
-                    input.addEventListener('keydown', (e) => {
-                        if (e.key === 'Enter') {
-                            e.preventDefault();
-                            input.blur();
-                        } else if (e.key === 'Escape') {
-                            e.preventDefault();
-                            cancelEdit();
-                        }
-                    });
-                });
-            }
-
-            // 为所有可编辑标题绑定事件
-            container.querySelectorAll('.bookmark-card-title-editable').forEach(title => {
-                makeTitleEditable(title);
             });
         }
 
@@ -5873,6 +5764,49 @@ window.restoreBookmarkStyles = restoreBookmarkStyles;
 window.refreshBookmarkCardResizeHandles = refreshBookmarkCardResizeHandlesFinal;
 })();
 
+// In normal mode, intercept title clicks so the legacy click-based double-click
+// handler does not fire twice; we only toggle on the native dblclick event.
+(() => {
+    if (window.__bookmarkTitleDblclickGuardBound) {
+        return;
+    }
+    window.__bookmarkTitleDblclickGuardBound = true;
+
+    const getNormalModeTitle = (eventTarget) => {
+        const sidebarOpen = document.getElementById('admin-sidebar')?.classList.contains('open');
+        if (sidebarOpen) {
+            return null;
+        }
+
+        return eventTarget?.closest?.('#bookmarks-container .bookmark-card-title') || null;
+    };
+
+    document.addEventListener('click', (e) => {
+        const title = getNormalModeTitle(e.target);
+        if (!title) {
+            return;
+        }
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    }, true);
+
+    document.addEventListener('dblclick', (e) => {
+        const title = getNormalModeTitle(e.target);
+        if (!title) {
+            return;
+        }
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        const categoryName = title.getAttribute('data-category');
+        if (categoryName && typeof window.toggleBookmarkCardCollapse === 'function') {
+            window.toggleBookmarkCardCollapse(categoryName);
+        }
+    }, true);
+})();
+
 syncBrowserBookmarksFromServer = async function () {
     try {
         if (window.godsBookmarkExtension && typeof window.godsBookmarkExtension.syncServerBookmarks === 'function') {
@@ -7071,7 +7005,25 @@ function updateBookmarkCardVisualOrder() {
         return;
     }
 
-    container.querySelectorAll('.bookmark-card').forEach(card => {
+    const domOrder = Array.from(container.querySelectorAll('.bookmark-card'));
+    const sortedCards = [...domOrder].sort((a, b) => {
+        const ay = parseInt(a.dataset.layoutY || '0', 10) || 0;
+        const by = parseInt(b.dataset.layoutY || '0', 10) || 0;
+        if (ay !== by) {
+            return ay - by;
+        }
+
+        const ax = parseInt(a.dataset.layoutX || '0', 10) || 0;
+        const bx = parseInt(b.dataset.layoutX || '0', 10) || 0;
+        if (ax !== bx) {
+            return ax - bx;
+        }
+
+        return domOrder.indexOf(a) - domOrder.indexOf(b);
+    });
+
+    sortedCards.forEach(card => {
+        container.appendChild(card);
         card.style.order = '';
         card.style.gridRow = '';
         card.style.gridColumn = '';
@@ -8363,6 +8315,27 @@ async function handleBookmarkFreeDragEnd(event) {
         return;
     }
 
+    const syncBookmarkOrderPanels = async (focusCategory) => {
+        if (typeof window.updateBookmarkCardVisualOrder === 'function') {
+            window.updateBookmarkCardVisualOrder();
+        }
+        if (typeof window.renderCardControls === 'function') {
+            await window.renderCardControls();
+        }
+        if (typeof window.renderRightNav === 'function') {
+            window.renderRightNav();
+        }
+        if (focusCategory) {
+            const focusedCard = document.querySelector(`#bookmarks-container .bookmark-card[data-category="${CSS.escape(focusCategory)}"]`);
+            const nextIndex = focusedCard && typeof window.getCardControlIndex === 'function'
+                ? window.getCardControlIndex(focusedCard)
+                : -1;
+            if (nextIndex >= 0 && typeof window.highlightCardControl === 'function') {
+                window.highlightCardControl(nextIndex, false, false);
+            }
+        }
+    };
+
     if (swapTarget) {
         const targetLayout = getBookmarkCardLayoutData(swapTarget, getBookmarkLayoutContainerMetrics());
         sourceCard.dataset.layoutX = String(targetLayout.x);
@@ -8374,6 +8347,7 @@ async function handleBookmarkFreeDragEnd(event) {
             saveBookmarkCardFreeLayout(sourceCategory),
             swapTarget.dataset.category ? saveBookmarkCardFreeLayout(swapTarget.dataset.category) : Promise.resolve()
         ]);
+        await syncBookmarkOrderPanels(sourceCategory);
         return;
     }
 
@@ -8382,6 +8356,7 @@ async function handleBookmarkFreeDragEnd(event) {
         setBookmarkCardLayoutData(sourceCard, resolvedLayout);
         layoutBookmarkCardsFreeform();
         await saveBookmarkCardFreeLayout(sourceCategory);
+        await syncBookmarkOrderPanels(sourceCategory);
     }
 }
 
@@ -8445,10 +8420,42 @@ window.clearBookmarkCardResizeHandles = function () {
     document.body.classList.remove('bookmark-card-resizing-active');
 };
 
-updateBookmarkCardVisualOrder = function () {};
+updateBookmarkCardVisualOrder = function () {
+    const container = document.getElementById('bookmarks-container');
+    if (!container) {
+        return;
+    }
+
+    const domOrder = Array.from(container.querySelectorAll('.bookmark-card'));
+    const sortedCards = [...domOrder].sort((a, b) => {
+        const ay = parseInt(a.dataset.layoutY || '0', 10) || 0;
+        const by = parseInt(b.dataset.layoutY || '0', 10) || 0;
+        if (ay !== by) {
+            return ay - by;
+        }
+
+        const ax = parseInt(a.dataset.layoutX || '0', 10) || 0;
+        const bx = parseInt(b.dataset.layoutX || '0', 10) || 0;
+        if (ax !== bx) {
+            return ax - bx;
+        }
+
+        return domOrder.indexOf(a) - domOrder.indexOf(b);
+    });
+
+    sortedCards.forEach((card) => {
+        container.appendChild(card);
+        card.style.order = '';
+        card.style.gridRow = '';
+        card.style.gridColumn = '';
+    });
+};
 applyBookmarkCardAutoAlign = function () {};
 syncBookmarkCardWidthsToContainer = function () {
     layoutBookmarkCardsFreeform();
+    if (typeof window.updateBookmarkCardVisualOrder === 'function') {
+        window.updateBookmarkCardVisualOrder();
+    }
 };
 window.updateBookmarkCardVisualOrder = updateBookmarkCardVisualOrder;
 window.applyBookmarkCardAutoAlign = applyBookmarkCardAutoAlign;
@@ -9147,3 +9154,4 @@ window.restoreBookmarkStyles = restoreBookmarkStyles;
 
     window.refreshBookmarkCardResizeHandles = refreshBookmarkCardResizeHandlesFinal;
 })();
+
